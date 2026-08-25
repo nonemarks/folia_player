@@ -1,7 +1,7 @@
 import React from 'react';
-import type { VisualizerBackgroundMode, VisualizerMode } from '../../../types';
+import type { VisualizerBackgroundMode, VisualizerMode } from '../../types';
 
-// src/components/panelTab/controls/modeGlyphs.tsx
+// src/components/visualizer/modeGlyphs.tsx
 // 面板内的 14px 极简线性字形，只示意每种模式的版式骨架，不追求预览精度。
 // 注册表是开放的字符串枚举，未登记的模式回落到通用字形，不会因为新增模式而崩。
 
@@ -23,6 +23,14 @@ const FALLBACK_GLYPH = (
 );
 
 const VISUALIZER_MODE_GLYPHS: Record<string, React.ReactNode> = {
+    // 静止：三行静态歌词
+    still: (
+        <>
+            <path d="M5 7.5h14" opacity="0.35" />
+            <path d="M3 12h18" />
+            <path d="M6 16.5h12" opacity="0.35" />
+        </>
+    ),
     // 流光：单行居中歌词，逐字点亮
     classic: (
         <>

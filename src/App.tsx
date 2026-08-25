@@ -7,6 +7,7 @@ import VisualizerRenderer from './components/visualizer/VisualizerRenderer';
 import type { VisualizerBackgroundConfig } from './components/visualizer/backgrounds/definition';
 import CommandPalette from './components/command-palette/CommandPalette';
 import { useCommandPalette } from './components/command-palette/useCommandPalette';
+import { buildCommandPaletteContext } from './components/app/buildCommandPaletteContext';
 import AppShell from './components/app/AppShell';
 import Home from './components/app/Home';
 import PlayerPanel from './components/app/PlayerPanel';
@@ -60,6 +61,8 @@ import { useMediaSessionBridge } from './hooks/useMediaSessionBridge';
 import { usePlayerChromeAutoHide } from './hooks/usePlayerChromeAutoHide';
 import { usePlaybackAudioBridge } from './hooks/usePlaybackAudioBridge';
 import { usePlaybackInteractionBridge } from './hooks/usePlaybackInteractionBridge';
+import { usePersonalFmModeController } from './hooks/usePersonalFmModeController';
+import { PERSONAL_FM_MODE_COMMAND_ID } from './components/command-palette/commands/fmModeCommand';
 import { usePlaybackUiEffects } from './hooks/usePlaybackUiEffects';
 import { useLibraryPlaybackController } from './hooks/useLibraryPlaybackController';
 import { useNavidromeScrobbleReporter } from './hooks/useNavidromeScrobbleReporter';
@@ -70,7 +73,6 @@ import { usePlaybackVisualizerBridge } from './hooks/usePlaybackVisualizerBridge
 import { useRandomVisualizerMode } from './hooks/useRandomVisualizerMode';
 import { useObsBrowserSourcePublisher } from './hooks/useObsBrowserSourcePublisher';
 import { useLyricApiPublisher } from './hooks/useLyricApiPublisher';
-import { ObsBrowserSourceLyrics } from './components/obs/ObsBrowserSourceLyrics';
 import { useSessionRestoreController } from './hooks/useSessionRestoreController';
 import { useStagePlaybackController } from './hooks/useStagePlaybackController';
 import { useSongThemeAutoGeneration } from './hooks/useSongThemeAutoGeneration';
@@ -1269,7 +1271,7 @@ export default function App() {
         setStatusMsg,
     });
 
-    const { addNavidromeSongsToQueue, removeQueueSong, moveQueueSongToEnd, moveQueueSongToNext } = createQueueMutations({
+    const { addNavidromeSongsToQueue, applyQueueBatchOperation, removeQueueSong, moveQueueSongToEnd, moveQueueSongToNext } = createQueueMutations({
         currentSong,
         playQueue,
         setPlayQueue,
@@ -1491,11 +1493,12 @@ export default function App() {
 
     useMediaSessionBridge({
         audioRef,
+        audioSrc,
         currentSong,
         cachedCoverUrl,
         playerState,
         isNowPlayingStageActive,
-        t: (key) => t(key),
+        unknownArtistLabel: t('ui.unknownArtist'),
         mediaSessionPlayRef,
         mediaSessionPauseRef,
         mediaSessionPrevRef,
@@ -1637,6 +1640,14 @@ export default function App() {
         pausePlayback,
         resumePlayback,
         syncStageLyricsClock,
+    });
+
+    const { personalFmSelection, personalFmSelectionLabel, isPersonalFmModeSupported, setPersonalFmSelection } = usePersonalFmModeController({
+        isFmMode,
+        currentSong,
+        playSong,
+        setStatusMsg,
+        t: (key: string, fallback?: string) => t(key, fallback ?? ''),
     });
 
     const usesCustomWindowChrome = isElectronWindow;
@@ -1946,159 +1957,174 @@ export default function App() {
         await window.electron.setMainWindowAlwaysOnTop(!enabled);
         return true;
     }, []);
-    const commandPaletteContext = useMemo(() => ({
+    const commandPaletteContext = useMemo(() => buildCommandPaletteContext({
+        t: (key: string, fallback?: string) => t(key, fallback ?? ''),
+        setStatusMsg,
+        currentSong,
+        playerState,
+
         currentSearchSourceTab: currentSearchSourceTabInPalette,
         localSongs,
         localLibraryCatalog,
-        playerState,
-        t: (key: string, fallback?: string) => t(key, fallback ?? ''),
-        setStatusMsg,
-        openSettings,
+        navigateToSearch,
+        submitSearch,
+
+        volume,
+        isMuted,
+        setVolume: handleSetVolume,
+        previewVolume: handlePreviewVolume,
+        togglePlay,
+        toggleLoop,
+        next: handleNextTrack,
+        prev: handlePrevTrack,
+        playQueue,
+        playSong,
+        shuffleQueue,
+        clearQueue,
+        applyQueueBatchOperation,
+        removeQueueSong,
+        moveQueueSongToNext,
+        moveQueueSongToEnd,
+        setReplayGainMode: handleChangeReplayGainMode,
+        isFmMode,
+        personalFmSelection,
+        isPersonalFmModeSupported,
+        setPersonalFmSelection,
+        openAudioEqualizer,
+        applyAudioSoundPreset,
+        runAutoMatchBestLyric: handleAutoMatchBestLyricForCurrentSong,
+
         navigateToHome,
         navigateToPlayer,
-        navigateToSearch,
+        setHomeViewTab,
         toggleBrowserFullscreen,
         toggleRemoteControlWindow,
         toggleMainWindowAlwaysOnTop,
-        setHomeViewTab,
+
         setPanelTab,
         setIsPanelOpen,
-        submitSearch,
-        togglePlay,
-        toggleLoop,
-        onReplayGainModeChange: handleChangeReplayGainMode,
-        openAudioEqualizer,
-        applyAudioSoundPreset,
-        handleNextTrack,
-        handlePrevTrack,
-        shuffleQueue,
-        clearQueue,
-        playQueue,
-        playSong,
+
+        openSettings,
+        setIsUserGuideModalOpen,
+        setAppLanguagePreference: handleSetAppLanguagePreference,
+        toggleDaylightMode,
+
+        transparentPlayerBackground,
+        setTransparentPlayerBackground: (next: boolean) => { void toggleTransparentModeWithHandoff(next); },
+        hideBottomSubtitleOverlay: hidePlayerTranslationSubtitle,
+        setHideBottomSubtitleOverlay: handleToggleHidePlayerTranslationSubtitle,
+        subtitleContentMode,
+        setSubtitleContentMode: handleSetSubtitleContentMode,
+        subtitleOverlayBackground,
+        setSubtitleOverlayBackground: handleToggleSubtitleOverlayBackground,
+        alwaysShowPlayerBackButton,
+        setAlwaysShowPlayerBackButton: handleToggleAlwaysShowPlayerBackButton,
+        alwaysShowTrackSwitchButtons,
+        setAlwaysShowTrackSwitchButtons: handleToggleAlwaysShowTrackSwitchButtons,
+        alwaysShowMainWindowTitlebar,
+        setAlwaysShowMainWindowTitlebar: handleToggleAlwaysShowMainWindowTitlebar,
+        voiceInputPauseEnabled,
+        voiceInputPauseSupported: isElectronWindow && typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('win'),
+        setVoiceInputPauseEnabled: handleToggleVoiceInputPause,
+        preventDisplaySleepDuringPlayback,
+        setPreventDisplaySleepDuringPlayback: handleTogglePreventDisplaySleepDuringPlayback,
+        wallpaperMode,
+        setWallpaperMode: handleToggleWallpaperMode,
+
         canGenerateAITheme,
         isGeneratingTheme,
         generateAITheme: generateCurrentSongTheme,
-        setVisualizerMode: handleSetVisualizerMode,
-        randomVisualizerModePerSong,
-        toggleRandomVisualizerModePerSong: () => {
-            handleToggleRandomVisualizerModePerSong(!randomVisualizerModePerSong);
-        },
-        setVisualizerBackgroundMode: handleSetVisualizerBackgroundMode,
-        setMonetBackgroundTuning: handleSetMonetBackgroundTuning,
-        setLatentBackgroundTuning: handleSetLatentBackgroundTuning,
-        toggleTransparentBackground: () => {
-            void toggleTransparentModeWithHandoff(!transparentPlayerBackground);
-        },
-        transparentPlayerBackground,
-        hideBottomSubtitleOverlay: hidePlayerTranslationSubtitle,
-        toggleBottomSubtitleOverlay: () => {
-            handleToggleHidePlayerTranslationSubtitle(!hidePlayerTranslationSubtitle);
-        },
-        subtitleContentMode,
-        cycleSubtitleContentMode: () => {
-            handleSetSubtitleContentMode(subtitleContentMode === 'translation' ? 'romanization' : 'translation');
-        },
-        subtitleOverlayBackground,
-        toggleSubtitleOverlayBackground: () => {
-            handleToggleSubtitleOverlayBackground(!subtitleOverlayBackground);
-        },
-        alwaysShowPlayerBackButton,
-        toggleAlwaysShowPlayerBackButton: () => {
-            handleToggleAlwaysShowPlayerBackButton(!alwaysShowPlayerBackButton);
-        },
-        alwaysShowTrackSwitchButtons,
-        toggleAlwaysShowTrackSwitchButtons: () => {
-            handleToggleAlwaysShowTrackSwitchButtons(!alwaysShowTrackSwitchButtons);
-        },
-        alwaysShowMainWindowTitlebar,
-        toggleAlwaysShowMainWindowTitlebar: () => {
-            handleToggleAlwaysShowMainWindowTitlebar(!alwaysShowMainWindowTitlebar);
-        },
-        enablePlayerPageNativeBlur,
-        toggleDaylightMode,
-        voiceInputPauseEnabled,
-        voiceInputPauseSupported: isElectronWindow && typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('win'),
-        toggleVoiceInputPause: () => {
-            handleToggleVoiceInputPause(!voiceInputPauseEnabled);
-        },
-        preventDisplaySleepDuringPlayback,
-        togglePreventDisplaySleepDuringPlayback: () => {
-            handleTogglePreventDisplaySleepDuringPlayback(!preventDisplaySleepDuringPlayback);
-        },
-        toggleWallpaperMode: () => {
-            handleToggleWallpaperMode(!wallpaperMode);
-        },
-        setAppLanguagePreference: handleSetAppLanguagePreference,
-        runAutoMatchBestLyric: handleAutoMatchBestLyricForCurrentSong,
-        setIsUserGuideModalOpen,
         openThemeQuickEditor,
         canOpenThemeQuickEditor,
         themeGenerationSource,
         setThemeGenerationSource: handleThemeGenerationSourceChange,
+
+        visualizerMode,
+        visualizerBackgroundMode,
+        setVisualizerMode: handleSetVisualizerMode,
+        randomVisualizerModePerSong,
+        setRandomVisualizerModePerSong: handleToggleRandomVisualizerModePerSong,
+        setVisualizerBackgroundMode: handleSetVisualizerBackgroundMode,
+        setMonetBackgroundTuning: handleSetMonetBackgroundTuning,
+        setLatentBackgroundTuning: handleSetLatentBackgroundTuning,
     }), [
-        enablePlayerPageNativeBlur,
+        alwaysShowMainWindowTitlebar,
+        alwaysShowPlayerBackButton,
+        alwaysShowTrackSwitchButtons,
+        applyAudioSoundPreset,
+        applyQueueBatchOperation,
+        canGenerateAITheme,
+        canOpenThemeQuickEditor,
+        clearQueue,
+        currentSearchSourceTabInPalette,
+        currentSong,
         generateCurrentSongTheme,
         handleAutoMatchBestLyricForCurrentSong,
-        handleSetAppLanguagePreference,
+        handleChangeReplayGainMode,
         handleNextTrack,
         handlePrevTrack,
-        handleSetVisualizerMode,
-        handleToggleRandomVisualizerModePerSong,
-        handleSetVisualizerBackgroundMode,
+        handlePreviewVolume,
+        handleSetAppLanguagePreference,
+        handleSetLatentBackgroundTuning,
         handleSetMonetBackgroundTuning,
-        handleToggleHidePlayerTranslationSubtitle,
         handleSetSubtitleContentMode,
+        handleSetVisualizerBackgroundMode,
+        handleSetVisualizerMode,
+        handleSetVolume,
+        handleThemeGenerationSourceChange,
+        handleToggleAlwaysShowMainWindowTitlebar,
+        handleToggleAlwaysShowPlayerBackButton,
+        handleToggleAlwaysShowTrackSwitchButtons,
+        handleToggleHidePlayerTranslationSubtitle,
+        handleTogglePreventDisplaySleepDuringPlayback,
+        handleToggleRandomVisualizerModePerSong,
+        handleToggleSubtitleOverlayBackground,
+        handleToggleVoiceInputPause,
+        handleToggleWallpaperMode,
         hidePlayerTranslationSubtitle,
+        isFmMode,
         isGeneratingTheme,
+        isMuted,
+        isPersonalFmModeSupported,
         localLibraryCatalog,
         localSongs,
+        moveQueueSongToEnd,
+        moveQueueSongToNext,
         navigateToHome,
         navigateToPlayer,
         navigateToSearch,
+        openAudioEqualizer,
         openSettings,
+        openThemeQuickEditor,
+        personalFmSelection,
         playQueue,
         playSong,
         playerState,
-        randomVisualizerModePerSong,
-        canGenerateAITheme,
-        currentSearchSourceTabInPalette,
-        setHomeViewTab,
-        shuffleQueue,
-        clearQueue,
-        submitSearch,
-        t,
-        toggleBrowserFullscreen,
-        toggleRemoteControlWindow,
-        toggleMainWindowAlwaysOnTop,
-        toggleLoop,
-        togglePlay,
-        handleChangeReplayGainMode,
-        openAudioEqualizer,
-        applyAudioSoundPreset,
-        transparentPlayerBackground,
-        toggleTransparentModeWithHandoff,
-        toggleDaylightMode,
-        voiceInputPauseEnabled,
-        handleToggleVoiceInputPause,
         preventDisplaySleepDuringPlayback,
-        handleTogglePreventDisplaySleepDuringPlayback,
-        wallpaperMode,
-        handleToggleWallpaperMode,
-
+        randomVisualizerModePerSong,
+        removeQueueSong,
+        setHomeViewTab,
+        setIsUserGuideModalOpen,
+        setPersonalFmSelection,
+        shuffleQueue,
+        submitSearch,
         subtitleContentMode,
         subtitleOverlayBackground,
-        handleToggleSubtitleOverlayBackground,
-        handleToggleAlwaysShowPlayerBackButton,
-        handleToggleAlwaysShowTrackSwitchButtons,
-        handleToggleAlwaysShowMainWindowTitlebar,
-        alwaysShowPlayerBackButton,
-        alwaysShowTrackSwitchButtons,
-        alwaysShowMainWindowTitlebar,
-        setIsUserGuideModalOpen,
-        openThemeQuickEditor,
-        canOpenThemeQuickEditor,
+        t,
         themeGenerationSource,
-        handleThemeGenerationSourceChange,
+        toggleBrowserFullscreen,
+        toggleDaylightMode,
+        toggleLoop,
+        toggleMainWindowAlwaysOnTop,
+        togglePlay,
+        toggleRemoteControlWindow,
+        toggleTransparentModeWithHandoff,
+        transparentPlayerBackground,
+        visualizerBackgroundMode,
+        visualizerMode,
+        voiceInputPauseEnabled,
+        volume,
+        wallpaperMode,
     ]);
     const commandPalette = useCommandPalette({
         currentView,
@@ -2110,6 +2136,11 @@ export default function App() {
             || Boolean(pendingUnavailableReplacement),
         context: commandPaletteContext,
     });
+    // The FM tab reuses the palette's picker instead of carrying its own copy of the mode list.
+    const openCommandById = commandPalette.openCommandById;
+    const handleOpenFmModePicker = useMemo(() => (
+        isPersonalFmModeSupported ? () => openCommandById(PERSONAL_FM_MODE_COMMAND_ID) : undefined
+    ), [isPersonalFmModeSupported, openCommandById]);
     const nowPlayingDebugSnapshot = useMemo(() => (
         stageSource === 'now-playing'
             ? {
@@ -2556,6 +2587,8 @@ export default function App() {
         replayGainMode,
         handleChangeReplayGainMode,
         isFmMode,
+        fmModeLabel: personalFmSelectionLabel,
+        handleOpenFmModePicker,
         handleFmTrash,
         handleNextTrack,
         handlePrevTrack,
@@ -2723,11 +2756,13 @@ export default function App() {
         playerDisplayQueue,
         effectiveLoopMode,
         generateCurrentSongTheme,
+        personalFmSelectionLabel,
         localLibraryCatalog,
         handleBgModeChange,
         handleChangeOnlineLyricsSource,
         handleChangeLyricsSource,
         handleClearCache,
+        handleOpenFmModePicker,
         handleImportOnlineLyrics,
         handleLike,
         handleLogout,
@@ -3228,79 +3263,63 @@ export default function App() {
                 className="absolute inset-0 z-0"
                 onClick={handleContainerClick}
             >
-                {!isObsBrowserSourceRendering && (
-                    <VisualizerRenderer
-                        mode={visualizerMode}
-                        currentTime={lyricCurrentTime}
-                        currentLineIndex={currentLineIndex}
-                        lines={lyrics?.lines || []}
-                        theme={visualizerTheme}
-                        subtitleTheme={visualizerSubtitleTheme}
-                        isDaylight={isDaylight}
-                        audioPower={audioPower}
-                        audioBands={audioBands}
-                        songTitle={currentSong?.name}
-                        songArtist={currentSongArtist}
-                        songAlbum={currentSongAlbum}
-                        coverUrl={getCoverUrl()}
-                        showText={currentView === 'player' && !isSettingsModalOpen}
-                        seed={visualizerGeometrySeed}
-                        staticMode={staticMode}
-                        backgroundStaticMode={
-                            shouldPauseVisualizerBackground
-                            || (
-                                visualizerBackgroundConfig.mode === 'latent'
-                                && latentBackgroundTuning.dynamicOnlyInPlayer
-                                && currentView !== 'player'
-                            )
-                        }
-                        paused={playerState !== PlayerState.PLAYING}
-                        visualizerOpacity={visualizerOpacity}
-                        background={{
-                            ...visualizerBackgroundConfig,
-                            transparent: currentView === 'player' && isPlayerPageTransparent && !isSettingsModalOpen,
-                            common: {
-                                ...visualizerBackgroundConfig.common,
-                                disableGeometricBackground: disableVisualizerGeometricBackground || isSettingsSubviewOpen,
-                            },
-                        }}
-                        lyricsFontScale={lyricsFontScale}
-                        subtitleFontScale={subtitleFontScale}
-                        subtitleOverlayOpacity={subtitleOverlayOpacity}
-                        subtitleOverlayBackground={subtitleOverlayBackground}
-                        showHarmonySubtitle={showHarmonySubtitle}
-                        harmonySubtitleBackground={harmonySubtitleBackground}
-                        isPlayerChromeHidden={isPlayerChromeHidden}
-                        hideTranslationSubtitle={shouldHidePlayerTranslationSubtitle}
-                        showSubtitleTranslation={showSubtitleTranslation}
-                        subtitleContentMode={subtitleContentMode}
-                        visualizerTunings={visualizerTunings}
-                        onMonetTuningChange={handleSetMonetTuning}
-                        cappellaCustomEmojiImages={cappellaCustomEmojiImages}
-                        cappellaCustomAvatarImages={cappellaCustomAvatarImages}
-                        monetPortraitImage={monetPortraitImage}
-                        onLyricLineSeek={['monet', 'pendolo'].includes(visualizerMode) ? handleMonetLyricLineSeek : undefined}
-                        onBack={navigateBackFromPlayer}
-                        isPanelOpen={isPanelOpen}
-                        alwaysShowBackButton={alwaysShowPlayerBackButton || isPanelOpen}
-                        onPlayerPanelGuideHotspotChange={setIsPlayerPanelGuideHotspotActive}
-                    />
-                )}
-            </div>
-
-            {currentView === 'player' && isObsBrowserSourceRendering && (
-                <ObsBrowserSourceLyrics
-                    lyrics={lyrics}
+                <VisualizerRenderer
+                    mode={isObsBrowserSourceRendering ? 'still' : visualizerMode}
+                    currentTime={lyricCurrentTime}
                     currentLineIndex={currentLineIndex}
-                    visualizerTheme={visualizerTheme}
+                    lines={lyrics?.lines || []}
+                    theme={visualizerTheme}
                     subtitleTheme={visualizerSubtitleTheme}
+                    isDaylight={isDaylight}
+                    audioPower={audioPower}
+                    audioBands={audioBands}
+                    songTitle={currentSong?.name}
+                    songArtist={currentSongArtist}
+                    songAlbum={currentSongAlbum}
+                    coverUrl={getCoverUrl()}
+                    showText={currentView === 'player' && !isSettingsModalOpen}
+                    seed={visualizerGeometrySeed}
+                    staticMode={staticMode}
+                    backgroundStaticMode={
+                        shouldPauseVisualizerBackground
+                        || (
+                            visualizerBackgroundConfig.mode === 'latent'
+                            && latentBackgroundTuning.dynamicOnlyInPlayer
+                            && currentView !== 'player'
+                        )
+                    }
+                    paused={playerState !== PlayerState.PLAYING}
+                    visualizerOpacity={visualizerOpacity}
+                    background={{
+                        ...visualizerBackgroundConfig,
+                        transparent: currentView === 'player' && isPlayerPageTransparent && !isSettingsModalOpen,
+                        common: {
+                            ...visualizerBackgroundConfig.common,
+                            disableGeometricBackground: disableVisualizerGeometricBackground || isSettingsSubviewOpen,
+                        },
+                    }}
                     lyricsFontScale={lyricsFontScale}
                     subtitleFontScale={subtitleFontScale}
-                    shouldHidePlayerTranslationSubtitle={shouldHidePlayerTranslationSubtitle}
-                    isDaylight={isDaylight}
-                    navigateToHome={navigateBackFromPlayer}
+                    subtitleOverlayOpacity={subtitleOverlayOpacity}
+                    subtitleOverlayBackground={subtitleOverlayBackground}
+                    showHarmonySubtitle={showHarmonySubtitle}
+                    harmonySubtitleBackground={harmonySubtitleBackground}
+                    isPlayerChromeHidden={isPlayerChromeHidden}
+                    hideTranslationSubtitle={shouldHidePlayerTranslationSubtitle}
+                    showSubtitleTranslation={showSubtitleTranslation}
+                    subtitleContentMode={subtitleContentMode}
+                    visualizerTunings={visualizerTunings}
+                    onMonetTuningChange={handleSetMonetTuning}
+                    cappellaCustomEmojiImages={cappellaCustomEmojiImages}
+                    cappellaCustomAvatarImages={cappellaCustomAvatarImages}
+                    monetPortraitImage={monetPortraitImage}
+                    onLyricLineSeek={['monet', 'pendolo'].includes(visualizerMode) ? handleMonetLyricLineSeek : undefined}
+                    onBack={navigateBackFromPlayer}
+                    isPanelOpen={isPanelOpen}
+                    alwaysShowBackButton={alwaysShowPlayerBackButton || isPanelOpen}
+                    onPlayerPanelGuideHotspotChange={setIsPlayerPanelGuideHotspotActive}
                 />
-            )}
+            </div>
 
             {currentView === 'player' && activePlaybackContext === 'stage' && (!stageActiveEntryKind || stageSource === 'now-playing') && !currentSong && (
                 <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center px-6">
@@ -3343,12 +3362,12 @@ export default function App() {
                 activePreview={commandPalette.activePreview}
                 activeCommand={commandPalette.activeCommand}
                 availableCommands={commandPalette.availableCommands}
+                context={commandPaletteContext}
                 isDaylight={isDaylight}
                 isComposing={commandPalette.isComposing}
                 isExecuting={commandPalette.isExecuting}
                 isOpen={commandPalette.isOpen}
                 matches={commandPalette.matches}
-                currentSong={currentSong}
                 pinnedCommands={commandPalette.pinnedCommands}
                 query={commandPalette.query}
                 theme={theme}
@@ -3357,17 +3376,14 @@ export default function App() {
                 onClose={commandPalette.close}
                 onCompositionEnd={(value) => {
                     commandPalette.setIsComposing(false);
-                    commandPalette.setQuery(value);
-                    commandPalette.setMatchQuery(value);
+                    commandPalette.commitQuery(value);
                 }}
                 onCompositionStart={() => commandPalette.setIsComposing(true)}
                 onExecuteActive={commandPalette.executeActive}
                 onExecuteMatch={commandPalette.executeMatch}
                 onExecutePinnedCommand={commandPalette.executePinnedCommand}
-                onMoveSongToEnd={moveQueueSongToEnd}
-                onMoveSongToNext={moveQueueSongToNext}
                 onQueryChange={commandPalette.setQuery}
-                onRemoveSong={removeQueueSong}
+                onQueryCommit={commandPalette.commitQuery}
             />
 
             <AppDialogs model={appDialogsModel} />

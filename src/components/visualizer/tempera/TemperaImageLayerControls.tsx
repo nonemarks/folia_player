@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ImagePlus, Settings2 } from 'lucide-react';
 import type { TemperaLayerImage } from '../../../types';
-import { DEFAULT_TEMPERA_LAYER_IMAGE } from '../../../types';
+import { DEFAULT_TEMPERA_LAYER_IMAGE, TEMPERA_MAX_LAYER_IMAGES } from '../../../types';
 import {
     clearTemperaLayerImage,
     isSupportedTemperaLayerImageFile,
@@ -21,8 +21,6 @@ import { useTemperaLayerImageThumbnails } from './useTemperaLayerImageThumbnails
 // dialog closes. Editing the live tuning instead meant a synchronous localStorage write and a
 // global store update on every pointermove of a slider, which pinned a core; the card preview
 // is what gives feedback during the edit, so nothing is lost by holding the commit back.
-const MAX_IMAGES = 8;
-
 export interface TemperaImageLayerCommit {
     layerImages: TemperaLayerImage[];
     layerImageDepth: 'back' | 'front';
@@ -43,6 +41,7 @@ const sameImages = (a: TemperaLayerImage[], b: TemperaLayerImage[]) => (
     a.length === b.length && a.every((image, index) => (
         image.id === b[index].id
         && image.align === b[index].align
+        && image.verticalAlign === b[index].verticalAlign
         && image.scale === b[index].scale
         && image.opacity === b[index].opacity
     ))
@@ -96,7 +95,7 @@ const TemperaImageLayerControls: React.FC<TemperaImageLayerControlsProps> = ({
     useEffect(() => () => { if (isOpenRef.current) commitRef.current(); }, []);
 
     const handleFiles = useCallback(async (files: File[]) => {
-        const room = MAX_IMAGES - draft.layerImages.length;
+        const room = TEMPERA_MAX_LAYER_IMAGES - draft.layerImages.length;
         const accepted = files.filter(isSupportedTemperaLayerImageFile).slice(0, Math.max(0, room));
         if (accepted.length === 0) return;
         const stored = await Promise.all(accepted.map(prepareTemperaLayerImage));
@@ -110,7 +109,7 @@ const TemperaImageLayerControls: React.FC<TemperaImageLayerControlsProps> = ({
                     id: image.id,
                     name: image.name,
                 })),
-            ].slice(0, MAX_IMAGES),
+            ].slice(0, TEMPERA_MAX_LAYER_IMAGES),
         }));
     }, [draft.layerImages.length]);
 
@@ -128,6 +127,14 @@ const TemperaImageLayerControls: React.FC<TemperaImageLayerControlsProps> = ({
         }));
         setRemovedIds(current => (current.includes(id) ? current : [...current, id]));
     }, []);
+
+    const clearAll = useCallback(() => {
+        setDraft(current => ({ ...current, layerImages: [] }));
+        setRemovedIds(current => Array.from(new Set([
+            ...current,
+            ...draft.layerImages.map(image => image.id),
+        ])));
+    }, [draft.layerImages]);
 
     return (
         <div className="space-y-3">
@@ -177,7 +184,7 @@ const TemperaImageLayerControls: React.FC<TemperaImageLayerControlsProps> = ({
                 <span className="ml-auto shrink-0 text-sm" style={{ color: 'var(--text-primary)' }}>
                     {images.length === 0
                         ? (t('options.temperaAddLayerImage') || '添加图片')
-                        : `${images.length} / ${MAX_IMAGES}`}
+                        : `${images.length} / ${TEMPERA_MAX_LAYER_IMAGES}`}
                 </span>
                 <Settings2 size={16} className="shrink-0 opacity-50" style={{ color: 'var(--text-secondary)' }} />
             </button>
@@ -191,11 +198,12 @@ const TemperaImageLayerControls: React.FC<TemperaImageLayerControlsProps> = ({
                 thumbnails={thumbnails}
                 depth={draft.layerImageDepth}
                 frequency={draft.layerImageFrequency}
-                maxImages={MAX_IMAGES}
+                maxImages={TEMPERA_MAX_LAYER_IMAGES}
                 rangeInputClass={rangeInputClass}
                 onAddFiles={files => void handleFiles(files)}
                 onPatch={patch}
                 onRemove={remove}
+                onClearAll={clearAll}
                 onDepthChange={layerImageDepth => setDraft(current => ({ ...current, layerImageDepth }))}
                 onFrequencyChange={layerImageFrequency => setDraft(current => ({ ...current, layerImageFrequency }))}
             />
