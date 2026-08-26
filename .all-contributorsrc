@@ -489,6 +489,25 @@
       "contributions": [
         "ideas"
       ]
+    },
+    {
+      "login": "HKLHaoBin",
+      "name": "浩彬(^-^)",
+      "avatar_url": "https://avatars.githubusercontent.com/u/146098469?v=4",
+      "profile": "https://github.com/HKLHaoBin",
+      "contributions": [
+        "bug"
+      ]
+    },
+    {
+      "login": "gi-b716",
+      "name": "Gavin",
+      "avatar_url": "https://avatars.githubusercontent.com/u/78394473?v=4",
+      "profile": "http://gavin-blog.pages.dev",
+      "contributions": [
+        "bug",
+        "code"
+      ]
     }
   ],
   "commit": false,

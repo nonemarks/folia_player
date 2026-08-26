@@ -60,6 +60,7 @@ type UseElectronPlaybackBridgeOptions = {
     lyricTimelineOffsetMs?: number;
     onRemoteExportCommand?: (command: RemoteControlCommand) => boolean;
     onExternalPlayRequest?: (request: any) => Promise<void>;
+    onRemoteCycleLoopMode?: () => void;
     isLiked: boolean;
     onLike?: () => void;
 };
@@ -109,6 +110,7 @@ export const useElectronPlaybackBridge = ({
     lyricTimelineOffsetMs,
     onRemoteExportCommand,
     onExternalPlayRequest,
+    onRemoteCycleLoopMode,
     isLiked,
     onLike,
 }: UseElectronPlaybackBridgeOptions) => {
@@ -295,7 +297,9 @@ export const useElectronPlaybackBridge = ({
     };
 
     useEffect(() => {
-        if (!isElectronWindow) {
+        // Click-through keeps forwarding mouse-move into the renderer, so the titlebar would keep
+        // revealing itself on a window the cursor cannot actually reach. Stop tracking while it is on.
+        if (!isElectronWindow || mainWindowClickThroughEnabled) {
             setIsTitlebarRevealed(false);
             return;
         }
@@ -314,7 +318,7 @@ export const useElectronPlaybackBridge = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseleave', handleMouseLeave);
         };
-    }, [isElectronWindow, setIsTitlebarRevealed]);
+    }, [isElectronWindow, mainWindowClickThroughEnabled, setIsTitlebarRevealed]);
 
     useEffect(() => {
         if (!window.electron?.onTaskbarControl) {
@@ -425,8 +429,19 @@ export const useElectronPlaybackBridge = ({
         publish({ includeLyrics: true });
         const intervalId = window.setInterval(() => publish(), 500);
 
-        const handleResize = () => publish();
+        let lastReportedDpr = window.devicePixelRatio || 1;
+        const handleResize = () => {
+            publish();
+            // Only report DPR when it actually changes (avoids unnecessary IPC round-trips).
+            const currentDpr = window.devicePixelRatio || 1;
+            if (currentDpr !== lastReportedDpr) {
+                lastReportedDpr = currentDpr;
+                window.electron?.reportDevicePixelRatio(currentDpr);
+            }
+        };
         window.addEventListener('resize', handleResize);
+        // Report once on mount in case the window is never resized before exporting.
+        window.electron?.reportDevicePixelRatio(lastReportedDpr);
 
         return () => {
             window.clearInterval(intervalId);
@@ -495,6 +510,11 @@ export const useElectronPlaybackBridge = ({
                 return;
             }
 
+            if (command.type === 'cycle-loop-mode') {
+                if (!isNowPlayingControlDisabledRef.current) onRemoteCycleLoopMode?.();
+                return;
+            }
+
             if (isNowPlayingControlDisabledRef.current || !taskbarHasTrackRef.current) {
                 return;
             }
@@ -551,7 +571,7 @@ export const useElectronPlaybackBridge = ({
 
         return window.electron.onRemoteControlCommand(runCommand);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activePlaybackContext, audioRef, canLikeCurrentSong, currentTime, duration, isNowPlayingControlDisabledRef, mediaSessionNextRef, mediaSessionPauseRef, mediaSessionPlayRef, mediaSessionPrevRef, onRemoteExportCommand, onRemotePlayerChromeVisibilityModeCycle, setShowTransparentWindowBorder, syncStageLyricsClock, taskbarHasTrackRef, taskbarPlayerStateRef, onLike]);
+    }, [activePlaybackContext, audioRef, canLikeCurrentSong, currentTime, duration, isNowPlayingControlDisabledRef, mediaSessionNextRef, mediaSessionPauseRef, mediaSessionPlayRef, mediaSessionPrevRef, onRemoteCycleLoopMode, onRemoteExportCommand, onRemotePlayerChromeVisibilityModeCycle, setShowTransparentWindowBorder, syncStageLyricsClock, taskbarHasTrackRef, taskbarPlayerStateRef, onLike]);
 
     useEffect(() => {
         if (!window.electron?.onStagePlayerControlRequest) {

@@ -78,6 +78,7 @@ declare global {
     | { type: 'previous' }
     | { type: 'next' }
     | { type: 'seek'; time: number }
+    | { type: 'cycle-loop-mode' }
     | { type: 'resize-main-window'; width: number; height: number }
     | { type: 'set-main-window-border-visible'; visible: boolean }
     | { type: 'set-main-window-click-through'; enabled: boolean }
@@ -139,8 +140,11 @@ declare global {
     currentTime: number;
     duration: number;
     playerState: string;
+    loopMode: 'off' | 'all' | 'one';
     canGoPrevious: boolean;
     canGoNext: boolean;
+    prevTrackTitle: string | null;
+    nextTrackTitle: string | null;
     controlsDisabled: boolean;
     isStageActive: boolean;
     transparentModeEnabled: boolean;
@@ -583,8 +587,10 @@ declare global {
         extension?: 'mp4' | 'webm',
         displayName?: string,
       ) => Promise<ElectronSaveDialogResult>;
+      reportDevicePixelRatio: (ratio: number) => Promise<void>;
       getMainWindowCaptureSource: () => Promise<ElectronWindowCaptureSource | null>;
-      prepareVideoExportWindow: (size: { width: number; height: number }) => Promise<boolean>;
+      // Returns `false` when the resize could not be prepared, otherwise the resolved DPR.
+      prepareVideoExportWindow: (size: { width: number; height: number }) => Promise<false | { success: boolean; dpr: number }>;
       restoreVideoExportWindow: () => Promise<boolean>;
       writeVideoExportFile: (filePath: string, data: ArrayBuffer) => Promise<boolean>;
       getStageStatus: () => Promise<StageStatus>;

@@ -89,6 +89,31 @@ if (process.platform === 'linux') {
   }
 }
 
+// Chromium starts the video capture service to enumerate video inputs whenever the renderer calls
+// enumerateDevices() -- which the playback settings panel must do to list audio outputs -- and does
+// not release it afterwards (crbug 377749384), leaving a utility process and an OS privacy
+// indicator behind. This feature adds an idle timer that shuts the video source provider down about
+// a minute after the last use.
+//
+// The flag alone is inert: Chromium only re-checks whether the provider is still needed when a
+// device-change subscription is dropped, and enumerating never schedules that check. The renderer
+// therefore subscribes to `devicechange` while the device picker is open and unsubscribes when it
+// closes, purely to trigger the timer -- see src/hooks/useAudioOutputDevices.ts. Removing that
+// subscription re-pins the capture service for the lifetime of the process.
+function appendChromiumFeature(featureName) {
+  // base::CommandLine keeps one value per switch, so a plain appendSwitch would drop features the
+  // user passed on the command line, or any appended earlier here.
+  const enabledFeatures = app.commandLine.getSwitchValue('enable-features');
+  app.commandLine.appendSwitch(
+    'enable-features',
+    enabledFeatures ? `${enabledFeatures},${featureName}` : featureName,
+  );
+}
+
+if (process.platform === 'win32' || process.platform === 'darwin') {
+  appendChromiumFeature('ReleaseVideoSourceProviderIfNotInUse');
+}
+
 // macOS: GPU 加速优化，解决 Intel Mac + AMD 独显在 Retina 屏幕下的渲染卡顿
 if (process.platform === 'darwin' && process.arch === 'x64') {
   app.commandLine.appendSwitch('ignore-gpu-blocklist');
@@ -287,6 +312,8 @@ const mainLocale = {
     trayShowHide: '显示/隐藏主窗口',
     trayOpenRemote: '打开 遥控窗口',
     trayToggleClickThrough: '切换点击穿透',
+    trayOverlayPreset: '锁定 + 透明 + 置顶',
+    trayResetWindow: '重置窗口',
     trayHideTaskbar: '隐藏任务栏图标',
     trayQuit: '退出',
     dialogImportTitle: '无法导入此文件夹',
@@ -298,6 +325,8 @@ const mainLocale = {
     trayShowHide: 'Show/Hide Main Window',
     trayOpenRemote: 'Open Remote Window',
     trayToggleClickThrough: 'Toggle Click-Through',
+    trayOverlayPreset: 'Locked + Transparent + On Top',
+    trayResetWindow: 'Reset Window',
     trayHideTaskbar: 'Hide Taskbar Icon',
     trayQuit: 'Quit',
     dialogImportTitle: 'Cannot import this folder',
@@ -309,6 +338,8 @@ const mainLocale = {
     trayShowHide: 'Tampilkan/Sembunyikan Jendela Utama',
     trayOpenRemote: 'Buka Jendela Remote',
     trayToggleClickThrough: 'Alihkan Click-Through',
+    trayOverlayPreset: 'Terkunci + Transparan + Di Atas',
+    trayResetWindow: 'Atur Ulang Jendela',
     trayHideTaskbar: 'Sembunyikan Ikon Taskbar',
     trayQuit: 'Keluar',
     dialogImportTitle: 'Tidak dapat mengimpor folder ini',
@@ -996,6 +1027,40 @@ function setMainWindowAlwaysOnTop(enabled) {
   return mainWindowAlwaysOnTop;
 }
 
+// Tray preset: click-through, a transparent window, and always-on-top switched as one thing, for
+// the overlay setup where Folia sits on top of whatever else is on screen and takes no clicks.
+function isMainWindowOverlayPresetActive() {
+  return mainWindowClickThroughEnabled
+    && mainWindowAlwaysOnTop
+    && isTransparentPlayerBackgroundEnabled();
+}
+
+// Order is forced by the transparency switch: it rebuilds the main window, and the rebuild reads
+// mainWindowAlwaysOnTop for the new window's options while resetting click-through to off. So the
+// on-top flag has to be set before the rebuild and click-through re-applied after it.
+async function setMainWindowOverlayPreset(enabled) {
+  const nextEnabled = Boolean(enabled);
+  // Click-through is refused in X11 wallpaper mode, which would leave the preset half applied.
+  if (nextEnabled && isX11WallpaperMode()) {
+    return false;
+  }
+
+  setMainWindowAlwaysOnTop(nextEnabled);
+  if (isTransparentPlayerBackgroundEnabled() !== nextEnabled) {
+    await setMainWindowTransparentModeFromRemote(nextEnabled);
+  }
+  // setMainWindowClickThroughEnabled refreshes the tray itself, so the checkbox is already correct.
+  setMainWindowClickThroughEnabled(nextEnabled);
+  return nextEnabled;
+}
+
+// Tray escape hatch: drops the window back to opaque, clickable and not on top, whichever of those
+// modes happen to be on. The overlay preset already applies exactly that combination in the order
+// the transparency rebuild requires, and it skips the rebuild when the window is opaque already.
+async function resetMainWindowPresentation() {
+  return setMainWindowOverlayPreset(false);
+}
+
 function refreshTrayMenu() {
   if (!appTray) {
     return;
@@ -1023,7 +1088,22 @@ function refreshTrayMenu() {
       click: () => {
         setMainWindowClickThroughEnabled(!mainWindowClickThroughEnabled);
       },
+    }, {
+      label: locale.trayOverlayPreset,
+      type: 'checkbox',
+      checked: isMainWindowOverlayPresetActive(),
+      enabled: Boolean(mainWindow && !mainWindow.isDestroyed()),
+      click: () => {
+        void setMainWindowOverlayPreset(!isMainWindowOverlayPresetActive());
+      },
     }] : []),
+    {
+      label: locale.trayResetWindow,
+      enabled: Boolean(mainWindow && !mainWindow.isDestroyed()),
+      click: () => {
+        void resetMainWindowPresentation();
+      },
+    },
     {
       label: locale.trayHideTaskbar,
       type: 'checkbox',
@@ -3179,6 +3259,141 @@ function sanitizeVideoExportSize(size) {
   };
 }
 
+// Resize the main window so that its *bounds* (the area the capture source
+// actually records, which includes Windows' frameless-window DWM decoration)
+// yields a content physical size >= the requested export size. We use a snap
+// search around the ideal CSS size to find a value where getContentSize() * dpr
+// exceeds the preset (overshoot), then the frontend Canvas crops the excess
+// pixels with integer symmetric cropping — no scaling, no black bars.
+// After sizing, we enter a decoration-removal loop: if DWM adds asymmetric
+// borders that shift content off-center inside bounds, we grow the window by
+// 1px on each edge and retry until bounds == content (decoration eliminated).
+function fitMainWindowBoundsToExportSize(exportSize) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return null;
+  }
+
+  const exportDpr = mainWindow.__dpr && mainWindow.__dpr > 0 ? mainWindow.__dpr : 1;
+
+  // Size the window so its *bounds* (the area the capture source actually records —
+  // a whole-window capture includes the ~1px frameless-window DWM decoration) matches
+  // the preset in physical pixels exactly. If the bounds physical size differed from the
+  // preset, the capture source aspect ratio would mismatch the output and crop-and-scale
+  // would add black bars. We set the rounded CSS content size, then read back the bounds
+  // physical size and nudge by +/-1 CSS px until it equals the preset. The content area
+  // ends up ~decoration px smaller than the preset (a minor crop), but the recording has
+  // no scaling black bars and the output is exactly the requested resolution.
+  let cssWidth = Math.max(1, Math.round(exportSize.width / exportDpr));
+  let cssHeight = Math.max(1, Math.round(exportSize.height / exportDpr));
+  mainWindow.setContentSize(cssWidth, cssHeight, false);
+
+  // Keep the window on whichever display it already lives on instead of forcing
+  // it to the primary display. getDisplayMatching resolves the display containing
+  // the window's current bounds, so the export stays put (no surprise jump).
+  const workArea = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
+  // Center the window and snap its position to a whole physical pixel. Under a non-100% DPI
+  // the CSS position times dpr can land on a half-pixel, and Chromium's crop-and-scale
+  // capture derives its crop rect from the window's physical bounds; a half-pixel offset
+  // between the reported bounds and where the window is actually composited can leave a
+  // 1-2px black strip. Aligning the physical position to whole pixels removes that drift.
+  const center = (w, h) => {
+    let x = Math.round(workArea.x + (workArea.width - w) / 2);
+    let y = Math.round(workArea.y + (workArea.height - h) / 2);
+    if (!Number.isInteger(x * exportDpr)) x += (x % 2 === 0) ? 1 : -1;
+    if (!Number.isInteger(y * exportDpr)) y += (y % 2 === 0) ? 1 : -1;
+    mainWindow.setBounds({ x, y, width: w, height: h }, false);
+    return mainWindow.getBounds();
+  };
+
+  // The capture source is the *whole window* (bounds), which on a frameless transparent
+  // window on Windows carries a 1px DWM border (decoLeftCss = 1) and, after DWM snaps the
+  // window to its grid, can gain/lose a pixel on resize. So neither the rounded CSS size
+  // nor a single +/-1 nudge reliably yields boundsPhys == preset. We search a small CSS
+  // window around the rounded size, CENTERING THE WINDOW EACH TIME so we read the *final*
+  // boundsPhys (including DWM snapping), and pick the value whose *content* physical
+  // size (from getContentSize, NOT bounds) is >= preset + margin (so the Canvas crop
+  // can work in pure-crop mode without upscaling).
+  // Minimum overshoot (in device pixels) to guarantee pure-crop mode without upscaling.
+  // This is a hard lower bound, NOT a per-resolution guess: regardless of DPR or DWM decoration
+  // size, snap() only ensures contentPhys >= preset + CROP_MARGIN_PX, and the actual crop amount is
+  // always derived from (video.videoWidth/videoHeight - preset) at runtime. Do not retune per resolution.
+  const CROP_MARGIN_PX = 6; // Minimum extra pixels for pure crop (no scaling)
+  const snap = (base, axis, otherCss) => {
+    base = Math.max(1, base);
+    let bestCss = base;
+    let bestErr = Infinity;
+    let bestContentPhys = 0;
+    // Target contentPhys must be >= preset + margin to allow pure crop in Canvas
+    const target = (axis === 'w' ? exportSize.width : exportSize.height) + CROP_MARGIN_PX;
+    const presetVal = axis === 'w' ? exportSize.width : exportSize.height;
+    let probe = '';
+    // Fixed search radius around the rounded CSS size. This is an exploration window to absorb
+    // 1px DWM-snap jitter, NOT a hand-tuned value for a specific resolution: we always test every
+    // delta and pick the one whose measured contentPhys is closest to (preset + CROP_MARGIN_PX).
+    for (let delta = -3; delta <= 5; delta++) { // Extended search range for overshoot
+      const tryCss = base + delta;
+      if (tryCss < 1) continue;
+      if (axis === 'w') mainWindow.setContentSize(tryCss, otherCss, false);
+      else mainWindow.setContentSize(otherCss, tryCss, false);
+      const b = center(axis === 'w' ? tryCss : otherCss, axis === 'w' ? otherCss : tryCss);
+      // Compare CONTENT physical size (not bounds) because the Canvas crop operates
+      // on the content area after excluding DWM decoration pixels.
+      const [cW, cH] = mainWindow.getContentSize();
+      const cPhys = axis === 'w'
+        ? Math.round(cW * exportDpr)
+        : Math.round(cH * exportDpr);
+      const bPhys = axis === 'w'
+        ? Math.round(b.width * exportDpr)
+        : Math.round(b.height * exportDpr);
+      probe += ` [${axis} tryCss=${tryCss} boundsPhys=${bPhys} contentPhys=${cPhys}]`;
+      const err = Math.abs(cPhys - target);
+      if (cPhys >= presetVal && err <= bestErr) {
+        // Accept any value where contentPhys >= preset, prefer closest to target (=preset+margin)
+        if (err < bestErr || (err === bestErr && cPhys > bestContentPhys)) {
+          bestErr = err; bestCss = tryCss; bestContentPhys = cPhys;
+        }
+      } else if (bestContentPhys < presetVal && cPhys > bestContentPhys) {
+        // Fallback: if no valid overshoot found yet, keep the largest undershoot
+        bestErr = err; bestCss = tryCss; bestContentPhys = cPhys;
+      }
+    }
+    return bestCss;
+  };
+
+  cssWidth = snap(cssWidth, 'w', cssHeight);
+  let bounds = center(cssWidth, cssHeight);
+
+  // A frameless transparent window on Windows keeps a 1px DWM border (decoLeftCss = 1,
+  // sometimes also bottom). That border makes the captured whole-window source wider/taller
+  // than the content, so its aspect ratio can never exactly equal the preset and crop-and-scale
+  // pads black bars. Force the content rect to fill the whole window so bounds == content;
+  // retry a few times because a single setContentBounds can race with DWM. Once the decoration
+  // is gone, boundsPhys equals contentPhys and the source aspect ratio matches the preset.
+  for (let i = 0; i < 4; i++) {
+    mainWindow.setContentBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height });
+    const cb = mainWindow.getContentBounds();
+    const b2 = mainWindow.getBounds();
+    const dl = cb.x - b2.x, dt = cb.y - b2.y;
+    const dr = (b2.x + b2.width) - (cb.x + cb.width);
+    const db = (b2.y + b2.height) - (cb.y + cb.height);
+    if (dl === 0 && dt === 0 && dr === 0 && db === 0) break;
+    bounds = b2;
+  }
+  bounds = mainWindow.getBounds();
+
+  // With the decoration removed, bounds == content, so snapping the height now targets the
+  // real content height: a CSS height of round(600/1.5)=400 yields boundsPhys==600 exactly.
+  cssHeight = snap(cssHeight, 'h', cssWidth);
+  bounds = center(cssWidth, cssHeight);
+
+  let boundsPhysW = Math.round(bounds.width * exportDpr);
+  let boundsPhysH = Math.round(bounds.height * exportDpr);
+
+  return {
+    exportDpr, cssWidth, cssHeight, bounds, boundsPhysW, boundsPhysH,
+  };
+}
+
 async function getMainWindowCaptureSource() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return null;
@@ -3487,6 +3702,16 @@ app.on('before-quit', () => {
 // Settings Management IPC
 ipcMain.handle('window-set-native-theme', (event, themeSource) => {
   nativeTheme.themeSource = themeSource;
+});
+
+// Cache the main window's device pixel ratio so export window sizing can be
+// expressed in physical pixels (see resize-main-window / video-export-prepare-window).
+ipcMain.handle('report-device-pixel-ratio', (event, ratio) => {
+  if (!isTrustedMainWindowContents(event.sender)) return;
+  const dpr = Number(ratio);
+  if (Number.isFinite(dpr) && dpr > 0) {
+    mainWindow.__dpr = dpr;
+  }
 });
 
 ipcMain.handle('get-settings', () => {
@@ -4244,8 +4469,10 @@ ipcMain.handle('remote-control-send-command', (event, command) => {
       mainWindow.unmaximize();
     }
 
-    mainWindow.setContentSize(exportSize.width, exportSize.height, true);
-    mainWindow.center();
+    const fit = fitMainWindowBoundsToExportSize(exportSize);
+    if (!fit) {
+      return false;
+    }
     mainWindow.focus();
     return true;
   }
@@ -4323,10 +4550,16 @@ ipcMain.handle('video-export-prepare-window', (event, size) => {
     mainWindow.unmaximize();
   }
 
-  mainWindow.setContentSize(exportSize.width, exportSize.height, true);
-  mainWindow.center();
+  const fit = fitMainWindowBoundsToExportSize(exportSize);
+  if (!fit) {
+    return false;
+  }
+  const { exportDpr } = fit;
   mainWindow.focus();
-  return true;
+  return {
+    success: true,
+    dpr: exportDpr,
+  };
 });
 
 ipcMain.handle('video-export-restore-window', (event) => {

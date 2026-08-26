@@ -59,6 +59,7 @@ import { useElectronVideoExportController } from './hooks/useElectronVideoExport
 import { useElectronWindowPlaybackHandoff } from './hooks/useElectronWindowPlaybackHandoff';
 import { useMediaSessionBridge } from './hooks/useMediaSessionBridge';
 import { usePlayerChromeAutoHide } from './hooks/usePlayerChromeAutoHide';
+import { useClickThroughPointerLock } from './hooks/useClickThroughPointerLock';
 import { usePlaybackAudioBridge } from './hooks/usePlaybackAudioBridge';
 import { usePlaybackInteractionBridge } from './hooks/usePlaybackInteractionBridge';
 import { usePersonalFmModeController } from './hooks/usePersonalFmModeController';
@@ -471,6 +472,7 @@ export default function App() {
     } = usePlayerChromeAutoHide({
         autoHidePlayerChrome,
         initialPlayerChromeHidden: isPlayerChromeHidden,
+        suppressPointerReveal: isMainWindowClickThroughEnabled,
         setIsPlayerChromeHidden,
         setAutoHidePlayerChromePreference: handleToggleAutoHidePlayerChrome,
         onModeChange: showPlayerChromeVisibilityModeStatus,
@@ -1565,6 +1567,7 @@ export default function App() {
         lyricTimelineOffsetMs: effectiveLyricTimelineOffsetMs,
         onRemoteExportCommand: handleExportCommand,
         onExternalPlayRequest: handleStageExternalPlayRequest,
+        onRemoteCycleLoopMode: handleToggleLoopMode,
         isLiked: (() => {
             if (!currentSong) return false;
             if (isLocalPlaybackSong(currentSong)) {
@@ -1796,6 +1799,8 @@ export default function App() {
             syncToggleHotspot(false);
         };
     }, [isElectronWindow, isMainWindowClickThroughEnabled]);
+
+    useClickThroughPointerLock(isMainWindowClickThroughEnabled);
     const {
         isPlayerView,
         shouldPauseVisualizerBackground,
