@@ -75,15 +75,69 @@ async function getOnlineSongAudioBlob(song: { id: string }): Promise<ArrayBuffer
 // ---------------------------------------------------------------------------
 
 /**
- * Check if the Whisper alignment system is available.
+ * Detailed availability status for the Whisper alignment system.
+ */
+export type WhisperAvailabilityDetail = {
+    /** Whether the full Whisper pipeline is ready to use. */
+    available: boolean;
+    /** Whisper-cli is installed and discoverable. */
+    cliInstalled: boolean;
+    /** At least one model has been downloaded. */
+    hasModel: boolean;
+    /** The list of available models (may be empty). */
+    models: WhisperAlignModel[];
+    /** Human-readable reason when not available (for error messages). */
+    reason?: string;
+};
+
+/**
+ * Check if the Whisper alignment system is available (simple boolean).
  */
 export async function isWhisperAlignAvailable(): Promise<boolean> {
-    if (!window.electron?.whisperAlignGetStatus) return false;
+    const detail = await getWhisperAvailabilityDetail();
+    return detail.available;
+}
+
+/**
+ * Get detailed availability information for the Whisper alignment system.
+ */
+export async function getWhisperAvailabilityDetail(): Promise<WhisperAvailabilityDetail> {
+    if (!window.electron?.whisperAlignGetStatus) {
+        return {
+            available: false,
+            cliInstalled: false,
+            hasModel: false,
+            models: [],
+            reason: 'not-electron',
+        };
+    }
     try {
         const status = await window.electron.whisperAlignGetStatus();
-        return status.available || status.models?.some((m: any) => m.downloaded) || false;
+        const cliInstalled = status.available;
+        const hasModel = status.models?.some((m: any) => m.downloaded) || false;
+        let reason: string | undefined;
+        if (!cliInstalled && !hasModel) {
+            reason = 'no-cli-no-model';
+        } else if (!cliInstalled) {
+            reason = 'no-cli';
+        } else if (!hasModel) {
+            reason = 'no-model';
+        }
+        return {
+            available: cliInstalled && hasModel,
+            cliInstalled,
+            hasModel,
+            models: status.models || [],
+            reason,
+        };
     } catch {
-        return false;
+        return {
+            available: false,
+            cliInstalled: false,
+            hasModel: false,
+            models: [],
+            reason: 'error',
+        };
     }
 }
 
@@ -155,10 +209,12 @@ export async function alignLyricsWithWhisper(
     }
 
     // Check if Whisper is available
-    const available = await isWhisperAlignAvailable();
-    if (!available) {
-        console.warn('[WhisperAlign] Whisper alignment is not available.');
-        return null;
+    const availability = await getWhisperAvailabilityDetail();
+    if (!availability.available) {
+        // Return a structured error so the UI can show a helpful message
+        const error = new Error(getWhisperUnavailableMessage(availability.reason));
+        (error as any).whisperReason = availability.reason;
+        throw error;
     }
 
     // Create job
@@ -315,4 +371,24 @@ export async function autoAlignIfNeeded(
     // Run alignment
     const result = await alignLyricsWithWhisper(song, lyrics, options);
     return result || lyrics;
+}
+
+/**
+ * Get a human-readable i18n key for the Whisper unavailable reason.
+ */
+export function getWhisperUnavailableMessage(reason?: string): string {
+    switch (reason) {
+        case 'not-electron':
+            return 'options.whisperAlignNotElectron';
+        case 'no-cli-no-model':
+            return 'options.whisperAlignNotInstalled';
+        case 'no-cli':
+            return 'options.whisperAlignCliNotFound';
+        case 'no-model':
+            return 'options.whisperAlignNoModel';
+        case 'error':
+            return 'options.whisperAlignCheckError';
+        default:
+            return 'options.whisperAlignNoAudio';
+    }
 }

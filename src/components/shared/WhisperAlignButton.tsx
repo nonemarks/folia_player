@@ -1,11 +1,11 @@
 // src/components/shared/WhisperAlignButton.tsx
 // Manual trigger button for Whisper word-level lyric alignment.
 
-import React, { useState, useCallback } from 'react';
-import { Sparkles, Loader2, Check, AlertCircle } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Sparkles, Loader2, Check, AlertCircle, Download, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { LyricData, LocalSong, SongResult } from '../../types';
-import { alignLyricsWithWhisper, cancelAlignment, type WhisperAlignJob } from '../../services/whisperAlignService';
+import { alignLyricsWithWhisper, cancelAlignment, getWhisperAvailabilityDetail, isWhisperAlignAvailable, downloadWhisperModel, type WhisperAlignJob, type WhisperAvailabilityDetail } from '../../services/whisperAlignService';
 import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
 
 interface WhisperAlignButtonProps {
@@ -28,6 +28,12 @@ const WhisperAlignButton: React.FC<WhisperAlignButtonProps> = ({
     const [status, setStatus] = useState<AlignStatus>('idle');
     const [progressLabel, setProgressLabel] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
+    const [whisperAvailability, setWhisperAvailability] = useState<WhisperAvailabilityDetail | null>(null);
+
+    // Check Whisper availability on mount
+    useEffect(() => {
+        getWhisperAvailabilityDetail().then(setWhisperAvailability);
+    }, []);
 
     // Don't show button if lyrics already have word-level timing
     const isWordByWord = !!lyrics?.isWordByWord;
@@ -82,8 +88,14 @@ const WhisperAlignButton: React.FC<WhisperAlignButtonProps> = ({
             }
         } catch (err) {
             setStatus('error');
-            setErrorMsg(err instanceof Error ? err.message : String(err));
-            setTimeout(() => { setStatus('idle'); setErrorMsg(''); }, 4000);
+            const whisperReason = (err as any)?.whisperReason;
+            if (whisperReason) {
+                // Use the i18n key from the error
+                setErrorMsg(t((err as Error).message));
+            } else {
+                setErrorMsg(err instanceof Error ? err.message : String(err));
+            }
+            setTimeout(() => { setStatus('idle'); setErrorMsg(''); }, 6000);
         }
     }, [song, lyrics, onLyricsUpdated, status, t]);
 
