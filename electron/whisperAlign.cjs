@@ -6,7 +6,9 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { app } = require('electron');
+const https = require('https');
+const http = require('http');
+const { app, net } = require('electron');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -14,6 +16,7 @@ const { app } = require('electron');
 
 const WHISPER_MODELS_DIR_NAME = 'whisper-models';
 const WHISPER_CACHE_DIR_NAME = 'whisper-cache';
+const WHISPER_CLI_DIR_NAME = 'whisper-cli';
 
 // Supported models (tiny through medium for reasonable performance)
 const SUPPORTED_MODELS = {
@@ -56,14 +59,20 @@ function initWhisperAlign(options = {}) {
 
 /**
  * Find the whisper-cli executable.
- * Checks: bundled binary, PATH, common install locations.
+ * Checks: installed by app, bundled binary, PATH.
  */
 function findWhisperCli() {
-    // 1. Bundled with the app (future: ship whisper.cpp binary)
-    const bundledPath = path.join(process.resourcesPath || '', 'whisper-cli', getWhisperCliName());
+    const cliName = getWhisperCliName();
+
+    // 1. Installed by the app (userData directory)
+    const installedPath = path.join(app.getPath('userData'), WHISPER_CLI_DIR_NAME, cliName);
+    if (fs.existsSync(installedPath)) return installedPath;
+
+    // 2. Bundled with the app (future: ship whisper.cpp binary)
+    const bundledPath = path.join(process.resourcesPath || '', 'whisper-cli', cliName);
     if (fs.existsSync(bundledPath)) return bundledPath;
 
-    // 2. In PATH
+    // 3. In PATH
     // We'll rely on spawn without full path to find it
     return null; // Will use PATH lookup via shell
 }
@@ -126,52 +135,15 @@ async function downloadModel(modelName, onProgress) {
         return { success: true, path: modelFile, message: 'Model already downloaded' };
     }
 
-    // Use the whisper.cpp download script if available
-    // Otherwise, provide download URL for manual download
     const downloadUrl = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${modelName}.bin`;
 
     if (onProgress) {
         onProgress({ status: 'downloading', model: modelName, url: downloadUrl, progress: 0 });
     }
 
-    // Try to download using fetch (Node.js 18+)
+    // Download using https module with mirror fallback
     try {
-        const response = await fetch(downloadUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to download model: HTTP ${response.status}`);
-        }
-
-        const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-        let downloadedBytes = 0;
-
-        const fileStream = fs.createWriteStream(modelFile);
-        const reader = response.body.getReader();
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            fileStream.write(value);
-            downloadedBytes += value.length;
-
-            if (onProgress && contentLength > 0) {
-                onProgress({
-                    status: 'downloading',
-                    model: modelName,
-                    url: downloadUrl,
-                    progress: Math.round((downloadedBytes / contentLength) * 100),
-                    downloadedBytes,
-                    totalBytes: contentLength,
-                });
-            }
-        }
-
-        fileStream.end();
-
-        await new Promise((resolve, reject) => {
-            fileStream.on('finish', resolve);
-            fileStream.on('error', reject);
-        });
+        await downloadModelWithMirrors(downloadUrl, modelFile, modelName, onProgress);
 
         if (onProgress) {
             onProgress({ status: 'downloaded', model: modelName, path: modelFile, progress: 100 });
@@ -185,6 +157,93 @@ async function downloadModel(modelName, onProgress) {
         }
         throw new Error(`Failed to download model ${modelName}: ${err.message}. You can manually download from ${downloadUrl} and place it at ${modelFile}`);
     }
+}
+
+/**
+ * Download a model file with mirror fallback for HuggingFace URLs.
+ */
+async function downloadModelWithMirrors(downloadUrl, destPath, modelName, onProgress) {
+    // HuggingFace mirrors for users in China
+    const hfMirrors = [
+        '',  // direct
+        'https://hf-mirror.com',
+    ];
+
+    for (const mirror of hfMirrors) {
+        const url = mirror
+            ? downloadUrl.replace('https://huggingface.co', mirror)
+            : downloadUrl;
+
+        try {
+            await new Promise((resolve, reject) => {
+                const urlObj = new URL(url);
+                const mod = urlObj.protocol === 'https:' ? https : http;
+
+                const req = mod.get(url, {
+                    headers: { 'User-Agent': 'Folia-Whisper-Installer' },
+                    timeout: 120000,
+                }, (res) => {
+                    // Follow redirects
+                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                        const redirectUrl = new URL(res.headers.location, url).toString();
+                        downloadModelWithMirrors(redirectUrl, destPath, modelName, onProgress).then(resolve, reject);
+                        return;
+                    }
+
+                    if (res.statusCode !== 200) {
+                        res.resume();
+                        reject(new Error(`HTTP ${res.statusCode}`));
+                        return;
+                    }
+
+                    const contentLength = parseInt(res.headers['content-length'] || '0', 10);
+                    let downloadedBytes = 0;
+                    const fileStream = fs.createWriteStream(destPath);
+
+                    res.on('data', (chunk) => {
+                        fileStream.write(chunk);
+                        downloadedBytes += chunk.length;
+
+                        if (onProgress && contentLength > 0) {
+                            onProgress({
+                                status: 'downloading',
+                                model: modelName,
+                                url: downloadUrl,
+                                progress: Math.round((downloadedBytes / contentLength) * 100),
+                                downloadedBytes,
+                                totalBytes: contentLength,
+                            });
+                        }
+                    });
+
+                    res.on('end', () => {
+                        fileStream.end();
+                        fileStream.on('finish', resolve);
+                        fileStream.on('error', reject);
+                    });
+
+                    res.on('error', (err) => {
+                        try { fileStream.close(); } catch {}
+                        reject(err);
+                    });
+                });
+
+                req.on('error', reject);
+                req.on('timeout', () => {
+                    req.destroy();
+                    reject(new Error('Download timeout'));
+                });
+            });
+
+            return; // success
+        } catch (err) {
+            console.warn(`[WhisperInstaller] Model download failed from ${mirror || 'direct'}: ${err.message}`);
+            try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch {}
+            // Try next mirror
+        }
+    }
+
+    throw new Error('Unable to download model from any source. Please check your network connection.');
 }
 
 // ---------------------------------------------------------------------------
@@ -235,17 +294,16 @@ async function transcribeAudio(audioPath, options = {}) {
         '-m', modelPath,
         '-f', audioPath,
         '--output-json',
-        '--no-timestamps',  // We'll parse word timestamps ourselves
     ];
 
     if (wordTimestamps) {
-        args.push('--max-len', '1');  // Force word-level output
+        args.push('--word-timestamps', '1');  // Enable word-level timestamps in JSON output
     }
 
+    // Language: omit -l flag for auto-detection (whisper.cpp default)
+    // Only pass -l when a specific language is provided
     if (language) {
         args.push('-l', language);
-    } else {
-        args.push('-l', 'auto');
     }
 
     // Add threads based on CPU count
@@ -266,6 +324,8 @@ async function transcribeAudio(audioPath, options = {}) {
     if (onProgress) onProgress({ status: 'transcribing', model, progress: 0 });
 
     // Spawn whisper-cli process
+    console.log(`[WhisperAlign] Spawning: ${cliPath} ${args.join(' ')}`);
+
     return new Promise((resolve, reject) => {
         const proc = spawn(cliPath, args, {
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -291,9 +351,12 @@ async function transcribeAudio(audioPath, options = {}) {
         });
 
         proc.stderr.on('data', (data) => {
-            stderr += data.toString();
+            const text = data.toString();
+            stderr += text;
+            // Log stderr for debugging (whisper.cpp prints progress/info to stderr)
+            console.log(`[WhisperAlign] stderr: ${text.trim()}`);
             // Also check stderr for progress
-            const progressMatch = stderr.match(/progress:\s*(\d+)%/i);
+            const progressMatch = text.match(/progress:\s*(\d+)%/i);
             if (progressMatch) {
                 const p = parseInt(progressMatch[1], 10);
                 if (p > lastProgress) {
@@ -317,39 +380,46 @@ async function transcribeAudio(audioPath, options = {}) {
             }
 
             if (code !== 0) {
-                reject(new Error(`Whisper transcription failed (exit code ${code}): ${stderr}`));
+                console.error(`[WhisperAlign] Process exited with code ${code}. stderr: ${stderr}`);
+                reject(new Error(`Whisper transcription failed (exit code ${code}): ${stderr.slice(-500)}`));
                 return;
             }
 
             // Parse JSON output
             try {
                 if (!fs.existsSync(outputFile)) {
-                    reject(new Error('Whisper output file not found'));
+                    console.error(`[WhisperAlign] Output file not found: ${outputFile}`);
+                    reject(new Error(`Whisper output file not found at ${outputFile}. stderr: ${stderr.slice(-200)}`));
                     return;
                 }
 
-                const result = JSON.parse(fs.readFileSync(outputFile, 'utf-8'));
+                const rawResult = JSON.parse(fs.readFileSync(outputFile, 'utf-8'));
 
                 // Clean up temp file
                 try { fs.unlinkSync(outputFile); } catch {}
 
                 // Convert whisper.cpp JSON to our WhisperResult format
-                const whisperResult = parseWhisperCppOutput(result);
+                const whisperResult = parseWhisperCppOutput(rawResult);
+
+                console.log(`[WhisperAlign] Transcription complete: ${whisperResult.segments.length} segments, ` +
+                    `${whisperResult.segments.filter(s => s.words && s.words.length > 0).length} segments with word timing`);
 
                 if (onProgress) onProgress({ status: 'completed', model, progress: 100 });
 
                 resolve(whisperResult);
             } catch (err) {
+                console.error(`[WhisperAlign] Failed to parse output: ${err.message}`);
                 reject(new Error(`Failed to parse Whisper output: ${err.message}`));
             }
         });
 
         proc.on('error', (err) => {
             activeJobs.delete(jobId);
+            console.error(`[WhisperAlign] Process error: ${err.message}`);
             if (err.code === 'ENOENT') {
                 reject(new Error(
-                    `whisper-cli not found. Please install whisper.cpp and ensure '${cliName}' is in your PATH, ` +
-                    `or place it in the app's resources directory.`
+                    `whisper-cli not found at '${cliPath}'. Please install whisper.cpp and ensure '${cliName}' is in your PATH, ` +
+                    `or use the auto-install button in settings.`
                 ));
             } else {
                 reject(new Error(`Failed to start whisper-cli: ${err.message}`));
@@ -364,43 +434,70 @@ async function transcribeAudio(audioPath, options = {}) {
 function parseWhisperCppOutput(raw) {
     const segments = [];
 
-    // whisper.cpp output format:
-    // { "transcription": [ { "timestamps": { "from": "00:00:00.000", "to": "00:00:05.000" }, "offsets": { "from": 0, "to": 5000 }, "text": "...", "tokens": [ { "text": "...", "timestamps": { "from": ..., "to": ... } } ] } ] }
-    // Or the simpler format: { "systeminfo": {...}, "transcription": [...] }
+    // whisper.cpp --output-json --word-timestamps 1 format:
+    // { "systeminfo": {...}, "transcription": [ { "timestamps": { "from": "00:00:00.000", "to": "00:00:05.000" }, "offsets": { "from": 0, "to": 5000 }, "text": "...", "tokens": [ { "text": "...", "timestamps": { "from": 100, "to": 200 } } ] } ] }
+    // Note: offsets are in milliseconds; token timestamps are also in milliseconds.
 
     const transcription = raw.transcription || [];
 
     for (const seg of transcription) {
-        const segStart = (seg.offsets?.from ?? seg.timestamps?.from ?? 0) / 1000; // ms to s
-        const segEnd = (seg.offsets?.to ?? seg.timestamps?.to ?? 0) / 1000;
-        const text = seg.text || '';
+        // Segment timing: prefer offsets (ms integers) over timestamps (formatted strings)
+        let segStart = 0;
+        let segEnd = 0;
 
+        if (seg.offsets) {
+            segStart = (typeof seg.offsets.from === 'number' ? seg.offsets.from : 0);
+            segEnd = (typeof seg.offsets.to === 'number' ? seg.offsets.to : 0);
+        } else if (seg.timestamps) {
+            // Fallback: parse "HH:MM:SS.mmm" format
+            segStart = parseTimestamp(seg.timestamps.from);
+            segEnd = parseTimestamp(seg.timestamps.to);
+        }
+
+        const text = seg.text || '';
         const words = [];
 
         // Extract word-level tokens if available
         if (seg.tokens && Array.isArray(seg.tokens)) {
             for (const token of seg.tokens) {
                 if (token.timestamps) {
-                    const wordStart = (token.timestamps.from ?? 0) / 1000;
-                    const wordEnd = (token.timestamps.to ?? 0) / 1000;
-                    words.push({
-                        word: token.text || '',
-                        start: wordStart,
-                        end: wordEnd,
-                    });
+                    const wordStart = (typeof token.timestamps.from === 'number' ? token.timestamps.from : parseTimestamp(token.timestamps.from)) / 1000;
+                    const wordEnd = (typeof token.timestamps.to === 'number' ? token.timestamps.to : parseTimestamp(token.timestamps.to)) / 1000;
+                    const wordText = (token.text || '').trim();
+                    if (wordText) {
+                        words.push({
+                            word: wordText,
+                            start: wordStart,
+                            end: wordEnd,
+                        });
+                    }
                 }
             }
         }
 
         segments.push({
-            start: segStart,
-            end: segEnd,
+            start: segStart / 1000,
+            end: segEnd / 1000,
             text: text.trim(),
             words: words.length > 0 ? words : undefined,
         });
     }
 
     return { segments };
+}
+
+/**
+ * Parse a whisper.cpp timestamp string "HH:MM:SS.mmm" into milliseconds.
+ */
+function parseTimestamp(ts) {
+    if (typeof ts === 'number') return ts;
+    if (typeof ts !== 'string') return 0;
+    const parts = ts.split(':');
+    if (parts.length === 3) {
+        const [h, m, s] = parts;
+        return (parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + parseFloat(s)) * 1000;
+    }
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +581,403 @@ function cleanupAudioFile(audioPath) {
 }
 
 // ---------------------------------------------------------------------------
+// Auto-install whisper-cli
+// ---------------------------------------------------------------------------
+
+// GitHub mirror prefixes for users behind firewalls (tried in order)
+const GITHUB_MIRRORS = [
+    '',  // direct (no mirror)
+    'https://ghfast.top',
+    'https://gh-proxy.com',
+    'https://ghproxy.net',
+];
+
+/**
+ * Determine the platform-specific asset pattern and archive type for downloading whisper-cli.
+ */
+function getPlatformAssetInfo() {
+    const platform = process.platform;
+    const arch = process.arch;
+
+    if (platform === 'win32' && arch === 'x64') {
+        return { pattern: /whisper-bin-x64\.zip$/, type: 'zip' };
+    }
+    if (platform === 'win32' && arch === 'arm64') {
+        // No pre-built ARM64 Windows binary yet
+        return null;
+    }
+    if (platform === 'linux' && arch === 'x64') {
+        return { pattern: /whisper-bin-ubuntu-x64\.tar\.gz$/, type: 'tar.gz' };
+    }
+    if (platform === 'linux' && arch === 'arm64') {
+        return { pattern: /whisper-bin-ubuntu-arm64\.tar\.gz$/, type: 'tar.gz' };
+    }
+    // macOS: no pre-built CLI binary in releases; user needs Homebrew or build from source
+    return null;
+}
+
+/**
+ * Make an HTTP/HTTPS GET request and return the response body as a buffer.
+ * Supports redirect following and custom headers.
+ */
+function httpGet(url, options = {}) {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+        const mod = urlObj.protocol === 'https:' ? https : http;
+        const reqOptions = {
+            hostname: urlObj.hostname,
+            port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+            path: urlObj.pathname + urlObj.search,
+            method: 'GET',
+            headers: {
+                'User-Agent': 'Folia-Whisper-Installer',
+                ...options.headers,
+            },
+            timeout: options.timeout || 30000,
+        };
+
+        const req = mod.request(reqOptions, (res) => {
+            // Follow redirects (up to 5)
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                const redirectUrl = new URL(res.headers.location, url).toString();
+                return httpGet(redirectUrl, options).then(resolve, reject);
+            }
+
+            if (res.statusCode !== 200) {
+                res.resume(); // drain response
+                reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+                return;
+            }
+
+            const chunks = [];
+            res.on('data', (chunk) => chunks.push(chunk));
+            res.on('end', () => resolve(Buffer.concat(chunks)));
+            res.on('error', reject);
+        });
+
+        req.on('error', reject);
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error(`Request timeout for ${url}`));
+        });
+        req.end();
+    });
+}
+
+/**
+ * Apply a GitHub mirror prefix to a URL.
+ * For API URLs: mirror + '/' + original_url
+ * For download URLs: mirror + '/' + original_url
+ */
+function applyMirror(url, mirrorPrefix) {
+    if (!mirrorPrefix) return url;
+    return mirrorPrefix + '/' + url;
+}
+
+/**
+ * Fetch the latest release from the whisper.cpp GitHub repo.
+ * Tries direct connection first, then falls back to mirrors.
+ */
+async function fetchLatestWhisperRelease() {
+    const apiUrl = 'https://api.github.com/repos/ggerganov/whisper.cpp/releases/latest';
+
+    for (const mirror of GITHUB_MIRRORS) {
+        const url = applyMirror(apiUrl, mirror);
+        try {
+            const data = await httpGet(url, { timeout: 15000 });
+            return JSON.parse(data.toString('utf-8'));
+        } catch (err) {
+            console.warn(`[WhisperInstaller] Failed to fetch from ${url}: ${err.message}`);
+            // Try next mirror
+        }
+    }
+
+    throw new Error(
+        'Unable to connect to GitHub to fetch the latest whisper.cpp release. ' +
+        'Please check your network connection or try again later. ' +
+        'You can also manually download whisper-cli from https://github.com/ggerganov/whisper.cpp/releases'
+    );
+}
+
+/**
+ * Download a file from URL to a local path with progress reporting.
+ * Tries direct connection first, then falls back to mirrors.
+ */
+async function downloadFileToPath(downloadUrl, destPath, onProgress, mirrorPrefix = '') {
+    const url = applyMirror(downloadUrl, mirrorPrefix);
+
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+        const mod = urlObj.protocol === 'https:' ? https : http;
+
+        const req = mod.get(url, {
+            headers: { 'User-Agent': 'Folia-Whisper-Installer' },
+            timeout: 60000,
+        }, (res) => {
+            // Follow redirects (up to 5)
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                const redirectUrl = new URL(res.headers.location, url).toString();
+                return downloadFileToPath(redirectUrl, destPath, onProgress, '').then(resolve, reject);
+            }
+
+            if (res.statusCode !== 200) {
+                res.resume();
+                reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+                return;
+            }
+
+            const contentLength = parseInt(res.headers['content-length'] || '0', 10);
+            let downloadedBytes = 0;
+
+            const fileStream = fs.createWriteStream(destPath);
+
+            res.on('data', (chunk) => {
+                fileStream.write(chunk);
+                downloadedBytes += chunk.length;
+
+                if (onProgress && contentLength > 0) {
+                    onProgress(downloadedBytes / contentLength);
+                }
+            });
+
+            res.on('end', () => {
+                fileStream.end();
+                fileStream.on('finish', resolve);
+                fileStream.on('error', reject);
+            });
+
+            res.on('error', (err) => {
+                try { fileStream.close(); } catch {}
+                reject(err);
+            });
+        });
+
+        req.on('error', reject);
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error(`Download timeout for ${url}`));
+        });
+    });
+}
+
+/**
+ * Download a file with mirror fallback.
+ */
+async function downloadWithMirrors(downloadUrl, destPath, onProgress) {
+    for (const mirror of GITHUB_MIRRORS) {
+        try {
+            await downloadFileToPath(downloadUrl, destPath, onProgress, mirror);
+            return; // success
+        } catch (err) {
+            console.warn(`[WhisperInstaller] Download failed from mirror ${mirror || 'direct'}: ${err.message}`);
+            // Clean up partial file
+            try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch {}
+            // Try next mirror
+        }
+    }
+
+    throw new Error(
+        'Unable to download whisper-cli from any source. ' +
+        'Please check your network connection or download manually from ' +
+        'https://github.com/ggerganov/whisper.cpp/releases'
+    );
+}
+
+/**
+ * Extract a ZIP archive using system tools.
+ */
+async function extractZip(zipPath, destDir) {
+    if (process.platform === 'win32') {
+        // Use PowerShell Expand-Archive
+        return new Promise((resolve, reject) => {
+            const ps = spawn('powershell.exe', [
+                '-NoProfile', '-NonInteractive', '-Command',
+                `Expand-Archive -Path '${zipPath}' -DestinationPath '${destDir}' -Force`,
+            ], { stdio: 'pipe' });
+            let stderr = '';
+            ps.stderr.on('data', (data) => { stderr += data.toString(); });
+            ps.on('close', (code) => {
+                if (code === 0) resolve();
+                else reject(new Error(`PowerShell Expand-Archive failed (exit ${code}): ${stderr}`));
+            });
+            ps.on('error', reject);
+        });
+    }
+    // macOS / Linux: try unzip first, then python3
+    return new Promise((resolve, reject) => {
+        const proc = spawn('unzip', ['-o', zipPath, '-d', destDir], { stdio: 'pipe' });
+        proc.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`unzip failed with exit code ${code}`));
+        });
+        proc.on('error', reject);
+    });
+}
+
+/**
+ * Extract a tar.gz archive.
+ */
+async function extractTarGz(tarPath, destDir) {
+    return new Promise((resolve, reject) => {
+        const proc = spawn('tar', ['-xzf', tarPath, '-C', destDir], { stdio: 'pipe' });
+        proc.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`tar failed with exit code ${code}`));
+        });
+        proc.on('error', reject);
+    });
+}
+
+/**
+ * Recursively find a file by name in a directory tree.
+ */
+function findFileRecursive(dir, fileName) {
+    try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                const result = findFileRecursive(fullPath, fileName);
+                if (result) return result;
+            } else if (entry.name === fileName) {
+                return fullPath;
+            }
+        }
+    } catch {}
+    return null;
+}
+
+/**
+ * Auto-install whisper-cli from GitHub releases.
+ * Downloads the latest release binary for the current platform and installs it
+ * to the app's userData directory.
+ *
+ * @param {function} [onProgress] - Progress callback: { status, progress, ... }
+ * @returns {Promise<{ success: boolean, path: string, version: string }>}
+ */
+async function installWhisperCli(onProgress) {
+    const assetInfo = getPlatformAssetInfo();
+    if (!assetInfo) {
+        throw new Error(`Auto-install is not supported on ${process.platform}-${process.arch}. Please install whisper-cli manually.`);
+    }
+
+    // 1. Fetch latest release info
+    if (onProgress) onProgress({ status: 'fetching-release', progress: 0 });
+
+    const release = await fetchLatestWhisperRelease();
+    const asset = release.assets.find((a) => assetInfo.pattern.test(a.name));
+    if (!asset) {
+        throw new Error(
+            `No matching binary found for ${process.platform}-${process.arch} in whisper.cpp release ${release.tag_name}. ` +
+            `Available assets: ${release.assets.map((a) => a.name).join(', ')}`
+        );
+    }
+
+    // 2. Prepare directories
+    const cliDir = path.join(app.getPath('userData'), WHISPER_CLI_DIR_NAME);
+    if (!fs.existsSync(cliDir)) {
+        fs.mkdirSync(cliDir, { recursive: true });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `folia-whisper-install-${Date.now()}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const archiveExt = assetInfo.type === 'zip' ? '.zip' : '.tar.gz';
+    const archivePath = path.join(tmpDir, `whisper-cli${archiveExt}`);
+
+    try {
+        // 3. Download the archive
+        if (onProgress) onProgress({ status: 'downloading', progress: 5, url: asset.browser_download_url, size: asset.size });
+
+        await downloadWithMirrors(asset.browser_download_url, archivePath, (ratio) => {
+            if (onProgress) onProgress({ status: 'downloading', progress: 5 + Math.round(ratio * 65) });
+        });
+
+        // 4. Extract
+        if (onProgress) onProgress({ status: 'extracting', progress: 70 });
+
+        const extractDir = path.join(tmpDir, 'extracted');
+        fs.mkdirSync(extractDir, { recursive: true });
+
+        if (assetInfo.type === 'zip') {
+            await extractZip(archivePath, extractDir);
+        } else {
+            await extractTarGz(archivePath, extractDir);
+        }
+
+        // 5. Find the whisper-cli executable
+        const cliName = getWhisperCliName();
+        let cliSourcePath = findFileRecursive(extractDir, cliName);
+
+        // Fallback: older whisper.cpp versions named the binary 'main'
+        if (!cliSourcePath) {
+            const mainName = process.platform === 'win32' ? 'main.exe' : 'main';
+            cliSourcePath = findFileRecursive(extractDir, mainName);
+        }
+
+        if (!cliSourcePath) {
+            // List what we found for debugging
+            const foundFiles = [];
+            try {
+                const walkDir = (d, depth = 0) => {
+                    if (depth > 3) return;
+                    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+                        const p = path.join(d, entry.name);
+                        if (entry.isDirectory()) walkDir(p, depth + 1);
+                        else foundFiles.push(path.relative(extractDir, p));
+                    }
+                };
+                walkDir(extractDir);
+            } catch {}
+            throw new Error(
+                `Could not find ${cliName} in the downloaded archive. ` +
+                `Files found: ${foundFiles.slice(0, 20).join(', ')}`
+            );
+        }
+
+        // 6. Copy to target location
+        if (onProgress) onProgress({ status: 'installing', progress: 90 });
+
+        const targetPath = path.join(cliDir, cliName);
+
+        // Remove old files in the cli directory (clean upgrade)
+        for (const oldFile of fs.readdirSync(cliDir)) {
+            try { fs.unlinkSync(path.join(cliDir, oldFile)); } catch {}
+        }
+
+        fs.copyFileSync(cliSourcePath, targetPath);
+
+        // Copy required DLL/SO files alongside the executable
+        const sourceDir = path.dirname(cliSourcePath);
+        for (const file of fs.readdirSync(sourceDir)) {
+            const ext = path.extname(file).toLowerCase();
+            if (ext === '.dll' || ext === '.so' || ext === '.dylib') {
+                try {
+                    fs.copyFileSync(path.join(sourceDir, file), path.join(cliDir, file));
+                } catch {}
+            }
+        }
+
+        // Make executable on non-Windows
+        if (process.platform !== 'win32') {
+            try { fs.chmodSync(targetPath, 0o755); } catch {}
+        }
+
+        // 7. Update the global whisperCliPath
+        whisperCliPath = targetPath;
+
+        if (onProgress) onProgress({ status: 'installed', progress: 100, path: targetPath, version: release.tag_name });
+
+        return { success: true, path: targetPath, version: release.tag_name };
+    } finally {
+        // Clean up temp directory
+        try {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {}
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -498,5 +992,6 @@ module.exports = {
     isWhisperAvailable,
     prepareAudioFile,
     cleanupAudioFile,
+    installWhisperCli,
     SUPPORTED_MODELS,
 };

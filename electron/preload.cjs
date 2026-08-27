@@ -194,6 +194,7 @@ contextBridge.exposeInMainWorld('electron', {
     whisperAlignTranscribe: (audioPathOrOptions, options) => ipcRenderer.invoke('whisper-align-transcribe', audioPathOrOptions, options),
     whisperAlignCancel: (jobId) => ipcRenderer.invoke('whisper-align-cancel', jobId),
     whisperAlignPrepareAudio: (arrayBuffer, mimeType) => ipcRenderer.invoke('whisper-align-prepare-audio', arrayBuffer, mimeType),
+    whisperAlignInstallCli: () => ipcRenderer.invoke('whisper-align-install-cli'),
     onWhisperAlignProgress: (callback) => {
         const listener = (_event, progress) => callback(progress);
         ipcRenderer.on('whisper-align-progress', listener);
@@ -203,5 +204,10 @@ contextBridge.exposeInMainWorld('electron', {
         const listener = (_event, progress) => callback(progress);
         ipcRenderer.on('whisper-align-download-progress', listener);
         return () => ipcRenderer.removeListener('whisper-align-download-progress', listener);
+    },
+    onWhisperAlignInstallProgress: (callback) => {
+        const listener = (_event, progress) => callback(progress);
+        ipcRenderer.on('whisper-align-install-progress', listener);
+        return () => ipcRenderer.removeListener('whisper-align-install-progress', listener);
     },
 });

@@ -8,7 +8,7 @@ import { useAudioOutputDevices } from '../../../hooks/useAudioOutputDevices';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { LYRIC_MATCH_SOURCES } from '../../../utils/lyrics/lyricMatchSources';
 import { getLyricProviderPreferenceLabel } from '../../../utils/lyrics/lyricSourceLabels';
-import { getWhisperAvailabilityDetail, downloadWhisperModel, type WhisperAvailabilityDetail } from '../../../services/whisperAlignService';
+import { getWhisperAvailabilityDetail, downloadWhisperModel, installWhisperCli, type WhisperAvailabilityDetail } from '../../../services/whisperAlignService';
 
 // src/components/modal/settings/PlaybackSettingsSubview.tsx
 // Playback behavior and output-device settings extracted from the global settings modal.
@@ -477,10 +477,19 @@ type WhisperModelDownloadState = {
     error?: string;
 };
 
+type WhisperCliInstallState = {
+    status: 'idle' | 'installing' | 'done' | 'error';
+    progress: number;
+    step?: string;
+    error?: string;
+    version?: string;
+};
+
 const WhisperEnvCheck: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { t } = useTranslation();
     const [availability, setAvailability] = useState<WhisperAvailabilityDetail | null>(null);
     const [downloadStates, setDownloadStates] = useState<Record<string, WhisperModelDownloadState>>({});
+    const [cliInstallState, setCliInstallState] = useState<WhisperCliInstallState>({ status: 'idle', progress: 0 });
 
     useEffect(() => {
         getWhisperAvailabilityDetail().then(setAvailability);
@@ -489,6 +498,33 @@ const WhisperEnvCheck: React.FC<{ children: React.ReactNode }> = ({ children }) 
     const refreshAvailability = useCallback(() => {
         getWhisperAvailabilityDetail().then(setAvailability);
     }, []);
+
+    const handleInstallCli = useCallback(async () => {
+        setCliInstallState({ status: 'installing', progress: 0 });
+        try {
+            const result = await installWhisperCli((progress) => {
+                const stepLabel = progress.status === 'fetching-release' ? t('options.whisperAlignInstallFetching')
+                    : progress.status === 'downloading' ? t('options.whisperAlignInstallDownloading')
+                    : progress.status === 'extracting' ? t('options.whisperAlignInstallExtracting')
+                    : progress.status === 'installing' ? t('options.whisperAlignInstallInstalling')
+                    : progress.status;
+                setCliInstallState(prev => ({
+                    ...prev,
+                    progress: progress.progress ?? prev.progress,
+                    step: stepLabel,
+                }));
+            });
+            setCliInstallState({ status: 'done', progress: 100, version: result.version });
+            // Refresh availability after install
+            setTimeout(refreshAvailability, 500);
+        } catch (err) {
+            setCliInstallState({
+                status: 'error',
+                progress: 0,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }, [refreshAvailability, t]);
 
     const handleDownloadModel = useCallback(async (modelName: string) => {
         setDownloadStates(prev => ({
@@ -536,6 +572,11 @@ const WhisperEnvCheck: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
     const isElectron = typeof window !== 'undefined' && !!window.electron;
 
+    // Auto-install is supported on win32-x64 and linux-x64/arm64
+    const canAutoInstall = isElectron && (
+        (navigator.platform?.startsWith('Win') || navigator.platform?.startsWith('Linux'))
+    );
+
     return (
         <div className="border-t" style={{ borderColor: 'var(--border-primary, rgba(255,255,255,0.06))' }}>
             {/* Status warnings */}
@@ -556,7 +597,7 @@ const WhisperEnvCheck: React.FC<{ children: React.ReactNode }> = ({ children }) 
             )}
 
             {isElectron && !availability.cliInstalled && (
-                <div className="p-4 space-y-2">
+                <div className="p-4 space-y-3">
                     <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
                         <AlertCircle size={14} className="shrink-0 mt-0.5 text-amber-400" />
                         <div>
@@ -566,18 +607,84 @@ const WhisperEnvCheck: React.FC<{ children: React.ReactNode }> = ({ children }) 
                             <div className="opacity-60 mt-0.5">
                                 {t('options.whisperAlignCliNotFoundDesc')}
                             </div>
-                            <a
-                                href="https://github.com/ggerganov/whisper.cpp"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 mt-1 underline opacity-80 hover:opacity-100"
-                                style={{ color: 'var(--text-primary)' }}
-                            >
-                                <ExternalLink size={10} />
-                                whisper.cpp
-                            </a>
                         </div>
                     </div>
+
+                    {/* Auto-install button */}
+                    {canAutoInstall && (
+                        <div className="space-y-2">
+                            {cliInstallState.status === 'idle' && (
+                                <button
+                                    type="button"
+                                    onClick={handleInstallCli}
+                                    className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors"
+                                    style={{
+                                        borderColor: 'var(--accent-color, rgba(99, 102, 241, 0.5))',
+                                        backgroundColor: 'var(--accent-color, rgba(99, 102, 241, 0.1))',
+                                        color: 'var(--text-primary)',
+                                    }}
+                                >
+                                    <Download size={14} />
+                                    {t('options.whisperAlignAutoInstall')}
+                                </button>
+                            )}
+                            {cliInstallState.status === 'installing' && (
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-primary)' }}>
+                                        <Loader2 size={12} className="animate-spin" />
+                                        <span>{cliInstallState.step || t('options.whisperAlignInstallDownloading')}</span>
+                                        <span className="opacity-50">{cliInstallState.progress}%</span>
+                                    </div>
+                                    <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border-primary, rgba(255,255,255,0.06))' }}>
+                                        <div
+                                            className="h-full rounded-full transition-all duration-300"
+                                            style={{
+                                                width: `${cliInstallState.progress}%`,
+                                                backgroundColor: 'var(--accent-color, rgba(99, 102, 241, 0.8))',
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                            {cliInstallState.status === 'done' && (
+                                <div className="flex items-center gap-2 text-xs text-green-400">
+                                    <Check size={12} />
+                                    <span>{t('options.whisperAlignInstallDone')}</span>
+                                </div>
+                            )}
+                            {cliInstallState.status === 'error' && (
+                                <div className="space-y-2">
+                                    <div className="flex items-start gap-2 text-xs text-red-400">
+                                        <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                                        <span>{cliInstallState.error}</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleInstallCli}
+                                        className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors opacity-80 hover:opacity-100"
+                                        style={{ borderColor: 'rgba(248, 113, 113, 0.4)', color: 'var(--text-primary)' }}
+                                    >
+                                        <RefreshCw size={10} />
+                                        {t('options.whisperAlignInstallRetry')}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Manual install link for unsupported platforms */}
+                    {!canAutoInstall && (
+                        <a
+                            href="https://github.com/ggerganov/whisper.cpp"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs underline opacity-80 hover:opacity-100"
+                            style={{ color: 'var(--text-primary)' }}
+                        >
+                            <ExternalLink size={10} />
+                            whisper.cpp
+                        </a>
+                    )}
                 </div>
             )}
 

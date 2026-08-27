@@ -29,6 +29,7 @@ export type WhisperAlignProgressCallback = (job: WhisperAlignJob) => void;
 let activeJob: WhisperAlignJob | null = null;
 let progressUnsubscribe: (() => void) | null = null;
 let downloadProgressUnsubscribe: (() => void) | null = null;
+let installProgressUnsubscribe: (() => void) | null = null;
 
 // ---------------------------------------------------------------------------
 // Audio source helpers
@@ -173,6 +174,35 @@ export async function downloadWhisperModel(modelName: string, onProgress?: (prog
         if (downloadProgressUnsubscribe) {
             downloadProgressUnsubscribe();
             downloadProgressUnsubscribe = null;
+        }
+    }
+}
+
+/**
+ * Auto-install whisper-cli from GitHub releases.
+ * Downloads the latest pre-built binary for the current platform and installs
+ * it to the app's userData directory.
+ *
+ * @param onProgress - Progress callback: { status, progress, ... }
+ * @returns Installation result with path and version
+ */
+export async function installWhisperCli(onProgress?: (progress: any) => void): Promise<{ success: boolean; path: string; version: string }> {
+    if (!window.electron?.whisperAlignInstallCli) {
+        throw new Error('Whisper CLI installation is not available in this environment.');
+    }
+
+    // Subscribe to install progress
+    if (onProgress && window.electron.onWhisperAlignInstallProgress) {
+        installProgressUnsubscribe = window.electron.onWhisperAlignInstallProgress(onProgress);
+    }
+
+    try {
+        const result = await window.electron.whisperAlignInstallCli();
+        return result;
+    } finally {
+        if (installProgressUnsubscribe) {
+            installProgressUnsubscribe();
+            installProgressUnsubscribe = null;
         }
     }
 }

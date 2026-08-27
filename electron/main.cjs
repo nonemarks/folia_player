@@ -18,7 +18,7 @@ const { createLocalCoverAssetStore, getLocalCoverAssetDirectory } = require('./l
 const { getReleaseUrl, getUpdateProviderConfig, resolveReleaseChannel } = require('./updateChannels.cjs');
 const { resolveLinuxPasswordStore } = require('./linuxPasswordStore.cjs');
 const { sanitizeDualTheme: sanitizeGeneratedDualTheme } = require('../shared/themeSanitizer.cjs');
-const { initWhisperAlign, transcribeAudio, cancelTranscription, getWhisperStatus, getAvailableModels, downloadModel, prepareAudioFile, cleanupAudioFile } = require('./whisperAlign.cjs');
+const { initWhisperAlign, transcribeAudio, cancelTranscription, getWhisperStatus, getAvailableModels, downloadModel, prepareAudioFile, cleanupAudioFile, installWhisperCli } = require('./whisperAlign.cjs');
 const useLinuxGraphicsDebugMode = process.env.ELECTRON_LINUX_PACKAGED_GRAPHICS === 'true';
 const isAppImageRuntime =
   process.platform === 'linux' &&
@@ -4778,4 +4778,15 @@ ipcMain.handle('whisper-align-prepare-audio', async (event, arrayBuffer, mimeTyp
   const jobId = `whisper-audio-${Date.now()}`;
   const buffer = Buffer.from(arrayBuffer);
   return prepareAudioFile(buffer, mimeType || 'audio/wav', jobId);
+});
+
+ipcMain.handle('whisper-align-install-cli', async (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to install whisper-cli.');
+  }
+  return installWhisperCli((progress) => {
+    try {
+      event.sender.send('whisper-align-install-progress', progress);
+    } catch {}
+  });
 });

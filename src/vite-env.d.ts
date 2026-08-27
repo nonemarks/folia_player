@@ -673,8 +673,10 @@ declare global {
       whisperAlignTranscribe: (audioPathOrOptions: string, options?: WhisperAlignTranscribeOptions) => Promise<WhisperAlignResult>;
       whisperAlignCancel: (jobId: string) => Promise<boolean>;
       whisperAlignPrepareAudio: (arrayBuffer: ArrayBuffer, mimeType: string) => Promise<string>;
+      whisperAlignInstallCli: () => Promise<{ success: boolean; path: string; version: string }>;
       onWhisperAlignProgress: (callback: (progress: WhisperAlignProgress) => void) => () => void;
       onWhisperAlignDownloadProgress: (callback: (progress: WhisperAlignDownloadProgress) => void) => () => void;
+      onWhisperAlignInstallProgress: (callback: (progress: any) => void) => () => void;
     };
   }
 }
