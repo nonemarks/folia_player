@@ -66,6 +66,7 @@ import { usePersonalFmModeController } from './hooks/usePersonalFmModeController
 import { PERSONAL_FM_MODE_COMMAND_ID } from './components/command-palette/commands/fmModeCommand';
 import { usePlaybackUiEffects } from './hooks/usePlaybackUiEffects';
 import { useLibraryPlaybackController } from './hooks/useLibraryPlaybackController';
+import { useWhisperAutoAlign } from './hooks/useWhisperAutoAlign';
 import { useNavidromeScrobbleReporter } from './hooks/useNavidromeScrobbleReporter';
 import { usePlaybackQueueController } from './hooks/usePlaybackQueueController';
 import { usePlaybackTransportController } from './hooks/usePlaybackTransportController';
@@ -490,6 +491,20 @@ export default function App() {
         [lyricFilterPattern],
     );
     const lyricCurrentTime = useMotionValue(0);
+
+    // Auto-align lyrics with Whisper when word-level timing is missing
+    useWhisperAutoAlign(lyrics, currentSong, setLyrics);
+
+    // Force regenerate word-level lyrics using Whisper alignment
+    const whisperAlignEnabled = useSettingsUiStore(state => state.whisperAlignEnabled);
+    const handleForceRegenerateLyrics = useCallback(async () => {
+        if (!whisperAlignEnabled || !currentSong || !lyrics) return;
+        const { alignLyricsWithWhisper } = await import('./services/whisperAlignService');
+        const alignedLyrics = await alignLyricsWithWhisper(currentSong, lyrics);
+        if (alignedLyrics) {
+            setLyrics(alignedLyrics);
+        }
+    }, [whisperAlignEnabled, currentSong, lyrics, setLyrics]);
 
     // On song change, restore that song's remembered manual offset (0 when never adjusted, so a
     // fresh song behaves exactly like the old reset). currentSongFullRef.current holds the live song
@@ -2565,6 +2580,8 @@ export default function App() {
         generateAITheme: generateCurrentSongTheme,
         isGeneratingTheme,
         hasLyrics: !!lyrics,
+        lyrics,
+        onSetLyrics: setLyrics,
         canGenerateAITheme,
         theme,
         setTheme,
@@ -2879,6 +2896,8 @@ export default function App() {
         handleNextTrack,
         prevTrackLabel: t('ui.previousTrack'),
         nextTrackLabel: t('ui.nextTrack'),
+        onForceRegenerateLyrics: handleForceRegenerateLyrics,
+        whisperAlignEnabled,
     }), [
         activePlaybackContext,
         audioSrc,
@@ -2921,6 +2940,8 @@ export default function App() {
         theme,
         toggleLoop,
         togglePlay,
+        handleForceRegenerateLyrics,
+        whisperAlignEnabled,
     ]);
     const settingsDialog = useMemo(() => buildSettingsDialogModel({
         state: settingsModalState,

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
-import { Play, Pause, Repeat, Repeat1, RepeatOff,ChartBar } from 'lucide-react';
+import { Play, Pause, Repeat, Repeat1, RepeatOff, ChartBar, RefreshCw } from 'lucide-react';
 import { MotionValue } from 'framer-motion';
 import ProgressBar from './ProgressBar';
 import { PlayerState, LyricData, Theme } from '../types';
@@ -55,6 +55,8 @@ interface FloatingPlayerControlsProps {
     hideControlBar?: boolean;
     controlsDisabled?: boolean;
     trackNavigation?: TrackNavigation | null;
+    onForceRegenerateLyrics?: () => void;
+    whisperAlignEnabled?: boolean;
 }
 
 
@@ -82,6 +84,8 @@ const FloatingPlayerControls: React.FC<FloatingPlayerControlsProps> = ({
     hideControlBar = false,
     controlsDisabled = false,
     trackNavigation = null,
+    onForceRegenerateLyrics,
+    whisperAlignEnabled = false,
 }) => {
     const { t } = useTranslation();
     // const isDaylight = theme?.name === 'Daylight Default'; // Deprecated, passed as prop
@@ -209,6 +213,8 @@ const FloatingPlayerControls: React.FC<FloatingPlayerControlsProps> = ({
                                     isDaylight={isDaylight}
                                     controlsDisabled={controlsDisabled}
                                     trackNavigation={trackNavigation}
+                                    onForceRegenerateLyrics={onForceRegenerateLyrics}
+                                    whisperAlignEnabled={whisperAlignEnabled}
                                 />
                             ) : (
                                 <CollapsedView
@@ -268,6 +274,8 @@ interface ExpandedViewProps {
     isDaylight?: boolean;
     controlsDisabled?: boolean;
     trackNavigation?: TrackNavigation | null;
+    onForceRegenerateLyrics?: () => void;
+    whisperAlignEnabled?: boolean;
 }
 
 const ExpandedView: React.FC<ExpandedViewProps> = ({
@@ -290,6 +298,8 @@ const ExpandedView: React.FC<ExpandedViewProps> = ({
     isDaylight,
     controlsDisabled = false,
     trackNavigation = null,
+    onForceRegenerateLyrics,
+    whisperAlignEnabled = false,
 }) => {
     const { t } = useTranslation();
     return (
@@ -367,6 +377,21 @@ const ExpandedView: React.FC<ExpandedViewProps> = ({
                 >
                     <ChartBar size={20} className="sm:h-[18px] sm:w-[18px]" />
                 </button>
+
+                {whisperAlignEnabled && onForceRegenerateLyrics && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onForceRegenerateLyrics();
+                        }}
+                        disabled={controlsDisabled || !hasLyrics}
+                        className={`rounded-full p-2 transition-colors sm:justify-self-auto ${!hasLyrics || controlsDisabled ? 'cursor-not-allowed opacity-20' : `opacity-40 hover:opacity-100 ${isDaylight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}`}
+                        style={{ color: primaryColor }}
+                        title={t('ui.forceRegenerateLyrics')}
+                    >
+                        <RefreshCw size={18} className="sm:h-[18px] sm:w-[18px]" />
+                    </button>
+                )}
             </div>
 
             {/* Row 2: Current Time, Progress Bar, Duration */}

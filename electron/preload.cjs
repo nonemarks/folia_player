@@ -187,4 +187,21 @@ contextBridge.exposeInMainWorld('electron', {
         return () => ipcRenderer.removeListener('stage-player-queue-request', listener);
     },
     debugGetRenderedFonts: (selector) => ipcRenderer.invoke('debug-get-rendered-fonts', selector),
+    // Whisper word-level lyric alignment
+    whisperAlignGetStatus: () => ipcRenderer.invoke('whisper-align-get-status'),
+    whisperAlignGetModels: () => ipcRenderer.invoke('whisper-align-get-models'),
+    whisperAlignDownloadModel: (modelName) => ipcRenderer.invoke('whisper-align-download-model', modelName),
+    whisperAlignTranscribe: (audioPathOrOptions, options) => ipcRenderer.invoke('whisper-align-transcribe', audioPathOrOptions, options),
+    whisperAlignCancel: (jobId) => ipcRenderer.invoke('whisper-align-cancel', jobId),
+    whisperAlignPrepareAudio: (arrayBuffer, mimeType) => ipcRenderer.invoke('whisper-align-prepare-audio', arrayBuffer, mimeType),
+    onWhisperAlignProgress: (callback) => {
+        const listener = (_event, progress) => callback(progress);
+        ipcRenderer.on('whisper-align-progress', listener);
+        return () => ipcRenderer.removeListener('whisper-align-progress', listener);
+    },
+    onWhisperAlignDownloadProgress: (callback) => {
+        const listener = (_event, progress) => callback(progress);
+        ipcRenderer.on('whisper-align-download-progress', listener);
+        return () => ipcRenderer.removeListener('whisper-align-download-progress', listener);
+    },
 });

@@ -472,6 +472,66 @@ declare global {
     result?: unknown;
   }
 
+  // Whisper word-level lyric alignment types
+  interface WhisperAlignModel {
+    name: string;
+    size: string;
+    multilingual: boolean;
+    recommended: boolean;
+    downloaded: boolean;
+    path: string | null;
+  }
+
+  interface WhisperAlignStatus {
+    available: boolean;
+    modelsDirectory: string | null;
+    models: WhisperAlignModel[];
+    activeJobs: string[];
+  }
+
+  interface WhisperAlignTranscribeOptions {
+    model?: string;
+    language?: string;
+    jobId?: string;
+    modelPath?: string;
+  }
+
+  interface WhisperAlignWord {
+    word: string;
+    start: number;
+    end: number;
+  }
+
+  interface WhisperAlignSegment {
+    start: number;
+    end: number;
+    text: string;
+    words?: WhisperAlignWord[];
+  }
+
+  interface WhisperAlignResult {
+    segments: WhisperAlignSegment[];
+    cancelled?: boolean;
+  }
+
+  interface WhisperAlignProgress {
+    jobId: string;
+    status: string;
+    model?: string;
+    progress?: number;
+    audioPath?: string;
+  }
+
+  interface WhisperAlignDownloadProgress {
+    status: string;
+    model: string;
+    url?: string;
+    progress?: number;
+    downloadedBytes?: number;
+    totalBytes?: number;
+    path?: string;
+  }
+
   interface Window {
     electron?: {
       platform: string;
@@ -606,6 +666,15 @@ declare global {
       onStageExternalPlayRequest: (callback: (request: StageExternalPlayRequest) => void) => () => void;
       onStagePlayerControlRequest: (callback: (request: StagePlayerControlRequest) => void) => () => void;
       onStagePlayerQueueRequest: (callback: (request: StagePlayerQueueRequest) => void) => () => void;
+      // Whisper word-level lyric alignment
+      whisperAlignGetStatus: () => Promise<WhisperAlignStatus>;
+      whisperAlignGetModels: () => Promise<WhisperAlignModel[]>;
+      whisperAlignDownloadModel: (modelName: string) => Promise<{ success: boolean; path: string; message: string }>;
+      whisperAlignTranscribe: (audioPathOrOptions: string, options?: WhisperAlignTranscribeOptions) => Promise<WhisperAlignResult>;
+      whisperAlignCancel: (jobId: string) => Promise<boolean>;
+      whisperAlignPrepareAudio: (arrayBuffer: ArrayBuffer, mimeType: string) => Promise<string>;
+      onWhisperAlignProgress: (callback: (progress: WhisperAlignProgress) => void) => () => void;
+      onWhisperAlignDownloadProgress: (callback: (progress: WhisperAlignDownloadProgress) => void) => () => void;
     };
   }
 }

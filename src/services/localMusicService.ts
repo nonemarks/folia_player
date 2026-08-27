@@ -1268,6 +1268,8 @@ export async function matchLyrics(song: LocalSong): Promise<LyricData | null> {
                         preferredSource: shouldUseBestLyric ? settings.preferredAlternativeLyricSource : undefined,
                         metadataCandidate: matchContext.metadataCandidate,
                         exactMatchOnly: Boolean(matchContext.metadataCandidate && !shouldUseBestLyric),
+                        song,
+                        whisperAlignEnabled: settings.whisperAlignEnabled,
                     },
                 );
 

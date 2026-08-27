@@ -1323,6 +1323,8 @@ export type SettingsUiState = {
     staticMode: boolean;
     disableHomeDynamicBackground: boolean;
     autoUseBestLyric: boolean;
+    whisperAlignEnabled: boolean;
+    whisperAlignModel: string;
     preferredAlternativeLyricSource: LyricProviderSource;
     localLyricsPriority: LocalLyricsPriority;
     hidePlayerProgressBar: boolean;
@@ -1456,6 +1458,8 @@ export type SettingsUiState = {
     handleToggleStaticMode: (enable: boolean) => void;
     handleToggleDisableHomeDynamicBackground: (disable: boolean) => void;
     handleToggleAutoUseBestLyric: (enable: boolean) => void;
+    handleToggleWhisperAlign: (enable: boolean) => void;
+    handleSetWhisperAlignModel: (model: string) => void;
     handleSetPreferredAlternativeLyricSource: (source: LyricProviderSource) => void;
     handleSetLocalLyricsPriority: (priority: LocalLyricsPriority) => void;
     handleToggleHidePlayerProgressBar: (enable: boolean) => void;
@@ -1594,6 +1598,8 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
     staticMode: getStoredBoolean('static_mode', false),
     disableHomeDynamicBackground: readStoredDisableHomeDynamicBackground(),
     autoUseBestLyric: getStoredBoolean('auto_use_best_lyric', true),
+    whisperAlignEnabled: getStoredBoolean('whisper_align_enabled', false),
+    whisperAlignModel: getStoredString('whisper_align_model', 'base'),
     preferredAlternativeLyricSource: readStoredPreferredAlternativeLyricSource(),
     localLyricsPriority: readStoredLocalLyricsPriority(),
     hidePlayerProgressBar: getStoredBoolean('hide_player_progress_bar', false),
@@ -1825,6 +1831,20 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
             type: 'info',
             text: i18n.t('notifications.' + (enable ? 'autoBestLyricOn' : 'autoBestLyricOff')),
         });
+    },
+    handleToggleWhisperAlign: (enable) => {
+        setStoredBoolean('whisper_align_enabled', enable);
+        set({ whisperAlignEnabled: enable });
+        notify(get, {
+            type: 'info',
+            text: i18n.t('notifications.' + (enable ? 'whisperAlignOn' : 'whisperAlignOff')),
+        });
+    },
+    handleSetWhisperAlignModel: (model) => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('whisper_align_model', model);
+        }
+        set({ whisperAlignModel: model });
     },
     handleSetPreferredAlternativeLyricSource: (source) => {
         if (typeof window !== 'undefined') {

@@ -1,4 +1,4 @@
-import { LyricData, LyricProviderSource, SongResult } from '../../types';
+import { LyricData, LyricProviderSource, SongResult, LocalSong } from '../../types';
 import { getOnlineMusicProvider } from '../../services/onlineMusic/providerRegistry';
 import type { OnlineProviderId, ProviderLyricsResult } from '../../types/onlineMusic';
 import { applyNeteaseChorusByTime } from './chorusEffects';
@@ -10,6 +10,7 @@ import { calculateMatchScoreDetails } from './matchScore';
 import { buildLyricSearchQuery } from './searchQuery';
 import { buildLyricSourceOrder } from './sourcePriority';
 import { resolveProviderLyricsChorus } from './chorusResolver';
+import { alignLyricsWithWhisper, shouldAlignLyrics as whisperShouldAlignLyrics } from '../../services/whisperAlignService';
 
 // src/utils/lyrics/autoMatchBestLyric.ts
 // Utility module for automatically matching the best word-by-word lyrics across multiple sources.
@@ -50,6 +51,10 @@ export interface AutoMatchBestLyricOptions {
         isPureMusic?: boolean;
         chorusRanges?: NeteaseChorusRange[];
     };
+    /** Song info for Whisper alignment (needs audio access). */
+    song?: LocalSong | SongResult | { id: string | number; title?: string; name?: string; filePath?: string };
+    /** Whether Whisper alignment is enabled in settings. */
+    whisperAlignEnabled?: boolean;
 }
 
 export type AutoMatchBestLyricMatch = {
@@ -193,6 +198,9 @@ export async function autoMatchBestLyric(
     let neteaseCandidateSongs: SongResult[] | null = null;
     let qqBestCandidate: SongResult | null | undefined;
     let kugouBestCandidate: SongResult | null | undefined;
+
+    // Track the best line-level lyrics found so far (for Whisper alignment)
+    let bestLineLevelLyrics: { lyrics: LyricData; source: LyricProviderSource; id: number | string; song: SongResult; qqMid?: string; kgHash?: string } | null = null;
 
     const searchOrder = options.exactMatchOnly && options.metadataCandidate
         ? [options.metadataCandidate.source]
@@ -432,6 +440,10 @@ export async function autoMatchBestLyric(
                             song,
                         };
                     }
+                    // Track line-level lyrics for potential Whisper alignment
+                    if (processed.lyrics && !processed.lyrics.isWordByWord && !bestLineLevelLyrics) {
+                        bestLineLevelLyrics = { lyrics: processed.lyrics, source: 'netease', id: song.id, song };
+                    }
                 }
             } catch (error) {
                 console.error(`[autoMatchBestLyric] NetEase search/fetch failed:`, error);
@@ -489,6 +501,10 @@ export async function autoMatchBestLyric(
                             song,
                         };
                     }
+                    // Track line-level lyrics for potential Whisper alignment
+                    if (parsedLyrics && !parsedLyrics.isWordByWord && !bestLineLevelLyrics) {
+                        bestLineLevelLyrics = { lyrics: parsedLyrics, source: 'qq', id: song.id, song, qqMid: song.qqMid };
+                    }
                 }
             } catch (error) {
                 console.error(`[autoMatchBestLyric] QQ search/fetch failed:`, error);
@@ -517,9 +533,45 @@ export async function autoMatchBestLyric(
                             song,
                         };
                     }
+                    // Track line-level lyrics for potential Whisper alignment
+                    if (processed?.lyrics && !processed.lyrics.isWordByWord && !bestLineLevelLyrics) {
+                        bestLineLevelLyrics = { lyrics: processed.lyrics, source: 'kugou', id: song.id, song, kgHash: song.kgHash };
+                    }
                 }
             } catch (error) {
                 console.error(`[autoMatchBestLyric] Kugou search/fetch failed:`, error);
+            }
+        } else if (searchSource === 'whisper') {
+            // 4. Whisper AI alignment — uses line-level lyrics found by previous sources
+            if (!options.whisperAlignEnabled || !options.song) {
+                console.log('[autoMatchBestLyric] Skipping Whisper alignment (disabled or no song info).');
+                continue;
+            }
+            if (!bestLineLevelLyrics) {
+                console.log('[autoMatchBestLyric] Skipping Whisper alignment because no line-level lyrics were found by previous sources.');
+                continue;
+            }
+            if (!whisperShouldAlignLyrics(bestLineLevelLyrics.lyrics)) {
+                console.log('[autoMatchBestLyric] Skipping Whisper alignment because lyrics already have word-level timing.');
+                continue;
+            }
+            try {
+                console.log(`[autoMatchBestLyric] Attempting Whisper alignment on ${bestLineLevelLyrics.source} lyrics...`);
+                const alignedLyrics = await alignLyricsWithWhisper(options.song, bestLineLevelLyrics.lyrics);
+                if (alignedLyrics && alignedLyrics.isWordByWord) {
+                    console.log('[autoMatchBestLyric] Whisper alignment succeeded! Returning word-by-word lyrics.');
+                    return {
+                        lyrics: alignedLyrics,
+                        source: 'whisper',
+                        id: bestLineLevelLyrics.id,
+                        song: bestLineLevelLyrics.song,
+                        ...(bestLineLevelLyrics.qqMid ? { qqMid: bestLineLevelLyrics.qqMid } : {}),
+                        ...(bestLineLevelLyrics.kgHash ? { kgHash: bestLineLevelLyrics.kgHash } : {}),
+                    };
+                }
+                console.log('[autoMatchBestLyric] Whisper alignment did not produce word-by-word lyrics. Continuing.');
+            } catch (error) {
+                console.error('[autoMatchBestLyric] Whisper alignment failed:', error);
             }
         }
     }

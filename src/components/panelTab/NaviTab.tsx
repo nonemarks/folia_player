@@ -1,16 +1,20 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ReplayGainMode, SongResult } from '../../types';
+import type { LyricData } from '../../types';
 import { RefreshCw, FileText, Cloud } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import LyricTimelineOffsetControl from './LyricTimelineOffsetControl';
 import { getLyricProviderLabel } from '../../utils/lyrics/lyricSourceLabels';
 import { resolveNavidromePlaybackCarrier } from '../../utils/appPlaybackGuards';
 import ReplayGainControl from './ReplayGainControl';
+import WhisperAlignButton from '../shared/WhisperAlignButton';
 
 interface NaviTabProps {
     currentSong: SongResult;
     hasLyrics: boolean;
+    lyrics: LyricData | null;
+    onSetLyrics: (lyrics: LyricData | null) => void;
     onMatchOnline: () => void;
     lyricTimelineOffsetMs: number;
     onLyricTimelineOffsetChange: (offsetMs: number) => void;
@@ -22,6 +26,8 @@ interface NaviTabProps {
 const NaviTab: React.FC<NaviTabProps> = ({
     currentSong,
     hasLyrics,
+    lyrics,
+    onSetLyrics,
     onMatchOnline,
     lyricTimelineOffsetMs,
     onLyricTimelineOffsetChange,
@@ -100,6 +106,12 @@ const NaviTab: React.FC<NaviTabProps> = ({
                         <RefreshCw size={12} />
                         {t('localMusic.matchOnline')}
                     </button>
+                    <WhisperAlignButton
+                        song={currentSong}
+                        lyrics={lyrics}
+                        onLyricsUpdated={onSetLyrics}
+                        isDaylight={isDaylight}
+                    />
                 </div>
 
                 {/* Status Indicator */}

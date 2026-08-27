@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { UnifiedSong, ReplayGainMode } from '../../types';
+import { UnifiedSong, ReplayGainMode, LyricData } from '../../types';
 import { FileAudio, RefreshCw, FileText, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import LyricTimelineOffsetControl from './LyricTimelineOffsetControl';
@@ -9,6 +9,7 @@ import { getLocalSongs } from '../../services/db';
 import type { LocalSong } from '../../types';
 import { isLocalPlaybackSong } from '../../utils/appPlaybackGuards';
 import ReplayGainControl from './ReplayGainControl';
+import WhisperAlignButton from '../shared/WhisperAlignButton';
 
 interface LocalTabProps {
     currentSong: UnifiedSong;
@@ -20,6 +21,8 @@ interface LocalTabProps {
     lyricTimelineOffsetMs: number;
     onLyricTimelineOffsetChange: (offsetMs: number) => void;
     isDaylight: boolean;
+    lyrics: LyricData | null;
+    onSetLyrics: (lyrics: LyricData | null) => void;
 }
 
 const formatBytes = (bytes: number) => {
@@ -39,7 +42,9 @@ const LocalTab: React.FC<LocalTabProps> = ({
     onChangeReplayGainMode,
     lyricTimelineOffsetMs,
     onLyricTimelineOffsetChange,
-    isDaylight
+    isDaylight,
+    lyrics,
+    onSetLyrics
 }) => {
     const { t } = useTranslation();
     const lrcInputRef = useRef<HTMLInputElement>(null);
@@ -216,6 +221,12 @@ const LocalTab: React.FC<LocalTabProps> = ({
                             <RefreshCw size={12} />
                             {t('localMusic.matchOnline')}
                         </button>
+                        <WhisperAlignButton
+                            song={currentSong as unknown as LocalSong}
+                            lyrics={lyrics}
+                            onLyricsUpdated={onSetLyrics}
+                            isDaylight={isDaylight}
+                        />
                     </div>
                 </div>
 

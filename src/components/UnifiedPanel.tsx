@@ -2,7 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, Settings2, X, Disc, SlidersHorizontal, ListMusic, User as UserIcon, Home as HomeIcon, FileAudio, FileText, Radio, Cloud, Star, Command, ChevronLeft, MirrorRectangular } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Album, Artist, SongResult, Theme, PlayerState, ReplayGainMode, LocalPlaylist, ThemeMode, VisualizerMode } from '../types';
+import { Album, Artist, SongResult, Theme, PlayerState, ReplayGainMode, LocalPlaylist, ThemeMode, VisualizerMode, LyricData } from '../types';
 import type { ProviderCollection, ProviderUser } from '../types/onlineMusic';
 import CoverTab from './panelTab/CoverTab';
 import ControlsTab from './panelTab/ControlsTab';
@@ -44,6 +44,8 @@ type UnifiedPanelPlaybackProps = {
     onGenerateAITheme: () => void;
     isGeneratingTheme: boolean;
     hasLyrics: boolean;
+    lyrics: LyricData | null;
+    onSetLyrics: (lyrics: LyricData | null) => void;
     canGenerateAITheme: boolean;
     theme: Theme;
     onThemeChange: (theme: Theme) => void;
@@ -166,6 +168,8 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
         onGenerateAITheme,
         isGeneratingTheme,
         hasLyrics,
+        lyrics,
+        onSetLyrics,
         canGenerateAITheme,
         theme,
         onThemeChange,
@@ -982,12 +986,16 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                                             lyricTimelineOffsetMs={lyricTimelineOffsetMs}
                                             onLyricTimelineOffsetChange={onLyricTimelineOffsetChange}
                                             isDaylight={isDaylight}
+                                            lyrics={lyrics}
+                                            onSetLyrics={onSetLyrics}
                                         />
                                     )}
                                     {currentTab === 'navi' && isNavidrome && (
                                         <NaviTab
                                             currentSong={currentSong}
                                             hasLyrics={hasLyrics}
+                                            lyrics={lyrics}
+                                            onSetLyrics={onSetLyrics}
                                             onMatchOnline={onMatchOnline}
                                             lyricTimelineOffsetMs={lyricTimelineOffsetMs}
                                             onLyricTimelineOffsetChange={onLyricTimelineOffsetChange}
@@ -1009,6 +1017,8 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                                             replayGainMode={replayGainMode}
                                             onChangeReplayGainMode={onChangeReplayGainMode}
                                             isDaylight={isDaylight}
+                                            lyrics={lyrics}
+                                            onSetLyrics={onSetLyrics}
                                         />
                                     )}
                                 </div>

@@ -527,6 +527,7 @@ export default {
     "pausePreview": "Jeda pratinjau",
     "enterThemeName": "Masukkan nama tema...",
     "viewLyricsTimeline": "Lihat Timeline Lirik",
+    "forceRegenerateLyrics": "Regenerasi Lirik Tingkat Kata",
     "trashDislike": "Buang / Tidak Suka"
   },
   "panel": {
@@ -779,7 +780,8 @@ export default {
     "netease": "NetEase Cloud Music",
     "qq": "QQ Music",
     "kugou": "Kugou Music",
-    "amll": "AMLLDB"
+    "amll": "AMLLDB",
+    "whisper": "Whisper AI"
   },
   "globalLyricOffset": {
     "title": "Offset Waktu Global",

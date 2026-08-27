@@ -18,6 +18,7 @@ const { createLocalCoverAssetStore, getLocalCoverAssetDirectory } = require('./l
 const { getReleaseUrl, getUpdateProviderConfig, resolveReleaseChannel } = require('./updateChannels.cjs');
 const { resolveLinuxPasswordStore } = require('./linuxPasswordStore.cjs');
 const { sanitizeDualTheme: sanitizeGeneratedDualTheme } = require('../shared/themeSanitizer.cjs');
+const { initWhisperAlign, transcribeAudio, cancelTranscription, getWhisperStatus, getAvailableModels, downloadModel, prepareAudioFile, cleanupAudioFile } = require('./whisperAlign.cjs');
 const useLinuxGraphicsDebugMode = process.env.ELECTRON_LINUX_PACKAGED_GRAPHICS === 'true';
 const isAppImageRuntime =
   process.platform === 'linux' &&
@@ -898,6 +899,9 @@ const localCoverAssetStore = createLocalCoverAssetStore({
     return { data: resized.toJPEG(84), mimeType: 'image/jpeg' };
   },
 });
+
+// Initialize Whisper alignment module
+initWhisperAlign();
 
 function getAudioCacheBaseName(cacheKey) {
   return crypto.createHash('sha256').update(cacheKey).digest('hex');
@@ -4695,4 +4699,83 @@ ipcMain.handle('generate-theme', async (event, lyricsText, options = {}) => {
     console.error(e);
     throw new Error(e instanceof Error ? e.message : String(e));
   }
+});
+
+// ---------------------------------------------------------------------------
+// Whisper word-level lyric alignment IPC handlers
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('whisper-align-get-status', async (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to access whisper status.');
+  }
+  return getWhisperStatus();
+});
+
+ipcMain.handle('whisper-align-get-models', async (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to access whisper models.');
+  }
+  return getAvailableModels();
+});
+
+ipcMain.handle('whisper-align-download-model', async (event, modelName) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to download whisper model.');
+  }
+  if (typeof modelName !== 'string' || !modelName) {
+    throw new Error('Missing model name.');
+  }
+  return downloadModel(modelName, (progress) => {
+    try {
+      event.sender.send('whisper-align-download-progress', progress);
+    } catch {}
+  });
+});
+
+ipcMain.handle('whisper-align-transcribe', async (event, audioPathOrOptions, options = {}) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to run whisper transcription.');
+  }
+
+  const jobId = options.jobId || `whisper-${Date.now()}`;
+  const model = store.get('WHISPER_MODEL') || 'base';
+  const language = store.get('WHISPER_LANGUAGE') || undefined;
+
+  try {
+    const result = await transcribeAudio(audioPathOrOptions, {
+      model,
+      language,
+      wordTimestamps: true,
+      jobId,
+      onProgress: (progress) => {
+        try {
+          event.sender.send('whisper-align-progress', { jobId, ...progress });
+        } catch {}
+      },
+      ...options,
+    });
+    return result;
+  } catch (e) {
+    if (e.message?.includes('cancelled')) {
+      return { cancelled: true };
+    }
+    throw e;
+  }
+});
+
+ipcMain.handle('whisper-align-cancel', async (event, jobId) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to cancel whisper job.');
+  }
+  return cancelTranscription(jobId);
+});
+
+ipcMain.handle('whisper-align-prepare-audio', async (event, arrayBuffer, mimeType) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to prepare audio for whisper.');
+  }
+  const jobId = `whisper-audio-${Date.now()}`;
+  const buffer = Buffer.from(arrayBuffer);
+  return prepareAudioFile(buffer, mimeType || 'audio/wav', jobId);
 });

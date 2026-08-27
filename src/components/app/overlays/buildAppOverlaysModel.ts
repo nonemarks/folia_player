@@ -65,6 +65,8 @@ type BuildAppOverlaysModelParams = {
     handleNextTrack: () => void;
     prevTrackLabel: string;
     nextTrackLabel: string;
+    onForceRegenerateLyrics?: () => void;
+    whisperAlignEnabled?: boolean;
 };
 
 // Builds the full overlay model, including detail overlays and floating playback controls.
@@ -113,6 +115,8 @@ export const buildAppOverlaysModel = ({
     handleNextTrack,
     prevTrackLabel,
     nextTrackLabel,
+    onForceRegenerateLyrics,
+    whisperAlignEnabled,
 }: BuildAppOverlaysModelParams): AppOverlaysModel => ({
     searchOverlay: currentView === 'home'
         ? {
@@ -195,6 +199,8 @@ export const buildAppOverlaysModel = ({
                     nextLabel: nextTrackLabel,
                 };
             })(),
+            onForceRegenerateLyrics,
+            whisperAlignEnabled,
         }
         : null,
 });

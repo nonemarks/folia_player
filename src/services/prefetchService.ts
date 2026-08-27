@@ -220,6 +220,8 @@ const prefetchSong = async (
                         const bestMatch = await autoMatchBestLyric(song.name, artistName, metadata.durationMs, {
                             album: metadata.album?.name,
                             preferredSource: settings.preferredAlternativeLyricSource,
+                            song,
+                            whisperAlignEnabled: settings.whisperAlignEnabled,
                             ...(sourceRef.providerId === 'netease' || sourceRef.providerId === 'kugou' || sourceRef.providerId === 'qq'
                                 ? { providerCandidate: {
                                     providerId: sourceRef.providerId as 'netease' | 'kugou' | 'qq',

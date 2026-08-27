@@ -734,6 +734,8 @@ export function useLibraryPlaybackController({
                         const bestMatch = await autoMatchBestLyric(navidromeSong.name, artistName, navidromeMetadata.durationMs, {
                             album: albumName,
                             preferredSource: settings.preferredAlternativeLyricSource,
+                            song: navidromeSong,
+                            whisperAlignEnabled: settings.whisperAlignEnabled,
                         });
                         if (bestMatch?.isPureMusic) {
                             isAutoMatched = true;
@@ -1197,6 +1199,8 @@ export function useLibraryPlaybackController({
                     album: matchContext.album,
                     preferredSource: settings.preferredAlternativeLyricSource,
                     metadataCandidate: matchContext.metadataCandidate,
+                    song: localData,
+                    whisperAlignEnabled: settings.whisperAlignEnabled,
                 });
 
                 if (!bestMatch) {
@@ -1242,6 +1246,8 @@ export function useLibraryPlaybackController({
                 const bestMatch = await autoMatchBestLyric(navidromeSong.name, artistName, navidromeMetadata.durationMs, {
                     album: albumName,
                     preferredSource: settings.preferredAlternativeLyricSource,
+                    song: navidromeSong,
+                    whisperAlignEnabled: settings.whisperAlignEnabled,
                 });
 
                 if (!bestMatch) {
@@ -1291,6 +1297,8 @@ export function useLibraryPlaybackController({
             const bestMatch = await autoMatchBestLyric(currentSong.name, artistName, currentSongMetadata.durationMs, {
                 album: albumName,
                 preferredSource: settings.preferredAlternativeLyricSource,
+                song: currentSong,
+                whisperAlignEnabled: settings.whisperAlignEnabled,
                 providerCandidate: sourceRef.kind === 'online'
                     && (sourceRef.providerId === 'netease' || sourceRef.providerId === 'kugou')
                     ? { providerId: sourceRef.providerId as 'netease' | 'kugou', song: currentSong, lyricsResult: ownLyricsResult }

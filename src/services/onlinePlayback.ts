@@ -172,6 +172,8 @@ export async function loadOnlineSongLyrics(
             const bestMatch = await autoMatchBestLyric(song.name, artistName, metadata.durationMs, {
                 album: metadata.album?.name,
                 preferredSource: settings.preferredAlternativeLyricSource,
+                song,
+                whisperAlignEnabled: settings.whisperAlignEnabled,
                 providerCandidate: song.sourceRef?.kind === 'online'
                     && (song.sourceRef.providerId === 'netease' || song.sourceRef.providerId === 'kugou' || song.sourceRef.providerId === 'qq')
                     ? {

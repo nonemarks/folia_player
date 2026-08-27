@@ -24,9 +24,9 @@ export type LyricMatchFetchResult = {
     matchedLyricsProviderPlatform?: AmllDbPlatform;
 };
 
-export const LYRIC_MATCH_SOURCES: readonly LyricProviderSource[] = ['netease', 'amll', 'qq', 'kugou'];
+export const LYRIC_MATCH_SOURCES: readonly LyricProviderSource[] = ['netease', 'amll', 'qq', 'kugou', 'whisper'];
 
-export const sourceSupportsManualSearch = (source: LyricProviderSource): boolean => source !== 'amll';
+export const sourceSupportsManualSearch = (source: LyricProviderSource): boolean => source !== 'amll' && source !== 'whisper';
 
 const withAmllDbPlatform = (song: SongResult, platform: AmllDbPlatform): SongResult => ({
     ...song,
@@ -120,6 +120,10 @@ export async function searchLyricsByMatchSource(
         const page = await getOnlineMusicProvider('kugou')?.search?.searchSongs(query, 50, 0);
         return sortByMatchScore(page?.items || [], target);
     }
+    if (source === 'whisper') {
+        // Whisper is not a search source — it aligns existing lyrics via audio transcription.
+        return [];
+    }
     return searchAmllDbLyricCandidates(query, target);
 }
 
@@ -145,6 +149,11 @@ export async function fetchLyricsForMatchSource(
         const result = await getOnlineMusicProvider('kugou')?.lyrics?.getLyrics(selectedResult);
         if (!result) return null;
         return { lyrics: result.lyrics, isPureMusic: result.isPureMusic };
+    }
+    if (source === 'whisper') {
+        // Whisper alignment is handled separately in autoMatchBestLyric —
+        // it does not fetch lyrics from a remote source.
+        return null;
     }
 
     const platform = selectedResult.amllDbPlatform;

@@ -28,6 +28,8 @@ type BuildPlayerPanelModelParams = {
     generateAITheme: () => void;
     isGeneratingTheme: boolean;
     hasLyrics: boolean;
+    lyrics: UnifiedPanelProps['playback']['lyrics'];
+    onSetLyrics: UnifiedPanelProps['playback']['onSetLyrics'];
     canGenerateAITheme: boolean;
     theme: UnifiedPanelProps['playback']['theme'];
     setTheme: UnifiedPanelProps['playback']['onThemeChange'];
@@ -128,6 +130,8 @@ export const buildPlayerPanelModel = ({
     generateAITheme,
     isGeneratingTheme,
     hasLyrics,
+    lyrics,
+    onSetLyrics,
     canGenerateAITheme,
     theme,
     setTheme,
@@ -227,6 +231,8 @@ export const buildPlayerPanelModel = ({
             onGenerateAITheme: generateAITheme,
             isGeneratingTheme,
             hasLyrics,
+            lyrics,
+            onSetLyrics,
             canGenerateAITheme,
             theme,
             onThemeChange: setTheme,

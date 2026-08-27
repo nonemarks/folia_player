@@ -2,10 +2,11 @@ import React, { useMemo, useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Search, Upload, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { OnlineLyricsState, ReplayGainMode, SongResult } from '../../types';
+import type { OnlineLyricsState, ReplayGainMode, SongResult, LyricData } from '../../types';
 import LyricTimelineOffsetControl from './LyricTimelineOffsetControl';
 import ReplayGainControl from './ReplayGainControl';
 import { getLyricProviderLabel, getSongNativeLyricProviderSource } from '../../utils/lyrics/lyricSourceLabels';
+import WhisperAlignButton from '../shared/WhisperAlignButton';
 
 // src/components/panelTab/OnlineLyricsTab.tsx
 
@@ -21,6 +22,8 @@ interface OnlineLyricsTabProps {
     replayGainMode: ReplayGainMode;
     onChangeReplayGainMode: (mode: ReplayGainMode) => void;
     isDaylight: boolean;
+    lyrics: LyricData | null;
+    onSetLyrics: (lyrics: LyricData | null) => void;
 }
 
 const OnlineLyricsTab: React.FC<OnlineLyricsTabProps> = ({
@@ -35,6 +38,8 @@ const OnlineLyricsTab: React.FC<OnlineLyricsTabProps> = ({
     replayGainMode,
     onChangeReplayGainMode,
     isDaylight,
+    lyrics,
+    onSetLyrics,
 }) => {
     const { t } = useTranslation();
     const inputRef = useRef<HTMLInputElement>(null);
@@ -134,6 +139,12 @@ const OnlineLyricsTab: React.FC<OnlineLyricsTabProps> = ({
                         >
                             <Search size={14} />
                         </button>
+                        <WhisperAlignButton
+                            song={song}
+                            lyrics={lyrics}
+                            onLyricsUpdated={onSetLyrics}
+                            isDaylight={isDaylight}
+                        />
                     </div>
                 </div>
 
