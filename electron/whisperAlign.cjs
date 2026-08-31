@@ -2,7 +2,7 @@
 // Whisper-based word-level lyric alignment for Folia.
 // Runs in Electron main process, communicates with renderer via IPC.
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -17,6 +17,7 @@ const { app, net } = require('electron');
 const WHISPER_MODELS_DIR_NAME = 'whisper-models';
 const WHISPER_CACHE_DIR_NAME = 'whisper-cache';
 const WHISPER_CLI_DIR_NAME = 'whisper-cli';
+const FFMPEG_DIR_NAME = 'ffmpeg';
 
 // Supported models (tiny through medium for reasonable performance)
 const SUPPORTED_MODELS = {
@@ -34,6 +35,7 @@ const SUPPORTED_MODELS = {
 const activeJobs = new Map();
 
 let whisperCliPath = null;
+let ffmpegPath = null;
 let modelsDirectory = null;
 
 // ---------------------------------------------------------------------------
@@ -55,6 +57,21 @@ function initWhisperAlign(options = {}) {
 
     // Try to find whisper-cli in common locations
     whisperCliPath = findWhisperCli();
+
+    // Try to find ffmpeg in common locations (synchronous check for app-installed)
+    ffmpegPath = findFfmpegInstalled();
+
+    // Asynchronously check system PATH for ffmpeg (updates ffmpegPath if found)
+    if (!ffmpegPath) {
+        findFfmpeg().then((found) => {
+            if (found) {
+                ffmpegPath = found;
+                console.log(`[WhisperAlign] Found ffmpeg in system PATH: ${found}`);
+            }
+        }).catch(() => {
+            // Ignore errors - ffmpeg is optional
+        });
+    }
 }
 
 /**
@@ -277,6 +294,46 @@ async function transcribeAudio(audioPath, options = {}) {
         throw new Error(`Audio file not found: ${audioPath}`);
     }
 
+    // Log audio file info for diagnostics
+    try {
+        const stats = fs.statSync(audioPath);
+        const ext = path.extname(audioPath).toLowerCase();
+        console.log(`[WhisperAlign] Audio file: ${audioPath} (${ext}, ${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+        
+        // Warn about suspicious file sizes
+        if (stats.size === 0) {
+            throw new Error(`Audio file is empty (0 bytes): ${audioPath}. The audio data may not have been downloaded correctly.`);
+        }
+        if (stats.size < 1024) {
+            console.warn(`[WhisperAlign] Audio file is very small (${stats.size} bytes), may be corrupted or empty`);
+        }
+    } catch (e) {
+        if (e.message.includes('empty') || e.message.includes('0 bytes')) throw e;
+        console.warn(`[WhisperAlign] Could not stat audio file: ${e.message}`);
+    }
+
+    // Convert audio to WAV format for maximum compatibility with whisper-cli.
+    // whisper-cli works best with WAV (16kHz, 16-bit, mono). While some builds
+    // support MP3/FLAC via dr_mp3/dr_flac, conversion ensures reliability.
+    let effectiveAudioPath = audioPath;
+    let convertedWavPath = null;
+    const audioExt = path.extname(audioPath).toLowerCase();
+
+    if (audioExt !== '.wav') {
+        if (onProgress) onProgress({ status: 'starting', model, audioPath, detail: 'converting-audio' });
+
+        const wavResult = await convertToWav(audioPath, jobId);
+        if (wavResult) {
+            effectiveAudioPath = wavResult;
+            convertedWavPath = wavResult;
+            console.log(`[WhisperAlign] Converted audio to WAV: ${wavResult}`);
+        } else {
+            // ffmpeg not available — try original file; whisper-cli may still support it
+            console.warn(`[WhisperAlign] ffmpeg not available, using original audio format (${audioExt}). ` +
+                `If transcription fails, install ffmpeg for audio conversion.`);
+        }
+    }
+
     // Get model path
     const modelPath = customModelPath || getModelPath(model);
     if (!modelPath) {
@@ -292,7 +349,7 @@ async function transcribeAudio(audioPath, options = {}) {
     // Build whisper-cli arguments
     const args = [
         '-m', modelPath,
-        '-f', audioPath,
+        '-f', effectiveAudioPath,
         '--output-json',
     ];
 
@@ -371,6 +428,11 @@ async function transcribeAudio(audioPath, options = {}) {
         proc.on('close', (code) => {
             activeJobs.delete(jobId);
 
+            // Clean up converted WAV file if we created one
+            if (convertedWavPath) {
+                try { fs.unlinkSync(convertedWavPath); } catch {}
+            }
+
             const job = activeJobs.get(jobId);
             if (job?.cancelled) {
                 // Clean up temp file
@@ -381,7 +443,16 @@ async function transcribeAudio(audioPath, options = {}) {
 
             if (code !== 0) {
                 console.error(`[WhisperAlign] Process exited with code ${code}. stderr: ${stderr}`);
-                reject(new Error(`Whisper transcription failed (exit code ${code}): ${stderr.slice(-500)}`));
+                // Provide more helpful error messages for common failures
+                let errorMsg = `Whisper transcription failed (exit code ${code})`;
+                if (stderr.includes('failed to open') || stderr.includes('cannot open') || stderr.includes('No such file')) {
+                    errorMsg += ': Audio file could not be read. Try installing ffmpeg for audio format conversion.';
+                } else if (stderr.includes('unsupported format') || stderr.includes('unknown format')) {
+                    errorMsg += ': Unsupported audio format. Install ffmpeg for automatic WAV conversion.';
+                } else if (stderr.length > 0) {
+                    errorMsg += `: ${stderr.slice(-300)}`;
+                }
+                reject(new Error(errorMsg));
                 return;
             }
 
@@ -389,11 +460,39 @@ async function transcribeAudio(audioPath, options = {}) {
             try {
                 if (!fs.existsSync(outputFile)) {
                     console.error(`[WhisperAlign] Output file not found: ${outputFile}`);
+                    // Check if output file was created with a different extension
+                    const dir = path.dirname(outputBase);
+                    const base = path.basename(outputBase);
+                    try {
+                        const files = fs.readdirSync(dir).filter(f => f.startsWith(base));
+                        console.error(`[WhisperAlign] Files found matching output base: [${files.join(', ')}]`);
+                    } catch {}
                     reject(new Error(`Whisper output file not found at ${outputFile}. stderr: ${stderr.slice(-200)}`));
                     return;
                 }
 
-                const rawResult = JSON.parse(fs.readFileSync(outputFile, 'utf-8'));
+                const rawContent = fs.readFileSync(outputFile, 'utf-8');
+                console.log(`[WhisperAlign] Output file size: ${rawContent.length} bytes`);
+                
+                let rawResult;
+                try {
+                    rawResult = JSON.parse(rawContent);
+                } catch (parseErr) {
+                    console.error(`[WhisperAlign] JSON parse error: ${parseErr.message}`);
+                    console.error(`[WhisperAlign] First 500 chars of output: ${rawContent.slice(0, 500)}`);
+                    reject(new Error(`Failed to parse Whisper JSON output: ${parseErr.message}`));
+                    return;
+                }
+
+                // Log the structure for diagnostics
+                const topLevelKeys = rawResult && typeof rawResult === 'object' ? Object.keys(rawResult) : ['not-an-object'];
+                console.log(`[WhisperAlign] Output JSON top-level keys: [${topLevelKeys.join(', ')}]`);
+                if (rawResult?.result && typeof rawResult.result === 'object') {
+                    console.log(`[WhisperAlign] result keys: [${Object.keys(rawResult.result).join(', ')}]`);
+                }
+                if (Array.isArray(rawResult?.transcription)) {
+                    console.log(`[WhisperAlign] raw.transcription length: ${rawResult.transcription.length}`);
+                }
 
                 // Clean up temp file
                 try { fs.unlinkSync(outputFile); } catch {}
@@ -403,6 +502,15 @@ async function transcribeAudio(audioPath, options = {}) {
 
                 console.log(`[WhisperAlign] Transcription complete: ${whisperResult.segments.length} segments, ` +
                     `${whisperResult.segments.filter(s => s.words && s.words.length > 0).length} segments with word timing`);
+
+                // If no segments were produced, throw with diagnostic info
+                if (whisperResult.segments.length === 0) {
+                    const diag = whisperResult.diagnostic || 'Unknown reason';
+                    const errorMsg = `Whisper transcription produced no valid segments. ${diag}`;
+                    console.error(`[WhisperAlign] ${errorMsg}`);
+                    reject(new Error(errorMsg));
+                    return;
+                }
 
                 if (onProgress) onProgress({ status: 'completed', model, progress: 100 });
 
@@ -430,17 +538,67 @@ async function transcribeAudio(audioPath, options = {}) {
 
 /**
  * Parse whisper.cpp JSON output into our WhisperResult format.
+ * Supports multiple whisper.cpp output format versions.
  */
 function parseWhisperCppOutput(raw) {
     const segments = [];
 
-    // whisper.cpp --output-json --word-timestamps 1 format:
-    // { "systeminfo": {...}, "transcription": [ { "timestamps": { "from": "00:00:00.000", "to": "00:00:05.000" }, "offsets": { "from": 0, "to": 5000 }, "text": "...", "tokens": [ { "text": "...", "timestamps": { "from": 100, "to": 200 } } ] } ] }
-    // Note: offsets are in milliseconds; token timestamps are also in milliseconds.
+    // whisper.cpp --output-json --word-timestamps 1 format (varies by version):
+    // v1: { "systeminfo": {...}, "transcription": [ { "timestamps": {...}, "offsets": {...}, "text": "...", "tokens": [...] } ] }
+    // v2: { "systeminfo": {...}, "result": { "transcription": [...] } }
+    // Some builds: top-level array or nested under different keys
 
-    const transcription = raw.transcription || [];
+    // Resolve the transcription array from various possible JSON structures
+    let transcription = null;
 
-    for (const seg of transcription) {
+    if (Array.isArray(raw)) {
+        // Rare: top-level array
+        transcription = raw;
+    } else if (raw && typeof raw === 'object') {
+        // Standard v1 format: raw.transcription
+        if (Array.isArray(raw.transcription)) {
+            transcription = raw.transcription;
+        }
+        // v2 format: raw.result.transcription
+        else if (raw.result && Array.isArray(raw.result.transcription)) {
+            transcription = raw.result.transcription;
+        }
+        // Fallback: look for any key containing an array of objects with 'text' property
+        if (!transcription) {
+            for (const key of Object.keys(raw)) {
+                if (Array.isArray(raw[key]) && raw[key].length > 0 && raw[key][0] && typeof raw[key][0].text === 'string') {
+                    transcription = raw[key];
+                    console.log(`[WhisperAlign] Found transcription array under key "${key}" (fallback discovery)`);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!transcription || !Array.isArray(transcription)) {
+        // Diagnostic: log the actual structure to help debug format mismatches
+        const topLevelKeys = raw && typeof raw === 'object' ? Object.keys(raw) : ['not-an-object'];
+        const nestedKeys = raw?.result && typeof raw.result === 'object' ? Object.keys(raw.result) : [];
+        const rawPreview = JSON.stringify(raw).slice(0, 1000);
+        const diagnostic = `Could not find transcription array. Top-level keys: [${topLevelKeys.join(', ')}], ` +
+            `result keys: [${nestedKeys.join(', ')}], Type: ${typeof raw}. ` +
+            `Raw preview: ${rawPreview}`;
+        console.error(`[WhisperAlign] ${diagnostic}`);
+        return { segments: [], diagnostic };
+    }
+
+    // Check for empty transcription array
+    if (transcription.length === 0) {
+        const diagnostic = `Transcription array is empty (0 segments). The whisper model may not have detected any speech.`;
+        console.warn(`[WhisperAlign] ${diagnostic}`);
+        return { segments: [], diagnostic };
+    }
+
+    console.log(`[WhisperAlign] Found ${transcription.length} transcription segments`);
+
+    for (let i = 0; i < transcription.length; i++) {
+        const seg = transcription[i];
+
         // Segment timing: prefer offsets (ms integers) over timestamps (formatted strings)
         let segStart = 0;
         let segEnd = 0;
@@ -452,6 +610,13 @@ function parseWhisperCppOutput(raw) {
             // Fallback: parse "HH:MM:SS.mmm" format
             segStart = parseTimestamp(seg.timestamps.from);
             segEnd = parseTimestamp(seg.timestamps.to);
+        }
+
+        // Diagnostic: warn about zero-timing segments
+        if (segStart === 0 && segEnd === 0 && i < 3) {
+            console.warn(`[WhisperAlign] Segment ${i} has zero timing (no offsets/timestamps). ` +
+                `Segment keys: [${Object.keys(seg).join(', ')}], ` +
+                `Has offsets: ${!!seg.offsets}, Has timestamps: ${!!seg.timestamps}`);
         }
 
         const text = seg.text || '';
@@ -481,6 +646,24 @@ function parseWhisperCppOutput(raw) {
             text: text.trim(),
             words: words.length > 0 ? words : undefined,
         });
+    }
+
+    // Summary diagnostic
+    const segmentsWithTiming = segments.filter(s => s.start > 0 || s.end > 0).length;
+    const segmentsWithWords = segments.filter(s => s.words && s.words.length > 0).length;
+    console.log(`[WhisperAlign] Parsed ${segments.length} segments: ` +
+        `${segmentsWithTiming} with timing, ${segmentsWithWords} with word-level timestamps`);
+
+    if (segmentsWithTiming === 0 && segments.length > 0) {
+        const firstSegSample = JSON.stringify(transcription[0]).slice(0, 500);
+        console.error(`[WhisperAlign] WARNING: All segments have zero timing! ` +
+            `This usually means the whisper.cpp output format has changed. ` +
+            `First segment sample: ${firstSegSample}`);
+        return {
+            segments,
+            diagnostic: `All ${segments.length} segments have zero timing (no offsets/timestamps). ` +
+                `First segment sample: ${firstSegSample}`,
+        };
     }
 
     return { segments };
@@ -532,12 +715,237 @@ function isWhisperAvailable() {
  * Get the status of the Whisper alignment system.
  */
 function getWhisperStatus() {
+    // Check app-installed ffmpeg (synchronous, fast)
+    const appFfmpeg = findFfmpegInstalled();
+    const ffmpegAvail = !!(ffmpegPath && fs.existsSync(ffmpegPath)) || !!appFfmpeg;
+
+    // Also synchronously check if ffmpeg is in PATH by looking for the executable
+    // This is a best-effort check - the async findFfmpeg() does a more thorough check
+    let systemFfmpegFound = false;
+    if (!ffmpegAvail) {
+        try {
+            const ffmpegName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+            // Quick synchronous check - just see if the command exists
+            const result = spawnSync(ffmpegName, ['-version'], {
+                timeout: 3000,
+                stdio: 'ignore',
+                shell: true,
+            });
+            systemFfmpegFound = result.status === 0;
+            if (systemFfmpegFound) {
+                ffmpegPath = ffmpegName; // Update global for later use
+            }
+        } catch {
+            // Ignore - ffmpeg not in PATH
+        }
+    }
+
     return {
         available: isWhisperAvailable(),
         modelsDirectory,
         models: getAvailableModels(),
         activeJobs: Array.from(activeJobs.keys()),
+        ffmpegAvailable: ffmpegAvail || systemFfmpegFound,
     };
+}
+
+// ---------------------------------------------------------------------------
+// Fetch audio from URL in main process (bypasses CORS restrictions)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch audio data from a URL in the main process.
+ * This bypasses CORS restrictions that would block fetch() in the renderer.
+ * @param {string} url - The audio URL to fetch
+ * @returns {Promise<{data: Buffer, mimeType: string} | null>} Audio data and MIME type, or null on failure
+ */
+async function fetchAudioBuffer(url) {
+    return new Promise((resolve) => {
+        try {
+            const urlObj = new URL(url);
+            const mod = urlObj.protocol === 'https:' ? https : http;
+
+            const req = mod.get(url, {
+                headers: {
+                    'User-Agent': 'Folia-Whisper-Align',
+                    'Accept': 'audio/*,*/*',
+                },
+                timeout: 30000,
+            }, (res) => {
+                // Follow redirects (up to 5)
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    const redirectUrl = new URL(res.headers.location, url).toString();
+                    console.log(`[WhisperAlign] Audio fetch redirect to: ${redirectUrl}`);
+                    return fetchAudioBuffer(redirectUrl).then(resolve);
+                }
+
+                if (res.statusCode !== 200) {
+                    console.warn(`[WhisperAlign] Audio fetch failed: HTTP ${res.statusCode} for ${url}`);
+                    res.resume();
+                    resolve(null);
+                    return;
+                }
+
+                const mimeType = res.headers['content-type'] || 'audio/mpeg';
+                const chunks = [];
+                res.on('data', (chunk) => chunks.push(chunk));
+                res.on('end', () => {
+                    const buffer = Buffer.concat(chunks);
+                    if (buffer.length > 0) {
+                        console.log(`[WhisperAlign] Fetched audio: ${buffer.length} bytes, type: ${mimeType}`);
+                        resolve({ data: buffer, mimeType });
+                    } else {
+                        console.warn('[WhisperAlign] Fetched audio but got 0 bytes');
+                        resolve(null);
+                    }
+                });
+                res.on('error', (err) => {
+                    console.warn(`[WhisperAlign] Audio fetch stream error: ${err.message}`);
+                    resolve(null);
+                });
+            });
+
+            req.on('error', (err) => {
+                console.warn(`[WhisperAlign] Audio fetch request error: ${err.message}`);
+                resolve(null);
+            });
+
+            req.on('timeout', () => {
+                console.warn('[WhisperAlign] Audio fetch timeout');
+                req.destroy();
+                resolve(null);
+            });
+        } catch (err) {
+            console.warn(`[WhisperAlign] Audio fetch error: ${err.message}`);
+            resolve(null);
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Audio conversion (ffmpeg → WAV for whisper-cli compatibility)
+// ---------------------------------------------------------------------------
+
+/**
+ * Find ffmpeg installed by the app (in userData directory).
+ * @returns {string|null} Path to ffmpeg if found in app directory, null otherwise
+ */
+function findFfmpegInstalled() {
+    const ffmpegName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    const installedPath = path.join(app.getPath('userData'), FFMPEG_DIR_NAME, ffmpegName);
+    if (fs.existsSync(installedPath)) return installedPath;
+    return null;
+}
+
+/**
+ * Check if ffmpeg is available on the system.
+ * Checks: installed by app, then PATH.
+ * @returns {Promise<string|null>} Path to ffmpeg if found, null otherwise
+ */
+async function findFfmpeg() {
+    // 1. Check app-installed ffmpeg first (fast, synchronous)
+    if (ffmpegPath && fs.existsSync(ffmpegPath)) {
+        return ffmpegPath;
+    }
+
+    // Re-check in case it was installed after init
+    const installed = findFfmpegInstalled();
+    if (installed) {
+        ffmpegPath = installed;
+        return installed;
+    }
+
+    // 2. Check system PATH
+    return new Promise((resolve) => {
+        const ffmpegName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+        const proc = spawn(ffmpegName, ['-version'], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: true,
+        });
+        proc.on('close', (code) => {
+            const found = code === 0 ? ffmpegName : null;
+            if (found) ffmpegPath = found; // Update global for later use
+            resolve(found);
+        });
+        proc.on('error', () => {
+            resolve(null);
+        });
+        // Timeout after 3 seconds
+        setTimeout(() => {
+            try { proc.kill(); } catch {}
+            resolve(null);
+        }, 3000);
+    });
+}
+
+/**
+ * Convert an audio file to WAV format (16kHz, 16-bit, mono) using ffmpeg.
+ * This ensures maximum compatibility with whisper-cli, which works best with WAV.
+ * If ffmpeg is not available, returns null (caller should try original file).
+ *
+ * @param {string} inputPath - Path to the input audio file
+ * @param {string} jobId - Job ID for temp file naming
+ * @returns {Promise<string|null>} Path to the converted WAV file, or null if ffmpeg unavailable
+ */
+async function convertToWav(inputPath, jobId) {
+    const ffmpeg = await findFfmpeg();
+    if (!ffmpeg) {
+        console.log('[WhisperAlign] ffmpeg not found, skipping WAV conversion');
+        return null;
+    }
+
+    const tmpDir = os.tmpdir();
+    const outputPath = path.join(tmpDir, `folia-whisper-converted-${jobId}.wav`);
+
+    return new Promise((resolve) => {
+        const proc = spawn(ffmpeg, [
+            '-i', inputPath,
+            '-ar', '16000',     // 16kHz sample rate (whisper optimal)
+            '-ac', '1',         // Mono
+            '-sample_fmt', 's16', // 16-bit
+            '-y',               // Overwrite output
+            outputPath,
+        ], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: true,
+        });
+
+        let stderr = '';
+        proc.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
+        proc.on('close', (code) => {
+            if (code === 0 && fs.existsSync(outputPath)) {
+                const stats = fs.statSync(outputPath);
+                if (stats.size > 0) {
+                    console.log(`[WhisperAlign] ffmpeg conversion successful: ${outputPath} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+                    resolve(outputPath);
+                } else {
+                    console.warn('[WhisperAlign] ffmpeg produced empty WAV file');
+                    try { fs.unlinkSync(outputPath); } catch {}
+                    resolve(null);
+                }
+            } else {
+                console.warn(`[WhisperAlign] ffmpeg conversion failed (exit ${code}): ${stderr.slice(-300)}`);
+                try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {}
+                resolve(null);
+            }
+        });
+
+        proc.on('error', (err) => {
+            console.warn(`[WhisperAlign] ffmpeg spawn error: ${err.message}`);
+            resolve(null);
+        });
+
+        // Timeout after 60 seconds for large files
+        setTimeout(() => {
+            try { proc.kill(); } catch {}
+            console.warn('[WhisperAlign] ffmpeg conversion timed out after 60s');
+            try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {}
+            resolve(null);
+        }, 60000);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -566,6 +974,15 @@ async function prepareAudioFile(audioBuffer, mimeType, jobId) {
     const audioPath = path.join(tmpDir, `folia-whisper-audio-${jobId}.${ext}`);
     fs.writeFileSync(audioPath, audioBuffer);
 
+    // Log the prepared audio file for diagnostics
+    try {
+        const stats = fs.statSync(audioPath);
+        console.log(`[WhisperAlign] Prepared audio file: ${audioPath} (${ext}, ${(stats.size / 1024).toFixed(1)} KB)`);
+        if (stats.size === 0) {
+            console.error(`[WhisperAlign] WARNING: Prepared audio file is empty!`);
+        }
+    } catch {}
+
     return audioPath;
 }
 
@@ -587,6 +1004,18 @@ function cleanupAudioFile(audioPath) {
 // GitHub mirror prefixes for users behind firewalls (tried in order)
 const GITHUB_MIRRORS = [
     '',  // direct (no mirror)
+    'https://js.jiangss.shop',
+    'https://ghfast.top',
+    'https://gh-proxy.com',
+    'https://ghproxy.net',
+];
+
+// FFmpeg download mirrors (tried in order)
+// gyan.dev and johnvansickle.com may be inaccessible in some regions;
+// BtbN/FFmpeg-Builds on GitHub provides equivalent static builds.
+const FFMPEG_MIRRORS = [
+    '',  // direct (no mirror)
+    'https://js.jiangss.shop',
     'https://ghfast.top',
     'https://gh-proxy.com',
     'https://ghproxy.net',
@@ -760,12 +1189,202 @@ async function downloadFileToPath(downloadUrl, destPath, onProgress, mirrorPrefi
     });
 }
 
+// ---------------------------------------------------------------------------
+// Segmented (parallel range) download for large files
+// ---------------------------------------------------------------------------
+
+const SEGMENTED_DOWNLOAD_THRESHOLD = 10 * 1024 * 1024; // 10MB - use segmented for files larger than this
+const SEGMENTED_DOWNLOAD_CHUNKS = 4; // Number of parallel segments
+const SEGMENTED_CHUNK_TIMEOUT = 120000; // 2 minutes per segment
+
+/**
+ * Check if the server supports Range requests and get the content length.
+ * @returns {Promise<{ acceptRanges: boolean, contentLength: number } | null>}
+ */
+async function probeRangeSupport(url) {
+    return new Promise((resolve) => {
+        const urlObj = new URL(url);
+        const mod = urlObj.protocol === 'https:' ? https : http;
+
+        const req = mod.request(url, {
+            method: 'HEAD',
+            headers: { 'User-Agent': 'Folia-Installer' },
+            timeout: 15000,
+        }, (res) => {
+            // Follow redirects (up to 3)
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                const redirectUrl = new URL(res.headers.location, url).toString();
+                return probeRangeSupport(redirectUrl).then(resolve, () => resolve(null));
+            }
+
+            if (res.statusCode !== 200) {
+                resolve(null);
+                return;
+            }
+
+            const acceptRanges = (res.headers['accept-ranges'] || '').toLowerCase() === 'bytes';
+            const contentLength = parseInt(res.headers['content-length'] || '0', 10);
+
+            resolve({ acceptRanges, contentLength });
+        });
+
+        req.on('error', () => resolve(null));
+        req.on('timeout', () => { req.destroy(); resolve(null); });
+        req.end();
+    });
+}
+
+/**
+ * Download a single segment (byte range) of a file.
+ * @param {string} url - The URL to download from
+ * @param {number} start - Start byte offset
+ * @param {number} end - End byte offset (inclusive)
+ * @param {number} segmentIndex - Segment index for logging
+ * @param {Buffer} buffer - Shared buffer to write segment into (at correct offset)
+ * @param {function} onSegmentProgress - Called with (segmentIndex, bytesDownloaded, segmentSize)
+ */
+async function downloadSegment(url, start, end, segmentIndex, buffer, bufferOffset, onSegmentProgress) {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+        const mod = urlObj.protocol === 'https:' ? https : http;
+
+        const req = mod.get(url, {
+            headers: {
+                'User-Agent': 'Folia-Installer',
+                'Range': `bytes=${start}-${end}`,
+            },
+            timeout: SEGMENTED_CHUNK_TIMEOUT,
+        }, (res) => {
+            // Follow redirects (up to 3)
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                const redirectUrl = new URL(res.headers.location, url).toString();
+                return downloadSegment(redirectUrl, start, end, segmentIndex, buffer, bufferOffset, onSegmentProgress)
+                    .then(resolve, reject);
+            }
+
+            // 206 = Partial Content, 200 = OK (server ignored range, return full)
+            if (res.statusCode !== 206 && res.statusCode !== 200) {
+                res.resume();
+                reject(new Error(`HTTP ${res.statusCode} for segment ${segmentIndex}`));
+                return;
+            }
+
+            let downloadedBytes = 0;
+            const segmentSize = end - start + 1;
+
+            res.on('data', (chunk) => {
+                chunk.copy(buffer, bufferOffset + downloadedBytes);
+                downloadedBytes += chunk.length;
+                if (onSegmentProgress) {
+                    onSegmentProgress(segmentIndex, downloadedBytes, segmentSize);
+                }
+            });
+
+            res.on('end', () => {
+                if (downloadedBytes < segmentSize * 0.9) {
+                    // Segment downloaded significantly less than expected
+                    reject(new Error(`Segment ${segmentIndex} incomplete: ${downloadedBytes}/${segmentSize} bytes`));
+                } else {
+                    resolve(downloadedBytes);
+                }
+            });
+
+            res.on('error', reject);
+        });
+
+        req.on('error', reject);
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error(`Segment ${segmentIndex} download timeout`));
+        });
+    });
+}
+
+/**
+ * Attempt segmented (parallel range) download for large files.
+ * Returns true if segmented download was used and succeeded.
+ * Returns false if segmented download is not applicable (file too small or server doesn't support Range).
+ * Throws on download failure.
+ *
+ * @param {string} downloadUrl - Original download URL
+ * @param {string} destPath - Destination file path
+ * @param {function} onProgress - Progress callback (0-1 ratio)
+ * @param {string} mirrorPrefix - Mirror prefix to apply
+ * @returns {Promise<boolean>} true if segmented download was used
+ */
+async function downloadFileSegmented(downloadUrl, destPath, onProgress, mirrorPrefix = '') {
+    const url = applyMirror(downloadUrl, mirrorPrefix);
+
+    // Step 1: Probe the server for Range support and content length
+    const probe = await probeRangeSupport(url);
+    if (!probe || !probe.acceptRanges || probe.contentLength < SEGMENTED_DOWNLOAD_THRESHOLD) {
+        // Server doesn't support Range or file is too small - skip segmented download
+        return false;
+    }
+
+    const totalSize = probe.contentLength;
+    console.log(`[Installer] Using segmented download for ${totalSize} bytes file (4 segments)`);
+
+    // Step 2: Calculate segment ranges
+    const segmentSize = Math.ceil(totalSize / SEGMENTED_DOWNLOAD_CHUNKS);
+    const segments = [];
+    for (let i = 0; i < SEGMENTED_DOWNLOAD_CHUNKS; i++) {
+        const start = i * segmentSize;
+        const end = Math.min(start + segmentSize - 1, totalSize - 1);
+        if (start >= totalSize) break;
+        segments.push({ index: i, start, end, size: end - start + 1 });
+    }
+
+    // Step 3: Allocate buffer and download segments in parallel
+    const buffer = Buffer.alloc(totalSize);
+    const segmentProgress = new Array(segments.length).fill(0);
+
+    const onSegmentProgress = (segmentIndex, bytesDownloaded, _segmentSize) => {
+        segmentProgress[segmentIndex] = bytesDownloaded;
+        const totalDownloaded = segmentProgress.reduce((a, b) => a + b, 0);
+        if (onProgress) {
+            onProgress(totalDownloaded / totalSize);
+        }
+    };
+
+    // Download all segments in parallel
+    const results = await Promise.all(
+        segments.map(seg =>
+            downloadSegment(url, seg.start, seg.end, seg.index, buffer, seg.start, onSegmentProgress)
+                .catch(err => {
+                    console.warn(`[Installer] Segment ${seg.index} failed: ${err.message}`);
+                    return null;
+                })
+        )
+    );
+
+    // Check if all segments succeeded
+    const failedSegments = results.filter(r => r === null);
+    if (failedSegments.length > 0) {
+        // Some segments failed - fall back to regular download
+        console.warn(`[Installer] ${failedSegments.length}/${segments.length} segments failed, falling back to regular download`);
+        return false;
+    }
+
+    // Step 4: Write the combined buffer to file
+    fs.writeFileSync(destPath, buffer);
+
+    if (onProgress) onProgress(1);
+    console.log(`[Installer] Segmented download complete: ${destPath} (${totalSize} bytes)`);
+    return true;
+}
+
 /**
  * Download a file with mirror fallback.
+ * For large files (>10MB), uses segmented downloading when the server supports Range requests.
  */
 async function downloadWithMirrors(downloadUrl, destPath, onProgress) {
     for (const mirror of GITHUB_MIRRORS) {
         try {
+            // Try segmented download first for large files
+            const segmented = await downloadFileSegmented(downloadUrl, destPath, onProgress, mirror);
+            if (segmented) return; // segmented download succeeded
+            // Fallback to regular download if segmented not supported
             await downloadFileToPath(downloadUrl, destPath, onProgress, mirror);
             return; // success
         } catch (err) {
@@ -978,6 +1597,248 @@ async function installWhisperCli(onProgress) {
 }
 
 // ---------------------------------------------------------------------------
+// FFmpeg auto-install
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the platform-specific FFmpeg download info.
+ * Uses BtbN/FFmpeg-Builds on GitHub for all platforms (supports mirror acceleration).
+ * Falls back to gyan.dev / johnvansickle.com as secondary sources.
+ * @returns {{ sources: Array<{ url: string, type: 'zip'|'tar.gz', github: boolean }>, type: 'zip'|'tar.gz' } | null}
+ */
+function getFfmpegPlatformInfo() {
+    const platform = process.platform;
+    const arch = process.arch;
+
+    if (platform === 'win32' && arch === 'x64') {
+        return {
+            type: 'zip',
+            sources: [
+                // BtbN/FFmpeg-Builds on GitHub (supports mirror acceleration)
+                {
+                    url: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip',
+                    type: 'zip',
+                    github: true,
+                },
+                // gyan.dev as fallback
+                {
+                    url: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
+                    type: 'zip',
+                    github: false,
+                },
+            ],
+        };
+    }
+    if (platform === 'win32' && arch === 'arm64') {
+        // No pre-built ARM64 Windows binary available
+        return null;
+    }
+    if (platform === 'linux' && arch === 'x64') {
+        return {
+            type: 'tar.gz',
+            sources: [
+                // BtbN/FFmpeg-Builds on GitHub (supports mirror acceleration)
+                {
+                    url: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz',
+                    type: 'tar.gz',
+                    github: true,
+                },
+                // John Van Sickle as fallback
+                {
+                    url: 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz',
+                    type: 'tar.gz',
+                    github: false,
+                },
+            ],
+        };
+    }
+    if (platform === 'linux' && arch === 'arm64') {
+        return {
+            type: 'tar.gz',
+            sources: [
+                // BtbN/FFmpeg-Builds on GitHub (supports mirror acceleration)
+                {
+                    url: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz',
+                    type: 'tar.gz',
+                    github: true,
+                },
+                // John Van Sickle as fallback
+                {
+                    url: 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz',
+                    type: 'tar.gz',
+                    github: false,
+                },
+            ],
+        };
+    }
+    // macOS: user should install via Homebrew
+    return null;
+}
+
+/**
+ * Auto-install FFmpeg for the current platform.
+ * Downloads a static build and installs it to the app's userData directory.
+ * Tries BtbN/FFmpeg-Builds (GitHub, mirror-acceleratable) first,
+ * then falls back to gyan.dev / johnvansickle.com.
+ *
+ * @param {function} [onProgress] - Progress callback: { status, progress, ... }
+ * @returns {Promise<{ success: boolean, path: string }>}
+ */
+async function installFfmpeg(onProgress) {
+    const platformInfo = getFfmpegPlatformInfo();
+    if (!platformInfo) {
+        throw new Error(`Auto-install of FFmpeg is not supported on ${process.platform}-${process.arch}. Please install FFmpeg manually.`);
+    }
+
+    // 1. Prepare directories
+    if (onProgress) onProgress({ status: 'preparing', progress: 0 });
+
+    const ffmpegDir = path.join(app.getPath('userData'), FFMPEG_DIR_NAME);
+    if (!fs.existsSync(ffmpegDir)) {
+        fs.mkdirSync(ffmpegDir, { recursive: true });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `folia-ffmpeg-install-${Date.now()}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    let lastError = null;
+
+    // 2. Try each download source in order
+    for (const source of platformInfo.sources) {
+        const archiveExt = source.type === 'zip' ? '.zip' : '.tar.gz';
+        const archivePath = path.join(tmpDir, `ffmpeg${archiveExt}`);
+
+        try {
+            if (onProgress) onProgress({ status: 'downloading', progress: 5, url: source.url });
+
+            // Use GitHub mirrors for GitHub URLs, otherwise try direct + FFMPEG_MIRRORS
+            const mirrors = source.github ? GITHUB_MIRRORS : FFMPEG_MIRRORS;
+
+            for (const mirror of mirrors) {
+                try {
+                    // Try segmented download first for large files
+                    const segmented = await downloadFileSegmented(source.url, archivePath, (ratio) => {
+                        if (onProgress) onProgress({ status: 'downloading', progress: 5 + Math.round(ratio * 55) });
+                    }, mirror);
+                    if (segmented) break; // segmented download succeeded
+
+                    // Fallback to regular download if segmented not supported
+                    await downloadFileToPath(source.url, archivePath, (ratio) => {
+                        if (onProgress) onProgress({ status: 'downloading', progress: 5 + Math.round(ratio * 55) });
+                    }, mirror);
+                    break; // download succeeded
+                } catch (err) {
+                    console.warn(`[FfmpegInstaller] Download failed from ${mirror || 'direct'} (${source.url}): ${err.message}`);
+                    try { if (fs.existsSync(archivePath)) fs.unlinkSync(archivePath); } catch {}
+                    // If this was the last mirror, the outer catch will handle it
+                }
+            }
+
+            // Verify the file was downloaded
+            if (!fs.existsSync(archivePath) || fs.statSync(archivePath).size === 0) {
+                throw new Error(`Download produced empty or missing file for ${source.url}`);
+            }
+
+            // 3. Extract
+            if (onProgress) onProgress({ status: 'extracting', progress: 60 });
+
+            const extractDir = path.join(tmpDir, 'extracted');
+            fs.mkdirSync(extractDir, { recursive: true });
+
+            if (source.type === 'zip') {
+                await extractZip(archivePath, extractDir);
+            } else {
+                await extractTarGz(archivePath, extractDir);
+            }
+
+            // 4. Find the ffmpeg executable
+            const ffmpegName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+            let ffmpegSourcePath = findFileRecursive(extractDir, ffmpegName);
+
+            if (!ffmpegSourcePath) {
+                // List what we found for debugging
+                const foundFiles = [];
+                try {
+                    const walkDir = (d, depth = 0) => {
+                        if (depth > 3) return;
+                        for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+                            const p = path.join(d, entry.name);
+                            if (entry.isDirectory()) walkDir(p, depth + 1);
+                            else foundFiles.push(path.relative(extractDir, p));
+                        }
+                    };
+                    walkDir(extractDir);
+                } catch {}
+                throw new Error(
+                    `Could not find ${ffmpegName} in the downloaded archive. ` +
+                    `Files found: ${foundFiles.slice(0, 20).join(', ')}`
+                );
+            }
+
+            // 5. Copy to target location
+            if (onProgress) onProgress({ status: 'installing', progress: 90 });
+
+            const targetPath = path.join(ffmpegDir, ffmpegName);
+
+            // Remove old files in the ffmpeg directory (clean upgrade)
+            for (const oldFile of fs.readdirSync(ffmpegDir)) {
+                try { fs.unlinkSync(path.join(ffmpegDir, oldFile)); } catch {}
+            }
+
+            fs.copyFileSync(ffmpegSourcePath, targetPath);
+
+            // Copy required DLL/SO files alongside the executable
+            const sourceDir = path.dirname(ffmpegSourcePath);
+            for (const file of fs.readdirSync(sourceDir)) {
+                const ext = path.extname(file).toLowerCase();
+                if (ext === '.dll' || ext === '.so' || ext === '.dylib') {
+                    try {
+                        fs.copyFileSync(path.join(sourceDir, file), path.join(ffmpegDir, file));
+                    } catch {}
+                }
+            }
+
+            // Make executable on non-Windows
+            if (process.platform !== 'win32') {
+                try { fs.chmodSync(targetPath, 0o755); } catch {}
+            }
+
+            // 6. Update the global ffmpegPath
+            ffmpegPath = targetPath;
+
+            if (onProgress) onProgress({ status: 'installed', progress: 100, path: targetPath });
+
+            // Clean up temp directory
+            try {
+                fs.rmSync(tmpDir, { recursive: true, force: true });
+            } catch {}
+
+            return { success: true, path: targetPath };
+
+        } catch (err) {
+            lastError = err;
+            console.warn(`[FfmpegInstaller] Source ${source.url} failed: ${err.message}`);
+            // Clean up and try next source
+            try {
+                fs.rmSync(tmpDir, { recursive: true, force: true });
+            } catch {}
+            // Recreate tmpDir for next source
+            fs.mkdirSync(tmpDir, { recursive: true });
+        }
+    }
+
+    // All sources failed
+    try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+
+    throw new Error(
+        `Failed to download FFmpeg from all sources. Last error: ${lastError?.message || 'unknown'}. ` +
+        `Please install FFmpeg manually from https://ffmpeg.org/download.html`
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -993,5 +1854,7 @@ module.exports = {
     prepareAudioFile,
     cleanupAudioFile,
     installWhisperCli,
+    installFfmpeg,
+    fetchAudioBuffer,
     SUPPORTED_MODELS,
 };

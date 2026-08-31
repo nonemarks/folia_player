@@ -18,7 +18,7 @@ const { createLocalCoverAssetStore, getLocalCoverAssetDirectory } = require('./l
 const { getReleaseUrl, getUpdateProviderConfig, resolveReleaseChannel } = require('./updateChannels.cjs');
 const { resolveLinuxPasswordStore } = require('./linuxPasswordStore.cjs');
 const { sanitizeDualTheme: sanitizeGeneratedDualTheme } = require('../shared/themeSanitizer.cjs');
-const { initWhisperAlign, transcribeAudio, cancelTranscription, getWhisperStatus, getAvailableModels, downloadModel, prepareAudioFile, cleanupAudioFile, installWhisperCli } = require('./whisperAlign.cjs');
+const { initWhisperAlign, transcribeAudio, cancelTranscription, getWhisperStatus, getAvailableModels, downloadModel, prepareAudioFile, cleanupAudioFile, installWhisperCli, installFfmpeg, fetchAudioBuffer } = require('./whisperAlign.cjs');
 const useLinuxGraphicsDebugMode = process.env.ELECTRON_LINUX_PACKAGED_GRAPHICS === 'true';
 const isAppImageRuntime =
   process.platform === 'linux' &&
@@ -4799,4 +4799,28 @@ ipcMain.handle('whisper-align-install-cli', async (event) => {
       event.sender.send('whisper-align-install-progress', progress);
     } catch {}
   });
+});
+
+ipcMain.handle('whisper-align-install-ffmpeg', async (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to install ffmpeg.');
+  }
+  return installFfmpeg((progress) => {
+    try {
+      event.sender.send('whisper-align-install-ffmpeg-progress', progress);
+    } catch {}
+  });
+});
+
+ipcMain.handle('whisper-align-fetch-audio', async (event, url) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to fetch audio.');
+  }
+  if (typeof url !== 'string' || !url) {
+    throw new Error('Missing audio URL.');
+  }
+  const result = await fetchAudioBuffer(url);
+  if (!result) return null;
+  // Convert Buffer to ArrayBuffer for IPC transfer
+  return { data: result.data.buffer.slice(result.data.byteOffset, result.data.byteOffset + result.data.byteLength), mimeType: result.mimeType };
 });

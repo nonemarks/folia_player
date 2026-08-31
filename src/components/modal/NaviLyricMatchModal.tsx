@@ -20,6 +20,7 @@ import {
 import { LyricPreviewPanel } from './LyricPreviewPanel';
 import { getSizedCoverUrl } from '../../utils/coverUrl';
 import { getProviderSongMetadata } from '../../services/onlineMusic/songMetadata';
+import ErrorBoundary from '../shared/ErrorBoundary';
 
 export interface NavidromeMatchData {
     matchedSongId?: MediaId;
@@ -254,6 +255,7 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
                 </div>
 
                 <div className="flex-1 flex min-h-0 overflow-hidden">
+                    <ErrorBoundary>
                     {/* LEFT PANEL */}
                     <div className={`w-[62%] flex flex-col border-r ${borderColor}`}>
                         <div className="p-4">
@@ -397,6 +399,7 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
                             <LyricPreviewPanel selectedResult={selectedResult} source={source} isDaylight={isDaylight} />
                         </div>
                     </div>
+                    </ErrorBoundary>
                 </div>
 
                 <div className={`px-6 py-4 border-t ${borderColor} flex justify-end gap-3`}>

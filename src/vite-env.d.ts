@@ -487,6 +487,7 @@ declare global {
     modelsDirectory: string | null;
     models: WhisperAlignModel[];
     activeJobs: string[];
+    ffmpegAvailable: boolean;
   }
 
   interface WhisperAlignTranscribeOptions {
@@ -675,9 +676,12 @@ declare global {
       whisperAlignCancel: (jobId: string) => Promise<boolean>;
       whisperAlignPrepareAudio: (arrayBuffer: ArrayBuffer, mimeType: string) => Promise<string>;
       whisperAlignInstallCli: () => Promise<{ success: boolean; path: string; version: string }>;
+      whisperAlignInstallFfmpeg: () => Promise<{ success: boolean; path: string }>;
+      whisperAlignFetchAudio: (url: string) => Promise<{ data: ArrayBuffer; mimeType: string } | null>;
       onWhisperAlignProgress: (callback: (progress: WhisperAlignProgress) => void) => () => void;
       onWhisperAlignDownloadProgress: (callback: (progress: WhisperAlignDownloadProgress) => void) => () => void;
       onWhisperAlignInstallProgress: (callback: (progress: any) => void) => () => void;
+      onWhisperAlignInstallFfmpegProgress: (callback: (progress: any) => void) => () => void;
     };
   }
 }

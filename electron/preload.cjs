@@ -196,6 +196,8 @@ contextBridge.exposeInMainWorld('electron', {
     whisperAlignCancel: (jobId) => ipcRenderer.invoke('whisper-align-cancel', jobId),
     whisperAlignPrepareAudio: (arrayBuffer, mimeType) => ipcRenderer.invoke('whisper-align-prepare-audio', arrayBuffer, mimeType),
     whisperAlignInstallCli: () => ipcRenderer.invoke('whisper-align-install-cli'),
+    whisperAlignInstallFfmpeg: () => ipcRenderer.invoke('whisper-align-install-ffmpeg'),
+    whisperAlignFetchAudio: (url) => ipcRenderer.invoke('whisper-align-fetch-audio', url),
     onWhisperAlignProgress: (callback) => {
         const listener = (_event, progress) => callback(progress);
         ipcRenderer.on('whisper-align-progress', listener);
@@ -210,5 +212,10 @@ contextBridge.exposeInMainWorld('electron', {
         const listener = (_event, progress) => callback(progress);
         ipcRenderer.on('whisper-align-install-progress', listener);
         return () => ipcRenderer.removeListener('whisper-align-install-progress', listener);
+    },
+    onWhisperAlignInstallFfmpegProgress: (callback) => {
+        const listener = (_event, progress) => callback(progress);
+        ipcRenderer.on('whisper-align-install-ffmpeg-progress', listener);
+        return () => ipcRenderer.removeListener('whisper-align-install-ffmpeg-progress', listener);
     },
 });

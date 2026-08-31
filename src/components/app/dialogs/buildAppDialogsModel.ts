@@ -8,6 +8,10 @@ import type ConfirmDialog from '../../shared/ConfirmDialog';
 import type { StatusMessage, SongResult, LocalSong } from '../../../types';
 import { isLocalPlaybackSong, isNavidromePlaybackSong, isStagePlaybackSong } from '../../../utils/appPlaybackGuards';
 
+// Cache the last valid lyricMatchDialog song to prevent modal unmounting
+// when localSongs is briefly empty during async refreshes (e.g. loadLocalSongs).
+let cachedLyricMatchSong: LocalSong | null = null;
+
 // src/components/app/dialogs/buildAppDialogsModel.ts
 
 type LyricMatchDialogProps = React.ComponentProps<typeof LyricMatchModal>;
@@ -77,7 +81,24 @@ export const buildAppDialogsModel = ({
     handleUnavailableReplacementConfirm,
     settingsDialog = null,
     providerSwitchConfirmDialog = null,
-}: BuildAppDialogsModelParams): AppDialogsModel => ({
+}: BuildAppDialogsModelParams): AppDialogsModel => {
+    // Find the song in localSongs; fall back to cached song if localSongs
+    // is briefly stale (e.g. during loadLocalSongs refresh). This prevents
+    // the LyricMatchModal from unmounting and losing user state when the
+    // song list is repopulated asynchronously.
+    const foundSong = showLyricMatchModal && currentSong && isLocalPlaybackSong(currentSong)
+        ? localSongs.find(song => song.id === currentSong.localRef.songId) ?? null
+        : null;
+    if (foundSong) {
+        cachedLyricMatchSong = foundSong;
+    }
+    // Only clear the cache when the modal is explicitly closed
+    if (!showLyricMatchModal) {
+        cachedLyricMatchSong = null;
+    }
+    const effectiveSong = foundSong ?? (showLyricMatchModal ? cachedLyricMatchSong : null);
+
+    return {
     statusToast: statusMsg
         ? {
             ...statusMsg,
@@ -88,9 +109,9 @@ export const buildAppDialogsModel = ({
     lyricMatchDialog: showLyricMatchModal
         && currentSong
         && isLocalPlaybackSong(currentSong)
-        && localSongs.some(song => song.id === currentSong.localRef.songId)
+        && effectiveSong
         ? {
-            song: localSongs.find(song => song.id === currentSong.localRef.songId)!,
+            song: effectiveSong,
             onClose: () => setShowLyricMatchModal(false),
             onMatch: handleLyricMatchComplete,
             isDaylight,
@@ -123,4 +144,5 @@ export const buildAppDialogsModel = ({
     },
     settingsDialog,
     providerSwitchConfirmDialog,
-});
+    };
+};

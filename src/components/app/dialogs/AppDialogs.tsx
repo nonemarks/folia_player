@@ -7,6 +7,7 @@ import OnlineLyricMatchModal from '../../modal/OnlineLyricMatchModal';
 import UnavailableReplacementDialog from '../../modal/UnavailableReplacementDialog';
 import SettingsModal from '../../modal/SettingsModal';
 import ConfirmDialog from '../../shared/ConfirmDialog';
+import ErrorBoundary from '../../shared/ErrorBoundary';
 import type { AppDialogsModel } from './buildAppDialogsModel';
 
 // Centralized app-level dialog and toast renderer for the player shell.
@@ -56,13 +57,29 @@ const AppDialogs: React.FC<AppDialogsProps> = ({ model }) => {
                 )}
             </AnimatePresence>
 
-            {lyricMatchDialog && <LyricMatchModal {...lyricMatchDialog} />}
-            {naviLyricMatchDialog && <NaviLyricMatchModal {...naviLyricMatchDialog} />}
-            {onlineLyricMatchDialog && <OnlineLyricMatchModal {...onlineLyricMatchDialog} />}
+            {lyricMatchDialog && (
+                <ErrorBoundary>
+                    <LyricMatchModal {...lyricMatchDialog} />
+                </ErrorBoundary>
+            )}
+            {naviLyricMatchDialog && (
+                <ErrorBoundary>
+                    <NaviLyricMatchModal {...naviLyricMatchDialog} />
+                </ErrorBoundary>
+            )}
+            {onlineLyricMatchDialog && (
+                <ErrorBoundary>
+                    <OnlineLyricMatchModal {...onlineLyricMatchDialog} />
+                </ErrorBoundary>
+            )}
             {unavailableReplacementDialog && <UnavailableReplacementDialog {...unavailableReplacementDialog} />}
             {providerSwitchConfirmDialog && <ConfirmDialog {...providerSwitchConfirmDialog} />}
             <AnimatePresence>
-                {settingsDialog && <SettingsModal {...settingsDialog} />}
+                {settingsDialog && (
+                    <ErrorBoundary>
+                        <SettingsModal {...settingsDialog} />
+                    </ErrorBoundary>
+                )}
             </AnimatePresence>
         </>
     );

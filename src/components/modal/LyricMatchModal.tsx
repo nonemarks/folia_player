@@ -21,6 +21,8 @@ import {
 } from './lyricMatchResultHelpers';
 import { LyricPreviewPanel } from './LyricPreviewPanel';
 import { DurationMatchBadge } from './DurationMatchBadge';
+import WhisperSettingsPanel from '../shared/WhisperSettingsPanel';
+import ErrorBoundary from '../shared/ErrorBoundary';
 
 interface LyricMatchModalProps {
     song: LocalSong;
@@ -144,7 +146,9 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
 
     // Source changes should reuse the user's current query instead of resetting it.
     useEffect(() => {
-        void runSearch(searchQuery, source);
+        if (source !== 'whisper') {
+            void runSearch(searchQuery, source);
+        }
     }, [source]);
 
     const handleSearch = async (query?: string) => {
@@ -263,34 +267,50 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
                     </button>
                 </div>
 
-                {/* Body: Two-panel layout */}
-                <div className="flex-1 flex min-h-0 overflow-hidden">
-                    {/* LEFT PANEL: Search + Results (wider) */}
-                    <div className={`w-[62%] flex flex-col border-r ${borderColor}`}>
+                {/* Body: Tab bar + content area */}
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    {/* Tab bar: always visible */}
+                    <div className={`flex border-b ${borderColor} px-6 pt-3 gap-4`}>
+                        {LYRIC_MATCH_SOURCES
+                            .map(id => ({ id, label: getLyricMatchSourceLabel(id) }))
+                            .map(t => {
+                                const isSelected = source === t.id;
+                                const activeTabClass = isSelected
+                                    ? isDaylight
+                                        ? 'border-blue-500 text-blue-600 font-semibold'
+                                        : 'border-blue-400 text-blue-300 font-semibold'
+                                    : 'border-transparent text-zinc-400 hover:text-zinc-200';
+                                return (
+                                    <button
+                                        key={t.id}
+                                        type="button"
+                                        onClick={() => setSource(t.id as any)}
+                                        className={`pb-2 border-b-2 text-sm transition-all px-1 cursor-pointer ${activeTabClass}`}
+                                    >
+                                        {t.label}
+                                    </button>
+                                );
+                            })}
+                    </div>
+
+                    {/* Content area: changes based on selected tab */}
+                    <ErrorBoundary>
+                    {source === 'whisper' ? (
+                        /* WHISPER TAB: Full-width settings + monitoring panel */
+                        <div className="flex-1 min-h-0 overflow-y-auto">
+                            <WhisperSettingsPanel
+                                song={song}
+                                lyrics={song.matchedLyrics ?? null}
+                                onLyricsUpdated={() => { onMatch(); }}
+                                isDaylight={isDaylight}
+                            />
+                        </div>
+                    ) : (
+                        <div className="flex-1 flex min-h-0 overflow-hidden">
+                            {/* LEFT PANEL: Search + Results (wider) */}
+                            <div className={`w-[62%] flex flex-col border-r ${borderColor}`}>
                         {/* Search Bar */}
                         <div className="p-4">
-                            <div className={`flex border-b ${borderColor} pb-2 mb-3.5 gap-4`}>
-                                {LYRIC_MATCH_SOURCES
-                                    .map(id => ({ id, label: getLyricMatchSourceLabel(id) }))
-                                    .map(t => {
-                                    const isSelected = source === t.id;
-                                    const activeTabClass = isSelected
-                                        ? isDaylight
-                                            ? 'border-blue-500 text-blue-600 font-semibold'
-                                            : 'border-blue-400 text-blue-300 font-semibold'
-                                        : 'border-transparent text-zinc-400 hover:text-zinc-200';
-                                    return (
-                                        <button
-                                            key={t.id}
-                                            type="button"
-                                            onClick={() => setSource(t.id as any)}
-                                            className={`pb-2 border-b-2 text-sm transition-all px-1 cursor-pointer ${activeTabClass}`}
-                                        >
-                                            {t.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
                             {sourceSupportsManualSearch(source) && (
                                 <form
                                     onSubmit={(e) => {
@@ -483,36 +503,43 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
                             <LyricPreviewPanel selectedResult={selectedResult} source={source} isDaylight={isDaylight} />
                         </div>
                     </div>
+                        </div>
+                    )}
+                    </ErrorBoundary>
                 </div>
 
                 {/* Footer */}
                 <div className={`px-6 py-4 border-t ${borderColor} flex justify-end gap-3`}>
-                    <button
-                        onClick={handleNoMatch}
-                        className={`px-5 py-2 ${noMatchBtnBg} text-red-400 border rounded-lg transition-colors mr-auto text-sm`}
-                    >
-                        {t('localMusic.dontUseOnlineMetadata')}
-                    </button>
+                    {source !== 'whisper' && (
+                        <button
+                            onClick={handleNoMatch}
+                            className={`px-5 py-2 ${noMatchBtnBg} text-red-400 border rounded-lg transition-colors mr-auto text-sm`}
+                        >
+                            {t('localMusic.dontUseOnlineMetadata')}
+                        </button>
+                    )}
                     <button
                         onClick={onClose}
                         className={`px-5 py-2 ${cancelBtnBg} rounded-lg transition-colors ${textPrimary} text-sm`}
                     >
-                        {t('localMusic.cancel')}
+                        {source === 'whisper' ? t('localMusic.close') : t('localMusic.cancel')}
                     </button>
-                    <button
-                        onClick={handleConfirm}
-                        disabled={!selectedResult || isMatching}
-                        className="px-5 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm text-white"
-                    >
-                        {isMatching ? (
-                            <>
-                                <Loader2 className="animate-spin" size={14} />
-                                <span>{t('localMusic.matching')}</span>
-                            </>
-                        ) : (
-                            t('localMusic.save')
-                        )}
-                    </button>
+                    {source !== 'whisper' && (
+                        <button
+                            onClick={handleConfirm}
+                            disabled={!selectedResult || isMatching}
+                            className="px-5 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm text-white"
+                        >
+                            {isMatching ? (
+                                <>
+                                    <Loader2 className="animate-spin" size={14} />
+                                    <span>{t('localMusic.matching')}</span>
+                                </>
+                            ) : (
+                                t('localMusic.save')
+                            )}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

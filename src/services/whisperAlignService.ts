@@ -5,6 +5,7 @@
 
 import type { LyricData, Line, LocalSong, SongResult } from '../types';
 import { alignWhisperToLyrics, needsWordAlignment, hasLineTimingButNoWordTiming, type WhisperResult } from '../utils/lyrics/wordAligner';
+import type { AudioQualityPreference } from '../types/onlineMusic';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +31,7 @@ let activeJob: WhisperAlignJob | null = null;
 let progressUnsubscribe: (() => void) | null = null;
 let downloadProgressUnsubscribe: (() => void) | null = null;
 let installProgressUnsubscribe: (() => void) | null = null;
+let installFfmpegProgressUnsubscribe: (() => void) | null = null;
 
 // ---------------------------------------------------------------------------
 // Audio source helpers
@@ -44,30 +46,110 @@ function getLocalSongAudioPath(song: LocalSong): string | null {
 }
 
 /**
- * Get audio data for an online song (from cache).
- * Returns the cached audio blob if available.
+ * Get audio data for an online song (from cache or online source).
+ * Returns the audio blob if available.
  */
-async function getOnlineSongAudioBlob(song: { id: string }): Promise<ArrayBuffer | null> {
+async function getOnlineSongAudioBlob(song: { id: string | number; name?: string; artists?: any[] }): Promise<{ data: ArrayBuffer | null; mimeType?: string; reason?: string; failures?: string[] } | null> {
+    const failures: string[] = [];
+
     try {
         // Try to get from Electron audio cache
         if (window.electron?.getAudioCache) {
             const cacheKey = `whisper-audio-${song.id}`;
-            const cached = await window.electron.getAudioCache(cacheKey);
-            if (cached?.found && cached.data) {
-                return cached.data instanceof ArrayBuffer ? cached.data : null;
+            try {
+                const cached = await window.electron.getAudioCache(cacheKey);
+                if (cached?.found && cached.data) {
+                    if (cached.data instanceof ArrayBuffer) {
+                        console.log(`[WhisperAlign] Got audio from Electron cache for song ${song.id}`);
+                        return { data: cached.data, mimeType: 'audio/mpeg' };
+                    }
+                    failures.push('electron-cache: invalid data type');
+                } else {
+                    failures.push('electron-cache: not found');
+                }
+            } catch (err) {
+                failures.push(`electron-cache: ${err instanceof Error ? err.message : String(err)}`);
             }
+        } else {
+            failures.push('electron-cache: IPC not available');
         }
 
         // Try to get from resource cache (online playback cache)
-        const { getCachedSongAudioBlob } = await import('./onlineMusic/resourceCache');
-        const blob = await getCachedSongAudioBlob(song as any);
-        if (blob) {
-            return await blob.arrayBuffer();
+        try {
+            const { getCachedSongAudioBlob } = await import('./onlineMusic/resourceCache');
+            const blob = await getCachedSongAudioBlob(song as any);
+            if (blob) {
+                console.log(`[WhisperAlign] Got audio from resource cache for song ${song.id}`);
+                return { data: await blob.arrayBuffer(), mimeType: blob.type || 'audio/mpeg' };
+            }
+            failures.push('resourceCache: not found');
+        } catch (err) {
+            failures.push(`resourceCache: ${err instanceof Error ? err.message : String(err)}`);
         }
 
-        return null;
-    } catch {
-        return null;
+        // Try to fetch from online source directly
+        try {
+            const { omni } = await import('./onlineMusic/omni');
+            const { useSettingsUiStore } = await import('../stores/useSettingsUiStore');
+            const audioQuality = useSettingsUiStore.getState().audioQuality || 'standard';
+
+            console.log(`[WhisperAlign] Attempting omni.getAudioSource for song ${song.id} (quality: ${audioQuality})`);
+            const source = await omni.getAudioSource(song as SongResult, audioQuality as AudioQualityPreference);
+
+            if (source?.url) {
+                console.log(`[WhisperAlign] Got audio URL from provider, fetching...`);
+
+                // Use IPC to fetch audio in main process (bypasses CORS)
+                if (window.electron?.whisperAlignFetchAudio) {
+                    console.log(`[WhisperAlign] Using main-process fetch (CORS-safe)`);
+                    try {
+                        const result = await window.electron.whisperAlignFetchAudio(source.url);
+                        if (result?.data && result.data.byteLength > 0) {
+                            console.log(`[WhisperAlign] Fetched audio via IPC: ${result.data.byteLength} bytes, type: ${result.mimeType}`);
+                            return { data: result.data, mimeType: result.mimeType };
+                        }
+                        failures.push(`ipc-fetch: returned empty (bytes=${result?.data?.byteLength ?? 0})`);
+                    } catch (err) {
+                        failures.push(`ipc-fetch: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                } else {
+                    failures.push('ipc-fetch: IPC not available');
+                }
+
+                // Fallback: try renderer fetch (may fail due to CORS)
+                try {
+                    const response = await fetch(source.url);
+                    if (response.ok) {
+                        const arrayBuffer = await response.arrayBuffer();
+                        if (arrayBuffer.byteLength > 0) {
+                            console.log(`[WhisperAlign] Fetched online audio: ${arrayBuffer.byteLength} bytes`);
+                            const ct = response.headers.get('content-type') || 'audio/mpeg';
+                            return { data: arrayBuffer, mimeType: ct };
+                        }
+                        failures.push('renderer-fetch: 0 bytes');
+                    } else {
+                        failures.push(`renderer-fetch: HTTP ${response.status}`);
+                    }
+                } catch (err) {
+                    failures.push(`renderer-fetch: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            } else {
+                failures.push(`omni.getAudioSource: no URL returned (source=${source ? JSON.stringify(Object.keys(source)) : 'null'})`);
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            failures.push(`omni: ${msg}`);
+        }
+
+        console.error(`[WhisperAlign] All audio sources failed for song ${song.id}:`);
+        failures.forEach((f, i) => console.error(`  [${i + 1}] ${f}`));
+        // Return detailed failure info so the UI can display the actual reasons
+        const failureSummary = failures.length > 0 ? failures.slice(0, 5).join('; ') : 'no sources attempted';
+        return { data: null as any, reason: `All sources failed: ${failureSummary}`, failures };
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[WhisperAlign] getOnlineSongAudioBlob error: ${msg}`);
+        return { data: null as any, reason: `Error: ${msg}`, failures: [`fatal: ${msg}`] };
     }
 }
 
@@ -87,6 +169,8 @@ export type WhisperAvailabilityDetail = {
     hasModel: boolean;
     /** The list of available models (may be empty). */
     models: WhisperAlignModel[];
+    /** FFmpeg is available for audio conversion. */
+    ffmpegAvailable: boolean;
     /** Human-readable reason when not available (for error messages). */
     reason?: string;
 };
@@ -109,6 +193,7 @@ export async function getWhisperAvailabilityDetail(): Promise<WhisperAvailabilit
             cliInstalled: false,
             hasModel: false,
             models: [],
+            ffmpegAvailable: false,
             reason: 'not-electron',
         };
     }
@@ -116,6 +201,7 @@ export async function getWhisperAvailabilityDetail(): Promise<WhisperAvailabilit
         const status = await window.electron.whisperAlignGetStatus();
         const cliInstalled = status.available;
         const hasModel = status.models?.some((m: any) => m.downloaded) || false;
+        const ffmpegAvailable = status.ffmpegAvailable || false;
         let reason: string | undefined;
         if (!cliInstalled && !hasModel) {
             reason = 'no-cli-no-model';
@@ -129,6 +215,7 @@ export async function getWhisperAvailabilityDetail(): Promise<WhisperAvailabilit
             cliInstalled,
             hasModel,
             models: status.models || [],
+            ffmpegAvailable,
             reason,
         };
     } catch {
@@ -137,6 +224,7 @@ export async function getWhisperAvailabilityDetail(): Promise<WhisperAvailabilit
             cliInstalled: false,
             hasModel: false,
             models: [],
+            ffmpegAvailable: false,
             reason: 'error',
         };
     }
@@ -203,6 +291,34 @@ export async function installWhisperCli(onProgress?: (progress: any) => void): P
         if (installProgressUnsubscribe) {
             installProgressUnsubscribe();
             installProgressUnsubscribe = null;
+        }
+    }
+}
+
+/**
+ * Auto-install FFmpeg for the current platform.
+ * Downloads a static build and installs it to the app's userData directory.
+ *
+ * @param onProgress - Progress callback: { status, progress, ... }
+ * @returns Installation result with path
+ */
+export async function installFfmpeg(onProgress?: (progress: any) => void): Promise<{ success: boolean; path: string }> {
+    if (!window.electron?.whisperAlignInstallFfmpeg) {
+        throw new Error('FFmpeg installation is not available in this environment.');
+    }
+
+    // Subscribe to install progress
+    if (onProgress && window.electron.onWhisperAlignInstallFfmpegProgress) {
+        installFfmpegProgressUnsubscribe = window.electron.onWhisperAlignInstallFfmpegProgress(onProgress);
+    }
+
+    try {
+        const result = await window.electron.whisperAlignInstallFfmpeg();
+        return result;
+    } finally {
+        if (installFfmpegProgressUnsubscribe) {
+            installFfmpegProgressUnsubscribe();
+            installFfmpegProgressUnsubscribe = null;
         }
     }
 }
@@ -283,22 +399,49 @@ export async function alignLyricsWithWhisper(
         updateJob({ status: 'preparing-audio', progress: 5 });
 
         let audioPath: string | null = null;
+        const isLocalSong = 'filePath' in song && !!song.filePath;
+        const songName = ('title' in song ? song.title : ('name' in song ? song.name : undefined)) ?? String(song.id);
+
+        console.log(`[WhisperAlign] Preparing audio for: "${songName}" (id=${song.id}, local=${isLocalSong})`);
 
         // For local songs, use the file path directly
-        if ('filePath' in song && song.filePath) {
-            audioPath = song.filePath;
+        if (isLocalSong) {
+            audioPath = song.filePath!;
+            console.log(`[WhisperAlign] Using local file path: ${audioPath}`);
         }
 
-        // For online songs, try to get cached audio
+        // For online songs, try to get cached audio or fetch from online source
+        let audioFailureReason = '';
         if (!audioPath) {
-            const audioBlob = await getOnlineSongAudioBlob({ id: String(song.id) });
-            if (audioBlob && window.electron?.whisperAlignPrepareAudio) {
-                audioPath = await window.electron.whisperAlignPrepareAudio(audioBlob, 'audio/mpeg');
+            console.log(`[WhisperAlign] No local file path, trying online audio sources for song ${song.id}`);
+            const audioResult = await getOnlineSongAudioBlob(song);
+            if (audioResult && audioResult.data && audioResult.data.byteLength > 0 && window.electron?.whisperAlignPrepareAudio) {
+                const mimeType = audioResult.mimeType || 'audio/mpeg';
+                audioPath = await window.electron.whisperAlignPrepareAudio(audioResult.data, mimeType);
+                console.log(`[WhisperAlign] Prepared audio file: ${audioPath}`);
+            } else if (audioResult && audioResult.data && audioResult.data.byteLength > 0 && !window.electron?.whisperAlignPrepareAudio) {
+                console.error(`[WhisperAlign] whisperAlignPrepareAudio IPC not available (not in Electron?)`);
+                audioFailureReason = 'IPC not available';
+            } else {
+                // Build detailed failure reason from the failures array
+                const detailFailures = audioResult?.failures;
+                if (detailFailures && detailFailures.length > 0) {
+                    audioFailureReason = detailFailures.slice(0, 5).join('; ');
+                } else {
+                    audioFailureReason = audioResult?.reason || (audioResult ? 'empty audio data' : 'no audio source available');
+                }
+                console.error(`[WhisperAlign] getOnlineSongAudioBlob failed for song ${song.id}. Reason: ${audioFailureReason}`);
             }
         }
 
         if (!audioPath) {
-            throw new Error('Could not obtain audio for transcription. The song may not be cached locally.');
+            const reason = isLocalSong
+                ? 'options.whisperAlignNoAudioLocal'
+                : 'options.whisperAlignNoAudioOnline';
+            const error = new Error(reason);
+            (error as any).audioFailureReason = audioFailureReason;
+            (error as any).songInfo = { id: song.id, name: songName, isLocal: isLocalSong };
+            throw error;
         }
 
         // Step 2: Run Whisper transcription
@@ -316,7 +459,16 @@ export async function alignLyricsWithWhisper(
         }
 
         if (!whisperResult.segments || whisperResult.segments.length === 0) {
-            throw new Error('Whisper transcription produced no results.');
+            // The main process now throws with diagnostic info when segments are empty,
+            // so this is a safety fallback. If we reach here, the error came from elsewhere.
+            const diag = (whisperResult as any).diagnostic || '';
+            console.error(`[WhisperAlign] No segments in transcription result. ` +
+                `Result keys: ${whisperResult ? Object.keys(whisperResult).join(',') : 'null'}, ` +
+                `Segments: ${whisperResult?.segments?.length ?? 'undefined'}` +
+                (diag ? `, Diagnostic: ${diag}` : ''));
+            const error = new Error('options.whisperAlignNoSegments');
+            (error as any).diagnostic = diag;
+            throw error;
         }
 
         // Step 3: Run alignment algorithm
@@ -342,7 +494,9 @@ export async function alignLyricsWithWhisper(
         const errorMessage = err instanceof Error ? err.message : String(err);
         updateJob({ status: 'error', progress: 0, error: errorMessage });
         console.error('[WhisperAlign] Alignment failed:', errorMessage);
-        return null;
+        // Re-throw so the UI can display the actual error message with diagnostic info
+        // instead of a generic "no segments" message
+        throw err;
     } finally {
         if (progressUnsubscribe) {
             progressUnsubscribe();

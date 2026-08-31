@@ -16,6 +16,7 @@ import {
 import { LyricPreviewPanel } from './LyricPreviewPanel';
 import { getProviderSongMetadata } from '../../services/onlineMusic/songMetadata';
 import { getSizedCoverUrl } from '../../utils/coverUrl';
+import ErrorBoundary from '../shared/ErrorBoundary';
 
 // src/components/modal/OnlineLyricMatchModal.tsx
 
@@ -184,6 +185,7 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
                 </div>
 
                 <div className="flex-1 flex min-h-0 overflow-hidden">
+                    <ErrorBoundary>
                     {/* LEFT PANEL */}
                     <div className={`w-[62%] flex flex-col border-r ${borderColor} p-6 gap-5 min-h-0`}>
                         <div className={`flex border-b ${borderColor} pb-2 gap-4`}>
@@ -336,6 +338,7 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
                             <LyricPreviewPanel selectedResult={selectedResult} source={source} isDaylight={isDaylight} />
                         </div>
                     </div>
+                    </ErrorBoundary>
                 </div>
 
                 <div className={`px-6 py-5 border-t ${borderColor} flex justify-end gap-3`}>
