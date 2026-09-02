@@ -2,12 +2,14 @@ import type React from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { SearchReturnView, SearchSource } from '../../stores/useSearchNavigationStore';
 import type { LocalLibraryDisplayCatalog } from '../../services/playbackAdapters';
-import type { HomeViewTab, LatentBackgroundTuning, LocalSong, PlayerState, ReplayGainMode, SongResult, StatusMessage, SubtitleContentMode, VisualizerMode, VisualizerBackgroundMode, MonetBackgroundTuning } from '../../types';
+import type { HomeViewTab, LatentBackgroundTuning, LocalSong, LyricData, PlayerState, ReplayGainMode, SongResult, StatusMessage, SubtitleContentMode, VisualizerMode, VisualizerBackgroundMode, MonetBackgroundTuning } from '../../types';
 import type { AppLanguagePreference } from '../../i18n/config';
 import type { PanelTab } from '../UnifiedPanel';
 import type { SettingsModalInitialTab, SettingsSubviewId } from '../../stores/useSettingsUiStore';
+import type { LyricStaffPolicy } from '../../utils/lyrics/staffCreditsPolicy';
 import type { AudioEqualizerModeId } from '../../utils/audioEqualizer';
 import type { ThemeGenerationSource } from '../../services/themePreferences';
+import type { TransitionMode } from '../../services/automix/transitionStrategy';
 import type { PersonalFmSelection } from '../../services/onlineMusic/fmModes';
 import type { QueueBatchAction, QueueFacetKind } from './queueQuery';
 import type { CommandPlatform } from './availability';
@@ -37,7 +39,8 @@ export type CommandPaletteCommand = {
     isAvailable?: (context?: CommandPaletteContext) => boolean;
     /** Kept out of match results, the all-commands list, and the pinned-command picker. */
     hidden?: boolean;
-    /** Global shortcut that opens the palette straight into this command. */
+    /** Global shortcut that opens the palette straight into this command. `ctrl` means the
+     *  platform's primary modifier — Ctrl on Windows/Linux, Cmd on macOS. */
     openHotkey?: { key: string; ctrl?: boolean };
     /** Vim-style key sequence that runs this command from execute mode. Omit for anything
      *  dangerous, irreversible, or needing confirmation. Must stay prefix-free registry-wide. */
@@ -66,6 +69,19 @@ export type CommandPaletteSharedContext = {
     t: (key: string, fallback?: string) => string;
     setStatusMsg: React.Dispatch<React.SetStateAction<StatusMessage | null>>;
     currentSong: SongResult | null;
+    /**
+     * The lyrics currently on screen (the automix transition display included),
+     * so a surface that needs them gets what the player renders rather than
+     * having to rebuild them from the song's stored lyric state.
+     */
+    lyrics: LyricData | null;
+    /**
+     * The transport as the listener hears it, not the raw one.
+     *
+     * An armed transition drops the raw state to IDLE while the outgoing deck keeps playing, so the
+     * commands below have to be given the same corrected state the main controls, the remote and the
+     * taskbar are given. Reading the raw one made Play pause and Pause do nothing for the whole arm.
+     */
     playerState: PlayerState;
 };
 
@@ -122,6 +138,8 @@ export type CommandPaletteNavigationContext = {
     toggleBrowserFullscreen: () => Promise<boolean>;
     toggleRemoteControlWindow: () => Promise<boolean>;
     toggleMainWindowAlwaysOnTop: () => Promise<boolean>;
+    /** Window-level toggles (fullscreen, always-on-top) are meaningless in wallpaper mode. */
+    isWallpaperMode: boolean;
 };
 
 export type CommandPalettePanelContext = {
@@ -143,6 +161,8 @@ export type CommandPaletteSettingsContext = {
     toggleAlwaysShowTrackSwitchButtons: () => void;
     toggleAlwaysShowMainWindowTitlebar: () => void;
     voiceInputPauseSupported: boolean;
+    /** Lab switch for the experimental mod system; gates the `mods` command. */
+    modSystemEnabled: boolean;
     toggleVoiceInputPause: () => void;
     togglePreventDisplaySleepDuringPlayback: () => void;
     toggleWallpaperMode: () => void;
@@ -160,6 +180,26 @@ export type CommandPaletteSettingsContext = {
     canOpenThemeQuickEditor: boolean;
     themeGenerationSource: ThemeGenerationSource;
     setThemeGenerationSource: (source: ThemeGenerationSource) => void;
+    /** 开头制作人员信息的处理策略；命令只负责在三态之间轮换。 */
+    lyricStaffPolicy: LyricStaffPolicy;
+    cycleLyricStaffPolicy: () => void;
+    /** The FOLIA smart-transition switches, stated in each command's title the way the pickers do. */
+    automixEnabled: boolean;
+    transitionMode: TransitionMode;
+    transitionPerformance: boolean;
+    toggleAutomix: () => void;
+    setTransitionMode: (mode: TransitionMode) => void;
+    toggleTransitionPerformance: () => void;
+    /**
+     * Whether performance mode has anything to run on - the same `capabilities.stems` the settings
+     * panel disables its switch by.
+     *
+     * A function rather than a value because the answer changes when a model download finishes, and
+     * nothing re-renders the app to say so. `isAvailable` is asked each time the palette opens, so a
+     * getter is read fresh; a snapshot taken when this context was memoised would keep saying "no
+     * model" for the rest of the session.
+     */
+    canUseTransitionPerformance: () => boolean;
 };
 
 export type CommandPaletteVisualizerContext = {

@@ -16,6 +16,7 @@ const createContext = (overrides: CommandPaletteContextOverrides = {}): CommandP
             t: (_key: string, fallback?: string) => fallback ?? '',
             setStatusMsg: vi.fn(),
             currentSong: null,
+            lyrics: null,
             playerState: PlayerState.PAUSED,
         },
         search: {
@@ -58,6 +59,7 @@ const createContext = (overrides: CommandPaletteContextOverrides = {}): CommandP
             toggleBrowserFullscreen: vi.fn(async () => true),
             toggleRemoteControlWindow: vi.fn(async () => true),
             toggleMainWindowAlwaysOnTop: vi.fn(async () => true),
+            isWallpaperMode: false,
         },
         panel: {
             setPanelTab: vi.fn(),
@@ -65,6 +67,8 @@ const createContext = (overrides: CommandPaletteContextOverrides = {}): CommandP
         },
         settings: {
             openSettings: vi.fn(),
+            lyricStaffPolicy: 'smart' as const,
+            cycleLyricStaffPolicy: vi.fn(),
             setIsUserGuideModalOpen: vi.fn(),
             setAppLanguagePreference: vi.fn(async () => undefined),
             toggleTransparentBackground: vi.fn(),
@@ -77,6 +81,7 @@ const createContext = (overrides: CommandPaletteContextOverrides = {}): CommandP
             toggleAlwaysShowTrackSwitchButtons: vi.fn(),
             toggleAlwaysShowMainWindowTitlebar: vi.fn(),
             voiceInputPauseSupported: false,
+            modSystemEnabled: false,
             toggleVoiceInputPause: vi.fn(),
             togglePreventDisplaySleepDuringPlayback: vi.fn(),
             toggleWallpaperMode: vi.fn(),
@@ -94,6 +99,13 @@ const createContext = (overrides: CommandPaletteContextOverrides = {}): CommandP
             canOpenThemeQuickEditor: true,
             themeGenerationSource: 'ai',
             setThemeGenerationSource: vi.fn(),
+            automixEnabled: false,
+            transitionMode: 'crossfade',
+            transitionPerformance: false,
+            toggleAutomix: vi.fn(),
+            setTransitionMode: vi.fn(),
+            toggleTransitionPerformance: vi.fn(),
+            canUseTransitionPerformance: vi.fn(() => true),
         },
         visualizer: {
             visualizerMode: 'classic',
@@ -806,5 +818,52 @@ describe('theme generation source commands', () => {
         const ids = getCommandPaletteMatches('封面取色', createContext({ settings: { themeGenerationSource: 'ai' } }))
             .map(match => match.command.id);
         expect(ids).toContain('theme-source-cover');
+    });
+});
+
+// The settings panel disables the performance switch when there is no stem model to run it. The
+// command has to ask the same question: otherwise it can persist `transitionPerformance = true` in
+// a state the panel refuses to produce, and the mode is silently on once a model does arrive.
+describe('transition performance command', () => {
+    const availableIds = (canUseTransitionPerformance: boolean) => (
+        getAvailableCommandPaletteCommands(createContext({ settings: { canUseTransitionPerformance: () => canUseTransitionPerformance } }))
+            .map(command => command.id)
+    );
+
+    it('is offered once a stem model can run', () => {
+        expect(availableIds(true)).toContain('transition-performance-toggle');
+    });
+
+    it('is withdrawn while no stem model is installed', () => {
+        expect(availableIds(false)).not.toContain('transition-performance-toggle');
+    });
+
+    it('stays out of the matches for a direct search', () => {
+        const context = createContext({ settings: { canUseTransitionPerformance: () => false } });
+        const ids = getCommandPaletteMatches('performance mode', context).map(match => match.command.id);
+        expect(ids).not.toContain('transition-performance-toggle');
+    });
+});
+
+// Both commands read one state and act on it, so what matters here is that each acts only on the
+// state that calls for it. Which state they are handed is App's side of the contract: a blend must
+// pass the DISPLAY transport, since the raw one goes IDLE for the length of an arm while the
+// outgoing deck is still sounding - given the raw state, Play called toggle (which during a blend
+// pauses) and Pause found no PLAYING to toggle, so both named the opposite of what they did.
+describe('play and pause commands', () => {
+    const execute = (id: string, playerState: PlayerState) => {
+        const context = createContext({ shared: { playerState } });
+        COMMAND_PALETTE_COMMANDS.find(entry => entry.id === id)!.execute('', context);
+        return context.playback.togglePlay;
+    };
+
+    it('pauses audible playback and leaves Play alone', () => {
+        expect(execute('playback-pause', PlayerState.PLAYING)).toHaveBeenCalled();
+        expect(execute('playback-play', PlayerState.PLAYING)).not.toHaveBeenCalled();
+    });
+
+    it('starts paused playback and leaves Pause alone', () => {
+        expect(execute('playback-play', PlayerState.PAUSED)).toHaveBeenCalled();
+        expect(execute('playback-pause', PlayerState.PAUSED)).not.toHaveBeenCalled();
     });
 });

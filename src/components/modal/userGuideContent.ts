@@ -1,6 +1,6 @@
 // src/components/modal/userGuideContent.ts
 
-const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('mac');
+import { isMacPlatform as isMac } from '../../utils/platform';
 
 export type UserGuideShortcut = {
     id: string;
@@ -13,7 +13,7 @@ export type UserGuideShortcut = {
 export type GuidePage = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export const USER_GUIDE_PAGE_COUNT = 7;
-export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.7.0';
+export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.7.2';
 
 export const PLAYER_PAGE_SHORTCUTS: UserGuideShortcut[] = [
     {
@@ -26,7 +26,7 @@ export const PLAYER_PAGE_SHORTCUTS: UserGuideShortcut[] = [
         id: 'open-command-palette-queue',
         titleKey: 'help.openCommandPaletteQueue',
         fallback: 'Open queue in command palette',
-        keys: ['Ctrl', 'P'],
+        keys: isMac ? ['Cmd', 'P'] : ['Ctrl', 'P'],
         separator: '+',
     },
     {

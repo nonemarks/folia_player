@@ -1,6 +1,7 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useMotionValue, animate, AnimatePresence, useDragControls } from 'framer-motion';
 import { ChevronLeft, Disc, Download, Play, Plus, Loader2, Heart, ListPlus, Pencil, Search, X, RefreshCw, Trash2, Star, Tags } from 'lucide-react';
+import GridPanelToggleIndicator from './folia-grid/GridPanelToggleIndicator';
 import { useTranslation } from 'react-i18next';
 import { SongResult, type LocalSong, type StatusMessage, Theme, type UnifiedSong } from '../types';
 import { getSongUnavailableLabel, isSongUnavailable } from '../services/onlineMusic/songAvailability';
@@ -35,7 +36,7 @@ import {
 } from './folia-grid/progressiveGrid';
 import { useProgressiveItemEntrance } from './folia-grid/useProgressiveItemEntrance';
 import { useLocalCoverPreloader } from '../hooks/useLocalCoverPreloader';
-import { compareLocalFolderSongs, type LocalSongFolderSortDirection, type LocalSongFolderSortField } from '../utils/localSongSorting';
+import { compareLocalFolderSongs, formatLocalAlbumTrackLabel, type LocalAlbumGroupKey, type LocalSongFolderSortDirection, type LocalSongFolderSortField } from '../utils/localSongSorting';
 import { resolveGridViewContextTracks } from './folia-grid/gridViewContextActions';
 import {
     resolveGridTrackAlbumTargetId,
@@ -124,7 +125,7 @@ const LOCAL_TRACK_SORT_DIRECTION_STORAGE_KEY = 'local_track_sort_direction';
 
 const getStoredLocalTrackSortField = (): LocalSongFolderSortField => {
     const stored = localStorage.getItem(LOCAL_TRACK_SORT_FIELD_STORAGE_KEY);
-    return stored === 'fileLastModified' ? stored : 'fileName';
+    return stored === 'fileLastModified' || stored === 'albumTrack' ? stored : 'fileName';
 };
 
 const getStoredLocalTrackSortDirection = (): LocalSongFolderSortDirection => {
@@ -782,6 +783,32 @@ export const GridView: React.FC<GridViewProps> = ({
         && collection?.type !== 'playlist'
         && Boolean(sourceActions?.navidrome?.onAddToPlaylist || sourceActions?.navidrome?.onCreatePlaylist);
     const localSongsById = useMemo(() => new Map(localSongs?.map(song => [song.id, song])), [localSongs]);
+    // 专辑归属以本地曲库的专辑实体为准，不用文件里的专辑标签字面值：
+    // 用户重命名或合并实体后，显示轨道已经带上了实体的 entityId 和 displayName。
+    const localAlbumGroupBySongId = useMemo(() => {
+        const groups = new Map<string, LocalAlbumGroupKey>();
+        if (!supportsLocalTrackSorting) return groups;
+        baseDisplayTracks.forEach(track => {
+            const localRef = (track as UnifiedSong).localRef;
+            if (!localRef) return;
+            groups.set(localRef.songId, {
+                entityId: track.album?.entityId,
+                name: track.album?.name || '',
+            });
+        });
+        return groups;
+    }, [baseDisplayTracks, supportsLocalTrackSorting]);
+    const resolveLocalAlbumGroup = useCallback((song: LocalSong) => (
+        localAlbumGroupBySongId.get(song.id)
+    ), [localAlbumGroupBySongId]);
+    // 只有能选专辑号排序的本地列表才挂轨道号；本地歌单等自定义顺序的列表不属于这个语境。
+    const getAlbumTrackLabel = useCallback((track: SongResult): string | null => {
+        if (!supportsLocalTrackSorting) return null;
+        const localRef = (track as UnifiedSong).localRef;
+        if (!localRef) return null;
+        const localSong = localSongsById.get(localRef.songId);
+        return localSong ? formatLocalAlbumTrackLabel(localSong) : null;
+    }, [localSongsById, supportsLocalTrackSorting]);
     const displayTracks = useMemo(() => {
         const filteredTracks = baseDisplayTracks.filter((track, index) => (
             !removedExternalTrackKeys.has(`${getPlaybackSongKey(track)}-${index}`)
@@ -797,7 +824,13 @@ export const GridView: React.FC<GridViewProps> = ({
             const leftLocalSong = leftLocalRef ? localSongsById.get(leftLocalRef.songId) : undefined;
             const rightLocalSong = rightLocalRef ? localSongsById.get(rightLocalRef.songId) : undefined;
             if (!leftLocalSong || !rightLocalSong) return 0;
-            return compareLocalFolderSongs(leftLocalSong, rightLocalSong, localTrackSortField, localTrackSortDirection);
+            return compareLocalFolderSongs(
+                leftLocalSong,
+                rightLocalSong,
+                localTrackSortField,
+                localTrackSortDirection,
+                resolveLocalAlbumGroup,
+            );
         });
     }, [
         baseDisplayTracks,
@@ -806,6 +839,7 @@ export const GridView: React.FC<GridViewProps> = ({
         localTrackSortDirection,
         localTrackSortField,
         removedExternalTrackKeys,
+        resolveLocalAlbumGroup,
     ]);
 
     useEffect(() => {
@@ -2057,6 +2091,8 @@ export const GridView: React.FC<GridViewProps> = ({
     const infoCollection = collectionDetail ? { ...collection, ...collectionDetail } : collection;
     const coverUrl = infoCollection?.coverUrl || '';
     const infoPanelCoverUrl = infoCollection?.coverUrl || '';
+    // 只有 tracks 模式下的合集才有切入面板，没有面板时标题不做成可点控件
+    const hasCutInPanel = mode === 'tracks' && Boolean(collection);
     const albumArtists = Array.isArray(infoCollection?.artists) ? infoCollection.artists : [];
     const albumAlias = infoCollection?.aliases?.[0];
     const albumPublishedAt = infoCollection?.publishedAt;
@@ -2124,11 +2160,10 @@ export const GridView: React.FC<GridViewProps> = ({
             {/* Center Clickable Area */}
             <div
                 onClick={() => {
-                    if (mode === 'tracks' && collection) {
-                        setShowCutInPanel(!showCutInPanel);
-                    }
+                    if (!hasCutInPanel) return;
+                    setShowCutInPanel(!showCutInPanel);
                 }}
-                className="absolute left-1/2 top-5 -translate-x-1/2 z-[70] text-center flex flex-col items-center select-none cursor-pointer hover:scale-[1.01] active:scale-98 transition-all px-5 py-2 rounded-2xl backdrop-blur-md"
+                className={`group/grid-title absolute left-1/2 top-5 -translate-x-1/2 z-[70] text-center flex flex-col items-center select-none transition-all px-5 py-2 rounded-2xl backdrop-blur-md ${hasCutInPanel ? 'cursor-pointer hover:scale-[1.01] active:scale-98' : ''}`}
                 style={{
                     backgroundColor: 'color-mix(in srgb, var(--bg-color) 20%, transparent)',
                     color: 'var(--text-primary)',
@@ -2136,11 +2171,7 @@ export const GridView: React.FC<GridViewProps> = ({
             >
                 <h2 className="text-lg font-bold tracking-tight flex items-center gap-1.5 justify-center">
                     {infoCollection?.name || collection?.name || title}
-                    {mode === 'tracks' && collection && (
-                        <span className="text-[9px] bg-zinc-500/20 text-current px-1.5 py-0.5 rounded-full font-normal opacity-60">
-                            {t(showCutInPanel ? 'ui.close' : 'ui.info')}
-                        </span>
-                    )}
+                    {hasCutInPanel && <GridPanelToggleIndicator isOpen={showCutInPanel} />}
                 </h2>
                 {(infoCollection?.description || subtitle) && (
                     <p className="mt-0.5 max-w-[min(40rem,calc(100vw-8rem))] text-xs leading-relaxed opacity-50 line-clamp-2 whitespace-normal break-words">
@@ -2647,6 +2678,7 @@ export const GridView: React.FC<GridViewProps> = ({
                             style={style}
                             isUnavailable={isSongUnavailable(track)}
                             isActive={index === focusedIndex}
+                            albumTrackLabel={getAlbumTrackLabel(track)}
                             onPlay={() => {
                                 onSelectTrack?.(track, playableTracks);
                             }}

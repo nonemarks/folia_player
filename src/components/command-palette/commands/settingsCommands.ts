@@ -29,6 +29,60 @@ export const settingsCommands: CommandPaletteCommand[] = [
     createSettingsCommand('settings-playback', 'Playback settings', 'Open playback behavior settings', ['playback settings', 'playback', '播放', '播放设置', 'bofang', 'bofangshezhi', 'bf', 'bfsz'], 'options', 'playback'),
     createSettingsCommand('settings-local-lyrics-priority', 'Local song lyrics priority', 'Choose whether local songs prefer local or online lyrics', ['local lyrics priority', 'online lyrics first', 'local song lyrics', '本地歌曲歌词优先级', '在线优先', '本地歌词', 'bendigeciyouxianji', 'zaixianyouxian', 'bdgcyxj', 'zxyx'], 'options', 'playback'),
     createSettingsCommand('settings-integration', 'Integration settings', 'Open Stage, Now Playing, and Navidrome settings', ['integration', 'stage', 'now playing', 'navidrome settings', '集成', '连接', 'jicheng', 'lianjie', 'jc', 'lj'], 'options', 'integration'),
+    {
+        id: 'automix-toggle',
+        group: 'settings',
+        title: 'Smart transition',
+        description: 'Turn FOLIA smart transitions on or off',
+        keywords: ['automix', 'smart transition', 'blend', 'auto mix', 'transition', '智能过渡', '自动混音', '过渡', '开启过渡', 'zhinengguodu', 'zidonghunyin', 'guodu', 'znguodu', 'zdhy', 'gd'],
+        execute: (_input, context) => {
+            context.settings.toggleAutomix();
+            return true;
+        },
+    },
+    {
+        id: 'transition-mode-crossfade',
+        isAvailable: context => (context ? context.settings.transitionMode !== 'crossfade' : true),
+        group: 'settings',
+        title: 'Transition mode: Folia Crossfade',
+        description: 'Use the simple one-out one-in crossfade',
+        keywords: ['crossfade', 'folia crossfade', 'transition mode crossfade', '交叉淡化', '过渡模式交叉淡化', 'jiaochadanhua', 'guodumoshijiaochadanhua', 'jcdh', 'gdmscf'],
+        execute: (_input, context) => {
+            if (context.settings.transitionMode === 'crossfade') return false;
+            context.settings.setTransitionMode('crossfade');
+            return true;
+        },
+    },
+    {
+        id: 'transition-mode-automix',
+        isAvailable: context => (context ? context.settings.transitionMode !== 'automix' : true),
+        group: 'settings',
+        title: 'Transition mode: Folia Automix',
+        description: 'Analyse both tracks and mix them automatically',
+        keywords: ['automix', 'folia automix', 'transition mode automix', '自动混音', '过渡模式自动混音', 'zidonghunyin', 'guodumoshizidonghunyin', 'zdhy', 'gdmsauto'],
+        execute: (_input, context) => {
+            if (context.settings.transitionMode === 'automix') return false;
+            context.settings.setTransitionMode('automix');
+            return true;
+        },
+    },
+    {
+        id: 'transition-performance-toggle',
+        platform: ['electron'],
+        // Hidden without a stem model, matching the disabled switch in the transition settings.
+        // Without this the command could persist `transitionPerformance = true` in a state the
+        // settings panel refuses to produce, and the mode would then be silently on the moment a
+        // model finished downloading.
+        isAvailable: context => (context ? context.settings.canUseTransitionPerformance() : true),
+        group: 'settings',
+        title: 'Transition performance mode',
+        description: 'Toggle the more aggressive transition (needs the stem model)',
+        keywords: ['performance mode', 'transition performance', 'aggressive transition', '表现模式', '过渡表现', '性能模式', 'biaoxianmoshi', 'guodubiaoxian', 'bxms', 'gdbx'],
+        execute: (_input, context) => {
+            context.settings.toggleTransitionPerformance();
+            return true;
+        },
+    },
     createSettingsCommand('settings-discord-presence', 'Discord playback status', 'Open Discord Rich Presence settings', ['discord', 'rich presence', 'discord presence', 'playing status', '播放状态', 'discord状态', 'discordzhuangtai', 'bofangzhuangtai', 'dc', 'zt'], 'options', 'integration'),
     createSettingsCommand('settings-obs-browser-source', 'OBS browser source', 'Open OBS browser source settings', ['obs', 'browser source', 'live source', '直播源', '浏览器源', 'zhiboyuan', 'liulanqiyuan', 'zby', 'llqy'], 'options', 'integration'),
     {
@@ -136,10 +190,10 @@ export const settingsCommands: CommandPaletteCommand[] = [
             return true;
         },
     },
-    createSettingsCommand('settings-wallpaper-mode', 'Wallpaper mode settings', 'Open wallpaper mode settings', ['wallpaper mode', 'desktop wallpaper', 'lyrics wallpaper', '壁纸模式', '桌面壁纸', '歌词壁纸', 'bizhimoshi', 'zhuomianbizhi', 'gecibizhi', 'bzms', 'zmbz', 'gcbz'], 'options', 'desktop', { platform: ['linux'] }),
+    createSettingsCommand('settings-wallpaper-mode', 'Wallpaper mode settings', 'Open wallpaper mode settings', ['wallpaper mode', 'desktop wallpaper', 'lyrics wallpaper', '壁纸模式', '桌面壁纸', '歌词壁纸', 'bizhimoshi', 'zhuomianbizhi', 'gecibizhi', 'bzms', 'zmbz', 'gcbz'], 'options', 'desktop', { platform: ['linux', 'win'] }),
     {
         id: 'desktop-toggle-wallpaper-mode',
-        platform: ['linux'],
+        platform: ['linux', 'win'],
         group: 'settings',
         title: 'Toggle wallpaper mode',
         description: 'Turn the app into a desktop lyrics wallpaper',
@@ -154,6 +208,17 @@ export const settingsCommands: CommandPaletteCommand[] = [
     createSettingsCommand('settings-theme-park', 'Color', 'Open theme editor', ['color', 'theme park', 'theme', '配色', '主题', '主题公园', 'peise', 'zhuti', 'zhutigongyuan', 'ps', 'zt', 'ztgy'], 'options', 'themePark', { executeShortcut: 't' }),
     createSettingsCommand('settings-global-lyric-offset', 'Global timing offset', 'Calibrate lyric timing against Bluetooth or device audio latency', ['global timing offset', 'lyric delay', 'audio latency', 'bluetooth delay', 'sync lyrics', '全局时间偏移', '歌词延迟', '音画同步', '蓝牙延迟', 'quanjushijianpianyi', 'geciyanchi', 'yinhuatongbu', 'lanyayanchi', 'qjsjpy', 'gcyc', 'yhtb', 'lyyc'], 'options', 'globalLyricOffset'),
     createSettingsCommand('settings-lyric-filter', 'Lyric filter', 'Open lyric filter settings', ['lyric filter', 'lyrics filter', '歌词过滤', '过滤', 'geciguolv', 'guolv', 'gcgl', 'gl'], 'options', 'lyricFilter'),
+    {
+        id: 'lyric-staff-policy-cycle',
+        group: 'settings',
+        title: 'Opening credits handling',
+        description: 'Cycle how the credit block at the start of the lyrics is handled',
+        keywords: ['opening credits', 'staff credits', 'lyric credits', 'credits', '制作人员', '署名', '开头署名', '前奏署名', 'zhizuorenyuan', 'shuming', 'kaitoushuming', 'zzry', 'sm', 'ktsm'],
+        execute: (_input, context) => {
+            context.settings.cycleLyricStaffPolicy();
+            return true;
+        },
+    },
     {
         id: 'theme-generate-current',
         isAvailable: context => (context ? context.settings.canGenerateAITheme && !context.settings.isGeneratingTheme : true),

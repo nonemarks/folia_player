@@ -22,6 +22,8 @@ import { ObsCopyUrlButton } from '../../shared/ObsCopyUrlButton';
 import { resolveWebObsTarget, selectWebObsSource } from '../../../utils/webObsTarget';
 import { buildVisualSettingsConfig, resolveObsCopyHintKey } from '../../../utils/visualSettingsConfig';
 import { isThemeGenerationSource, type ThemeGenerationSource } from '../../../services/themePreferences';
+import { SettingsAnchor } from './navigation/SettingsAnchorContext';
+import SettingsSectionHeading from './navigation/SettingsSectionHeading';
 
 // src/components/modal/settings/AppearanceSettingsSubview.tsx
 // Visual settings subview for theme presets, lyric renderer entry, layout settings, and configurations import/export.
@@ -54,6 +56,12 @@ type AppearanceSettingsSubviewProps = {
     toggleOffBackgroundClass: string;
     transparentPlayerBackground: boolean;
     autoHidePlayerChrome: boolean;
+    stageTrackPillMode: 'auto' | 'always' | 'never';
+    stageTrackPillTimeoutSec: number;
+    stageTrackPillOnHome: boolean;
+    onChangeStageTrackPillMode: (mode: 'auto' | 'always' | 'never') => void;
+    onChangeStageTrackPillTimeoutSec: (sec: number) => void;
+    onToggleStageTrackPillOnHome: (enable: boolean) => void;
     utilityGhostButtonClass: string;
     grid3dCardStyle: 'image' | 'card';
     onChangeGrid3dCardStyle: (style: 'image' | 'card') => void;
@@ -93,6 +101,12 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
     toggleOffBackgroundClass,
     transparentPlayerBackground,
     autoHidePlayerChrome,
+    stageTrackPillMode,
+    stageTrackPillTimeoutSec,
+    onChangeStageTrackPillMode,
+    onChangeStageTrackPillTimeoutSec,
+    stageTrackPillOnHome,
+    onToggleStageTrackPillOnHome,
     utilityGhostButtonClass,
     grid3dCardStyle,
     onChangeGrid3dCardStyle,
@@ -518,6 +532,27 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
                 store.handleToggleFollowSystemTheme(Boolean(config.followSystemTheme));
             }
 
+            // The now playing card. Applied through the panel's own props, the same setters the three
+            // controls below use, so an import and a click land in the same place.
+            //
+            // The mode is checked against the three known values rather than handed straight to the
+            // setter: it is persisted verbatim, so an unknown string would be stored and only fall
+            // back to 'auto' on the next read - a setting that says one thing and behaves another.
+            // A malformed timeout is skipped rather than defaulted, so the import never applies a
+            // number that was in neither configuration; the setter clamps the rest to 3-60 itself.
+            if (has('stageTrackPillMode')
+                && (config.stageTrackPillMode === 'auto'
+                    || config.stageTrackPillMode === 'always'
+                    || config.stageTrackPillMode === 'never')) {
+                onChangeStageTrackPillMode(config.stageTrackPillMode);
+            }
+            if (has('stageTrackPillTimeoutSec') && Number.isFinite(Number(config.stageTrackPillTimeoutSec))) {
+                onChangeStageTrackPillTimeoutSec(Number(config.stageTrackPillTimeoutSec));
+            }
+            if (has('stageTrackPillOnHome')) {
+                onToggleStageTrackPillOnHome(Boolean(config.stageTrackPillOnHome));
+            }
+
             store.statusSetter?.({ type: 'success', text: t('options.importSuccess') });
             setImportText('');
             setPendingImport(null);
@@ -531,10 +566,8 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
     return (
         <div className="space-y-6">
             {/* Section 1: Theme presets and edit options */}
-            <section>
-                <h3 className="text-sm font-bold uppercase tracking-wider opacity-50 mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                    <Palette size={14} /> {t('options.themePresets')}
-                </h3>
+            <SettingsAnchor anchorId="themePresets" label={t('options.themePresets')}>
+                <SettingsSectionHeading icon={Palette} label={t('options.themePresets')} />
                 <div className={`p-4 rounded-xl border space-y-4 ${settingsCardClass}`}>
                     <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -688,13 +721,11 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
                         </div>
                     )}
                 </div>
-            </section>
+            </SettingsAnchor>
 
             {/* Section 2: Lyrics Animation & Player View */}
-            <section>
-                <h3 className="text-sm font-bold uppercase tracking-wider opacity-50 mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                    <Monitor size={14} /> {t('options.lyricsRenderer')}
-                </h3>
+            <SettingsAnchor anchorId="lyricsRenderer" label={t('options.lyricsRenderer')}>
+                <SettingsSectionHeading icon={Monitor} label={t('options.lyricsRenderer')} />
                 <div className="space-y-3">
                     {store.enablePlayerPageNativeBlur && (
                         <div className="flex items-center gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-500 dark:text-amber-400">
@@ -769,15 +800,77 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
                                 <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${autoHidePlayerChrome ? 'translate-x-6' : 'translate-x-0'}`} />
                             </button>
                         </div>
+                        <div className="pt-2 border-t border-white/5 space-y-3">
+                            <div className="space-y-1">
+                                <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                    {t('options.stageTrackPill')}
+                                </div>
+                                <div className="text-xs opacity-50 max-w-[360px]" style={{ color: 'var(--text-secondary)' }}>
+                                    {t('options.stageTrackPillDesc')}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                                {(['auto', 'always', 'never'] as const).map(pillMode => (
+                                    <button
+                                        key={pillMode}
+                                        onClick={() => onChangeStageTrackPillMode(pillMode)}
+                                        className="px-2 py-1.5 rounded-lg text-xs border transition-all"
+                                        style={getAccentOptionStyle(stageTrackPillMode === pillMode)}
+                                    >
+                                        {t(`options.stageTrackPillMode_${pillMode}`)}
+                                    </button>
+                                ))}
+                            </div>
+                            {stageTrackPillMode === 'auto' && (
+                                <div className="flex items-center justify-between gap-4 pt-1">
+                                    <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                                        {t('options.stageTrackPillTimeout')}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <input
+                                            type="range"
+                                            min={3}
+                                            max={60}
+                                            step={1}
+                                            value={stageTrackPillTimeoutSec}
+                                            onChange={(e) => onChangeStageTrackPillTimeoutSec(Number(e.target.value))}
+                                            className="w-36 accent-current"
+                                        />
+                                        <span className="text-xs font-mono w-12 text-right" style={{ color: 'var(--text-primary)' }}>
+                                            {stageTrackPillTimeoutSec}s
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                            {stageTrackPillMode !== 'never' && (
+                                <div className="flex items-center justify-between gap-4 pt-1">
+                                    <div className="space-y-0.5 min-w-0">
+                                        <div className="text-xs" style={{ color: 'var(--text-primary)' }}>
+                                            {t('options.stageTrackPillOnHome')}
+                                        </div>
+                                        <div className="text-xs opacity-50 max-w-[300px]" style={{ color: 'var(--text-secondary)' }}>
+                                            {t('options.stageTrackPillOnHomeDesc')}
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => onToggleStageTrackPillOnHome(!stageTrackPillOnHome)}
+                                        className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!stageTrackPillOnHome ? toggleOffBackgroundClass : ''}`}
+                                        style={{ backgroundColor: stageTrackPillOnHome ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
+                                        aria-pressed={stageTrackPillOnHome}
+                                        aria-label={t('options.stageTrackPillOnHome')}
+                                    >
+                                        <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${stageTrackPillOnHome ? 'translate-x-6' : 'translate-x-0'}`} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </section>
+            </SettingsAnchor>
 
             {/* Section 3: Grid card style */}
-            <section>
-                <h3 className="text-sm font-bold uppercase tracking-wider opacity-50 mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                    <LayoutGrid size={14} /> {t('options.grid3dCardStyle')}
-                </h3>
+            <SettingsAnchor anchorId="grid3dCardStyle" label={t('options.grid3dCardStyle')}>
+                <SettingsSectionHeading icon={LayoutGrid} label={t('options.grid3dCardStyle')} />
                 <div className={`p-4 rounded-xl border space-y-4 ${settingsCardClass}`}>
                     <div className="space-y-1">
                         <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
@@ -808,13 +901,11 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
                         </button>
                     </div>
                 </div>
-            </section>
+            </SettingsAnchor>
 
             {/* Section 4: Configurations Import/Export (New feature) */}
-            <section>
-                <h3 className="text-sm font-bold uppercase tracking-wider opacity-50 mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                    <Settings2 size={14} /> {t('options.importExportTitle')}
-                </h3>
+            <SettingsAnchor anchorId="importExportTitle" label={t('options.importExportTitle')}>
+                <SettingsSectionHeading icon={Settings2} label={t('options.importExportTitle')} />
                 <div className={`p-4 rounded-xl border space-y-4 ${settingsCardClass}`}>
                     <div className="space-y-1">
                         <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -912,7 +1003,7 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
                         </button>
                     </div>
                 </div>
-            </section>
+            </SettingsAnchor>
 
             <ImportConfirmDialog
                 isOpen={pendingImport !== null}

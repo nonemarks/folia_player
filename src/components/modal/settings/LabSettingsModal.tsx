@@ -1,12 +1,14 @@
 import React, { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronLeft, ChevronRight, ChevronsLeftRight, Cpu, GamepadDirectional, Mic, Monitor, Moon, PlayCircle, RotateCcw, Settings2 } from 'lucide-react';
+import { Boxes, Check, ChevronLeft, ChevronsLeftRight, Cpu, GamepadDirectional, Mic, Monitor, Moon, PlayCircle, RotateCcw, Settings2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import type { Theme, VisualizerFrameRate } from '../../../types';
 import { useSettingsUiStore } from '../../../stores/useSettingsUiStore';
 import { VISUALIZER_FRAME_RATE_OPTIONS } from '../../../utils/frameRateLimiter';
 import ThemedDialog from '../../shared/ThemedDialog';
+import { SettingsAnchor } from './navigation/SettingsAnchorContext';
+import SettingsSectionHeading from './navigation/SettingsSectionHeading';
 
 // src/components/modal/settings/LabSettingsModal.tsx
 // Experimental settings subview kept outside SettingsModal to avoid another giant inline panel.
@@ -14,7 +16,6 @@ import ThemedDialog from '../../shared/ThemedDialog';
 type LabSettingsModalProps = {
     isOpen: boolean;
     onClose: () => void;
-    onOpenLyricFilterSettings: () => void;
     theme?: Theme;
     voiceInputPause?: {
         enabled: boolean;
@@ -36,7 +37,6 @@ const getFrameRateLabel = (frameRate: VisualizerFrameRate) => `${frameRate} FPS`
 const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
     isOpen,
     onClose,
-    onOpenLyricFilterSettings,
     theme,
     voiceInputPause,
     embedded,
@@ -73,6 +73,8 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
         onTogglePlayerPageNativeBlur,
         preventDisplaySleepDuringPlayback,
         onTogglePreventDisplaySleepDuringPlayback,
+        modSystemEnabled,
+        onToggleModSystem,
     } = useSettingsUiStore(useShallow(state => ({
         disableHomeDynamicBackground: state.disableHomeDynamicBackground,
         hidePlayerProgressBar: state.hidePlayerProgressBar,
@@ -102,6 +104,8 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
         onTogglePlayerPageNativeBlur: state.handleTogglePlayerPageNativeBlur,
         preventDisplaySleepDuringPlayback: state.preventDisplaySleepDuringPlayback,
         onTogglePreventDisplaySleepDuringPlayback: state.handleTogglePreventDisplaySleepDuringPlayback,
+        modSystemEnabled: state.modSystemEnabled,
+        onToggleModSystem: state.handleToggleModSystem,
     })));
     const borderColor = isDaylight ? 'border-zinc-300/70' : 'border-white/10';
     const overlayBackground = isDaylight ? 'rgba(0,0,0,0.32)' : 'rgba(0,0,0,0.5)';
@@ -173,14 +177,8 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
         <>
             <div className={embedded ? "space-y-4" : "flex-1 overflow-y-auto custom-scrollbar px-4 py-5 sm:px-6 relative z-10"}>
             <div className={embedded ? "space-y-4" : "space-y-4"}>
-                <div className="pt-1">
-                    <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        {t('options.labPerformanceSection')}
-                    </div>
-                    <div className="mt-1 text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
-                        {t('options.labPerformanceSectionDesc')}
-                    </div>
-                </div>
+                <SettingsAnchor anchorId="labPerformance" label={t('options.labPerformanceSection')} className="space-y-4">
+                    <SettingsSectionHeading icon={Cpu} label={t('options.labPerformanceSection')} />
                 <div className={`p-4 rounded-xl border flex items-center justify-between gap-4 ${settingsCardClass}`}>
                                     <div className="space-y-1">
                                         <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
@@ -257,14 +255,10 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
                                     </div>
                                 </div>
 
-                                <div className="border-t border-white/10 pt-5">
-                                    <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                        {t('options.labPlayerUiSection')}
-                                    </div>
-                                    <div className="mt-1 text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
-                                        {t('options.labPlayerUiSectionDesc')}
-                                    </div>
-                                </div>
+                </SettingsAnchor>
+
+                <SettingsAnchor anchorId="labPlayerUi" label={t('options.labPlayerUiSection')} className="space-y-4">
+                    <SettingsSectionHeading icon={Settings2} label={t('options.labPlayerUiSection')} divider />
 
                                 <div className={`p-4 rounded-xl border space-y-3 ${settingsCardClass}`}>
                                     <div className="space-y-1">
@@ -352,14 +346,10 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
                                     {renderToggle(alwaysShowTrackSwitchButtons, () => onToggleAlwaysShowTrackSwitchButtons(!alwaysShowTrackSwitchButtons))}
                                 </div>
 
-                                <div className="border-t border-white/10 pt-5">
-                                    <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                        {t('options.labWindowAndToolsSection')}
-                                    </div>
-                                    <div className="mt-1 text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
-                                        {t('options.labWindowAndToolsSectionDesc')}
-                                    </div>
-                                </div>
+                </SettingsAnchor>
+
+                <SettingsAnchor anchorId="labWindowAndTools" label={t('options.labWindowAndToolsSection')} className="space-y-4">
+                    <SettingsSectionHeading icon={Boxes} label={t('options.labWindowAndToolsSection')} divider />
 
                                 <div className={`p-4 rounded-xl border flex items-center justify-between gap-4 ${settingsCardClass}`}>
                                     <div className="space-y-1">
@@ -389,6 +379,33 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
                                     </div>
                                 )}
 
+                                {isElectron && (
+                                    <div className={`p-4 rounded-xl border flex items-center justify-between gap-4 ${settingsCardClass}`}>
+                                        <div className="space-y-1">
+                                            <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                                <Boxes size={14} />
+                                                {t('options.enableModSystem')}
+                                                <span
+                                                    className={`px-1.5 py-0.5 rounded text-[10px] font-normal border ${
+                                                        isDaylight
+                                                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-800'
+                                                            : 'border-amber-400/25 bg-amber-400/10 text-amber-200'
+                                                    }`}
+                                                >
+                                                    {t('mods.experimental')}
+                                                </span>
+                                            </div>
+                                            <div className="text-xs opacity-50 max-w-[360px]" style={{ color: 'var(--text-secondary)' }}>
+                                                {t('options.enableModSystemDesc')}
+                                            </div>
+                                            <div className="text-[11px] opacity-40 max-w-[360px]" style={{ color: 'var(--text-secondary)' }}>
+                                                {t('options.enableModSystemDescSub')}
+                                            </div>
+                                        </div>
+                                        {renderToggle(modSystemEnabled, () => onToggleModSystem(!modSystemEnabled))}
+                                    </div>
+                                )}
+
                                 {!isLinux && (
                                     <div className={`flex items-center justify-between p-4 rounded-xl border transition-colors hover:bg-white/8 ${settingsCardInteractiveClass}`} onClick={handleNativeBlurToggle}>
                                         <div className="flex flex-col pr-8">
@@ -402,24 +419,6 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
                                         {renderToggle(enablePlayerPageNativeBlur, handleNativeBlurToggle)}
                                     </div>
                                 )}
-
-                                <button
-                                    type="button"
-                                    onClick={onOpenLyricFilterSettings}
-                                    className={`w-full p-4 rounded-xl border transition-colors hover:bg-white/8 text-left ${settingsCardInteractiveClass}`}
-                                >
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="space-y-1">
-                                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                                {t('options.lyricFilterRegex')}
-                                            </div>
-                                            <div className="text-xs opacity-50 max-w-[360px]" style={{ color: 'var(--text-secondary)' }}>
-                                                {t('options.lyricFilterRegexDesc')}
-                                            </div>
-                                        </div>
-                                        <ChevronRight size={18} className="shrink-0 opacity-60" style={{ color: 'var(--text-primary)' }} />
-                                    </div>
-                                </button>
 
                                 {voiceInputPause?.supported && (
                                     <div className={`flex items-center justify-between p-4 rounded-xl border transition-colors hover:bg-white/8 ${settingsCardInteractiveClass}`} onClick={voiceInputPause.onToggle}>
@@ -435,6 +434,7 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
                                         {renderToggle(voiceInputPause.enabled, voiceInputPause.onToggle)}
                                     </div>
                                 )}
+                </SettingsAnchor>
             </div>
             </div>
             <ThemedDialog

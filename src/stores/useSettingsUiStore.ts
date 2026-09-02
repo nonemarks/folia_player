@@ -5,6 +5,8 @@ import { DEFAULT_VISUALIZER_MODE, getVisualizerModeLabel, getVisualizerRegistryE
 import { DEFAULT_VISUALIZER_BACKGROUND_MODE, hasVisualizerBackgroundMode } from '../components/visualizer/backgrounds/registry';
 import { resolveDioramaMoteCircumference, resolveDioramaMoteRadial } from '../components/visualizer/diorama/dioramaMoteField';
 import { getLyricFilterError } from '../utils/lyrics/filtering';
+import { getLyricStaffPatternError } from '../utils/lyrics/staffCredits';
+import { DEFAULT_LYRIC_STAFF_MIN_DWELL_SECONDS, DEFAULT_LYRIC_STAFF_POLICY, LYRIC_STAFF_MIN_DWELL_RANGE, type LyricStaffPolicy } from '../utils/lyrics/staffCreditsPolicy';
 import { buildStoredCappellaEmojiPack, clearCustomCappellaEmojiPack, isSupportedCappellaEmojiFile, saveCustomCappellaEmojiPack } from '../services/cappellaEmojiPack';
 import { buildStoredCappellaAvatar, clearCustomCappellaAvatar, isSupportedCappellaAvatarFile, saveCustomCappellaAvatar } from '../services/cappellaAvatarPack';
 import { clearUploadedLyricsFont, uploadAndRegisterLyricsFont } from '../services/customLyricsFont';
@@ -17,6 +19,9 @@ import { migratePreferredLyricSource } from '../utils/lyrics/sourcePriority';
 import { applyAppLanguagePreference, readStoredAppLanguagePreference, type AppLanguagePreference } from '../i18n/config';
 import { normalizeFontFamilyStack, normalizeFontWeight } from '../utils/fontStacks';
 import i18n from '../i18n/config';
+import { clampCrossfadeSeconds, CROSSFADE_DEFAULT_SEC } from '../services/automix/crossfadePlanner';
+import { DEFAULT_TRANSITION_SETTINGS, isTransitionMode, type TransitionMode } from '../services/automix/transitionStrategy';
+import { modelsPresent } from '../services/automix/modelAvailability';
 import type { AudioQualityPreference } from '../types/onlineMusic';
 import {
     normalizePinnedCommandIds,
@@ -40,7 +45,20 @@ import { AUDIO_SOUND_PRESETS } from '../utils/audioPresets';
 
 export type StatusSetter = React.Dispatch<React.SetStateAction<StatusMessage | null>>;
 export const CACHE_SIZE_KEY = 'folia_cache_size';
-const ENABLE_MEDIA_CACHE_KEY = 'folia_enable_media_cache';
+export const ENABLE_MEDIA_CACHE_KEY = 'folia_enable_media_cache';
+/** What the toggle used to write to, before it was corrected to the prefixed key above. */
+export const LEGACY_ENABLE_MEDIA_CACHE_KEY = 'enable_media_cache';
+export const MEDIA_CACHE_LIMIT_GB_KEY = 'folia_media_cache_limit_gb';
+/** Gigabytes of cached audio to keep. Zero is the listener asking for no ceiling at all. */
+export const DEFAULT_MEDIA_CACHE_LIMIT_GB = 5;
+const AUTOMIX_ENABLED_KEY = 'folia_automix_enabled';
+/** Set only by the reminder's own "don't remind me" button. Absent = still worth asking. */
+export const AUTOMIX_MODEL_REMINDER_MUTED_KEY = 'folia_automix_model_reminder_muted';
+const TRANSITION_MODE_KEY = 'folia_transition_mode';
+const CROSSFADE_MAX_SEC_KEY = 'folia_crossfade_max_sec';
+const TRANSITION_PERFORMANCE_KEY = 'folia_transition_performance';
+const TRANSITION_ANIMATION_KEY = 'folia_transition_animation';
+const TRANSITION_ANIMATION_CARD_KEY = 'folia_transition_animation_card';
 const LAST_SEEN_GUIDE_VERSION_STORAGE_KEY = 'folia_last_seen_guide_version';
 
 export type AudioQuality = AudioQualityPreference;
@@ -57,6 +75,7 @@ export type SettingsModalState = {
 export const MINIMIZE_TO_TRAY_STORAGE_KEY = 'minimize_to_tray';
 export const VOICE_INPUT_PAUSE_STORAGE_KEY = 'voice_input_pause_enabled';
 export const PREVENT_DISPLAY_SLEEP_DURING_PLAYBACK_STORAGE_KEY = 'prevent_display_sleep_during_playback';
+export const MOD_SYSTEM_ENABLED_STORAGE_KEY = 'mod_system_enabled';
 export const SLEEP_TIMER_HOURS_STORAGE_KEY = 'sleep_timer_hours';
 export const SLEEP_TIMER_MINUTES_STORAGE_KEY = 'sleep_timer_minutes';
 export const GLOBAL_LYRIC_TIMELINE_OFFSET_STORAGE_KEY = 'global_lyric_timeline_offset_ms';
@@ -94,6 +113,106 @@ const setStoredBoolean = (key: string, value: boolean) => {
     if (typeof window !== 'undefined') {
         localStorage.setItem(key, String(value));
     }
+};
+
+/**
+ * The card border's switch, seeded once from the switch the two renderers used to share.
+ *
+ * Before the split, that switch on meant the card's border was what you actually saw on the lyrics
+ * page - the ring stood down wherever the card was up - so starting this one off would read as the
+ * update having taken something away.
+ *
+ * Written back rather than derived on every start, and that is the part worth keeping: the old key
+ * now belongs to the RING alone, so a listener who turns the ring on later would otherwise find the
+ * border had switched itself back on at the next launch. A migration has to happen once and then be
+ * over.
+ */
+const readTransitionAnimationCard = (): boolean => {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+
+    if (localStorage.getItem(TRANSITION_ANIMATION_CARD_KEY) !== null) {
+        return getStoredBoolean(TRANSITION_ANIMATION_CARD_KEY, false);
+    }
+
+    const inherited = getStoredBoolean(TRANSITION_ANIMATION_KEY, false);
+    setStoredBoolean(TRANSITION_ANIMATION_CARD_KEY, inherited);
+    return inherited;
+};
+
+/**
+ * Whether switching transitions on is worth interrupting for.
+ *
+ * Three ways to answer no, and they are three different reasons rather than one condition:
+ *
+ * - Not a desktop build. The browser cannot run either model no matter what it downloads, so a
+ *   prompt there is an errand that does not exist - which is the same distinction the engine badge
+ *   already draws between "a limit" and "something you can go and fix".
+ * - The weights are already here. Asked of `modelsPresent()`, which the automix hook refreshes at
+ *   startup, so a fresh launch with both files installed answers correctly without opening
+ *   Settings first.
+ * - The listener said not to ask again. That one is remembered rather than re-derived, because it
+ *   is a preference and not a fact about the machine.
+ *
+ * Either model missing counts: the beat grid is what the crossfade mode reads for its alignment
+ * too, so "I only use crossfade" is not a reason to be missing beat_this.
+ */
+export const shouldRemindAboutModels = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    if (typeof window.electron?.separateStems !== 'function') return false;
+    if (getStoredBoolean(AUTOMIX_MODEL_REMINDER_MUTED_KEY, false)) return false;
+    const present = modelsPresent();
+    return !present.beat_this || !present.htdemucs;
+};
+
+/**
+ * Reads the media cache toggle, honouring the key its own setter used to write to.
+ *
+ * The setter wrote a bare 'enable_media_cache' while startup read the folia-prefixed key, so the
+ * setting silently reverted to off on every restart. Anyone who switched it on has their real
+ * preference sitting under the legacy key, and simply correcting the setter would throw that
+ * away once more - so read it as a fallback and promote it to the canonical key.
+ */
+export const readStoredEnableMediaCache = (): boolean => {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+
+    const canonical = localStorage.getItem(ENABLE_MEDIA_CACHE_KEY);
+    if (canonical !== null) {
+        return canonical === 'true';
+    }
+
+    const legacy = localStorage.getItem(LEGACY_ENABLE_MEDIA_CACHE_KEY);
+    if (legacy === null) {
+        return false;
+    }
+
+    localStorage.setItem(ENABLE_MEDIA_CACHE_KEY, legacy);
+    return legacy === 'true';
+};
+
+export const readStoredMediaCacheLimitGb = (): number => {
+    if (typeof window === 'undefined') {
+        return DEFAULT_MEDIA_CACHE_LIMIT_GB;
+    }
+
+    const saved = localStorage.getItem(MEDIA_CACHE_LIMIT_GB_KEY);
+    const parsed = saved === null ? NaN : Number(saved);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_MEDIA_CACHE_LIMIT_GB;
+};
+
+const readStoredTransitionMode = (): TransitionMode => {
+    if (typeof window === 'undefined') return DEFAULT_TRANSITION_SETTINGS.mode;
+    const saved = localStorage.getItem(TRANSITION_MODE_KEY);
+    return isTransitionMode(saved) ? saved : DEFAULT_TRANSITION_SETTINGS.mode;
+};
+
+const readStoredCrossfadeMaxSec = (): number => {
+    if (typeof window === 'undefined') return CROSSFADE_DEFAULT_SEC;
+    const saved = localStorage.getItem(CROSSFADE_MAX_SEC_KEY);
+    return saved === null ? CROSSFADE_DEFAULT_SEC : clampCrossfadeSeconds(Number(saved));
 };
 
 export const readSystemThemeIsDaylight = (): boolean | null => {
@@ -582,43 +701,47 @@ const sanitizeTemperaLayerImages = (value: unknown): TemperaLayerImage[] => {
     }).slice(0, TEMPERA_MAX_LAYER_IMAGES);
 };
 
+export const resolveStoredTemperaTuning = (parsed: Partial<TemperaTuning>): TemperaTuning => ({
+    cameraIntensity: resolvePendoloNumber(parsed.cameraIntensity, DEFAULT_TEMPERA_TUNING.cameraIntensity, 0, 2),
+    glyphMotion: resolvePendoloNumber(parsed.glyphMotion, DEFAULT_TEMPERA_TUNING.glyphMotion, 0, 2),
+    wholeLineLyrics: typeof parsed.wholeLineLyrics === 'boolean'
+        ? parsed.wholeLineLyrics
+        : DEFAULT_TEMPERA_TUNING.wholeLineLyrics,
+    glyphSettleStretch: resolvePendoloNumber(parsed.glyphSettleStretch, DEFAULT_TEMPERA_TUNING.glyphSettleStretch, 0, 1),
+    colorMode: parsed.colorMode === 'mono' || parsed.colorMode === 'gradient' ? parsed.colorMode : DEFAULT_TEMPERA_TUNING.colorMode,
+    textInversion: typeof parsed.textInversion === 'boolean' ? parsed.textInversion : DEFAULT_TEMPERA_TUNING.textInversion,
+    layerImages: sanitizeTemperaLayerImages(parsed.layerImages),
+    layerImageDepth: parsed.layerImageDepth === 'front' ? 'front' : 'back',
+    layerImageFrequency: clampUnit(parsed.layerImageFrequency, DEFAULT_TEMPERA_TUNING.layerImageFrequency),
+    showBlocks: typeof parsed.showBlocks === 'boolean'
+        ? parsed.showBlocks
+        : DEFAULT_TEMPERA_TUNING.showBlocks,
+    showDecor: typeof parsed.showDecor === 'boolean'
+        ? parsed.showDecor
+        : DEFAULT_TEMPERA_TUNING.showDecor,
+    enableTransitions: typeof parsed.enableTransitions === 'boolean'
+        ? parsed.enableTransitions
+        : DEFAULT_TEMPERA_TUNING.enableTransitions,
+    textureResolution: resolvePendoloNumber(parsed.textureResolution, DEFAULT_TEMPERA_TUNING.textureResolution, 0.5, 4),
+    postProcessEnabled: typeof parsed.postProcessEnabled === 'boolean'
+        ? parsed.postProcessEnabled
+        : DEFAULT_TEMPERA_TUNING.postProcessEnabled,
+    postProcessTextureCompression: typeof parsed.postProcessTextureCompression === 'boolean'
+        ? parsed.postProcessTextureCompression
+        : DEFAULT_TEMPERA_TUNING.postProcessTextureCompression,
+    postProcessGrain: resolvePendoloNumber(parsed.postProcessGrain, DEFAULT_TEMPERA_TUNING.postProcessGrain, 0, 1),
+    postProcessContrast: resolvePendoloNumber(parsed.postProcessContrast, DEFAULT_TEMPERA_TUNING.postProcessContrast, 0, 1),
+    postProcessRgbShift: resolvePendoloNumber(parsed.postProcessRgbShift, DEFAULT_TEMPERA_TUNING.postProcessRgbShift, 0, 1),
+    postProcessVignette: resolvePendoloNumber(parsed.postProcessVignette, DEFAULT_TEMPERA_TUNING.postProcessVignette, 0, 2),
+    postProcessLensDistortion: resolvePendoloNumber(parsed.postProcessLensDistortion, DEFAULT_TEMPERA_TUNING.postProcessLensDistortion, 0, 2),
+});
+
 const readStoredTemperaTuning = (): TemperaTuning => {
     if (typeof window === 'undefined') return DEFAULT_TEMPERA_TUNING;
     const saved = localStorage.getItem('tempera_tuning');
     if (!saved) return DEFAULT_TEMPERA_TUNING;
     try {
-        const parsed = JSON.parse(saved) as Partial<TemperaTuning>;
-        return {
-            cameraIntensity: resolvePendoloNumber(parsed.cameraIntensity, DEFAULT_TEMPERA_TUNING.cameraIntensity, 0, 2),
-            glyphMotion: resolvePendoloNumber(parsed.glyphMotion, DEFAULT_TEMPERA_TUNING.glyphMotion, 0, 2),
-            glyphSettleStretch: resolvePendoloNumber(parsed.glyphSettleStretch, DEFAULT_TEMPERA_TUNING.glyphSettleStretch, 0, 1),
-            colorMode: parsed.colorMode === 'mono' || parsed.colorMode === 'gradient' ? parsed.colorMode : DEFAULT_TEMPERA_TUNING.colorMode,
-            textInversion: typeof parsed.textInversion === 'boolean' ? parsed.textInversion : DEFAULT_TEMPERA_TUNING.textInversion,
-            layerImages: sanitizeTemperaLayerImages(parsed.layerImages),
-            layerImageDepth: parsed.layerImageDepth === 'front' ? 'front' : 'back',
-            layerImageFrequency: clampUnit(parsed.layerImageFrequency, DEFAULT_TEMPERA_TUNING.layerImageFrequency),
-            showBlocks: typeof parsed.showBlocks === 'boolean'
-                ? parsed.showBlocks
-                : DEFAULT_TEMPERA_TUNING.showBlocks,
-            showDecor: typeof parsed.showDecor === 'boolean'
-                ? parsed.showDecor
-                : DEFAULT_TEMPERA_TUNING.showDecor,
-            enableTransitions: typeof parsed.enableTransitions === 'boolean'
-                ? parsed.enableTransitions
-                : DEFAULT_TEMPERA_TUNING.enableTransitions,
-            textureResolution: resolvePendoloNumber(parsed.textureResolution, DEFAULT_TEMPERA_TUNING.textureResolution, 0.5, 4),
-            postProcessEnabled: typeof parsed.postProcessEnabled === 'boolean'
-                ? parsed.postProcessEnabled
-                : DEFAULT_TEMPERA_TUNING.postProcessEnabled,
-            postProcessTextureCompression: typeof parsed.postProcessTextureCompression === 'boolean'
-                ? parsed.postProcessTextureCompression
-                : DEFAULT_TEMPERA_TUNING.postProcessTextureCompression,
-            postProcessGrain: resolvePendoloNumber(parsed.postProcessGrain, DEFAULT_TEMPERA_TUNING.postProcessGrain, 0, 1),
-            postProcessContrast: resolvePendoloNumber(parsed.postProcessContrast, DEFAULT_TEMPERA_TUNING.postProcessContrast, 0, 1),
-            postProcessRgbShift: resolvePendoloNumber(parsed.postProcessRgbShift, DEFAULT_TEMPERA_TUNING.postProcessRgbShift, 0, 1),
-            postProcessVignette: resolvePendoloNumber(parsed.postProcessVignette, DEFAULT_TEMPERA_TUNING.postProcessVignette, 0, 2),
-            postProcessLensDistortion: resolvePendoloNumber(parsed.postProcessLensDistortion, DEFAULT_TEMPERA_TUNING.postProcessLensDistortion, 0, 2),
-        };
+        return resolveStoredTemperaTuning(JSON.parse(saved) as Partial<TemperaTuning>);
     } catch {
         return DEFAULT_TEMPERA_TUNING;
     }
@@ -1238,6 +1361,28 @@ const readStoredLyricFilterPattern = (): string => {
     return localStorage.getItem('lyrics_filter_pattern')?.trim() || '';
 };
 
+const readStoredLyricStaffPolicy = (): LyricStaffPolicy => {
+    if (typeof window === 'undefined') {
+        return DEFAULT_LYRIC_STAFF_POLICY;
+    }
+
+    const saved = localStorage.getItem('lyrics_staff_policy');
+    return saved === 'keep' || saved === 'hide' || saved === 'smart' ? saved : DEFAULT_LYRIC_STAFF_POLICY;
+};
+
+const readStoredLyricStaffMinDwellSeconds = (): number => {
+    if (typeof window === 'undefined') {
+        return DEFAULT_LYRIC_STAFF_MIN_DWELL_SECONDS;
+    }
+
+    const parsed = Number.parseFloat(localStorage.getItem('lyrics_staff_min_dwell') || '');
+    if (!Number.isFinite(parsed)) {
+        return DEFAULT_LYRIC_STAFF_MIN_DWELL_SECONDS;
+    }
+
+    return Math.min(LYRIC_STAFF_MIN_DWELL_RANGE.max, Math.max(LYRIC_STAFF_MIN_DWELL_RANGE.min, parsed));
+};
+
 const readStoredLoopMode = (): 'off' | 'all' | 'one' => {
     if (typeof window === 'undefined') {
         return 'off';
@@ -1245,6 +1390,26 @@ const readStoredLoopMode = (): 'off' | 'all' | 'one' => {
 
     const saved = localStorage.getItem('player_loop_mode');
     return saved === 'all' || saved === 'one' ? saved : 'off';
+};
+
+export type StageTrackPillMode = 'auto' | 'always' | 'never';
+
+const readStoredStageTrackPillMode = (): StageTrackPillMode => {
+    if (typeof window === 'undefined') {
+        return 'auto';
+    }
+
+    const saved = localStorage.getItem('stage_track_pill_mode');
+    return saved === 'always' || saved === 'never' ? saved : 'auto';
+};
+
+const readStoredStageTrackPillTimeoutSec = (): number => {
+    if (typeof window === 'undefined') {
+        return 10;
+    }
+
+    const saved = Number(localStorage.getItem('stage_track_pill_timeout_sec'));
+    return Number.isFinite(saved) && saved >= 3 && saved <= 60 ? Math.round(saved) : 10;
 };
 
 const readStoredQueueAddBehavior = (): QueueAddBehavior => {
@@ -1358,6 +1523,12 @@ export type SettingsUiState = {
     minimizeToTray: boolean;
     voiceInputPauseEnabled: boolean;
     preventDisplaySleepDuringPlayback: boolean;
+    /**
+     * Master switch for the experimental mod system. Off by default: while it is
+     * off the main process loads no mod at all and the mod commands stay out of
+     * the palette, so an unfinished apiVersion 1 is opt-in rather than ambient.
+     */
+    modSystemEnabled: boolean;
     sleepTimerEnabled: boolean;
     sleepTimerHours: number;
     sleepTimerMinutes: number;
@@ -1368,6 +1539,31 @@ export type SettingsUiState = {
     wallpaperMode: boolean;
     openPlayerOnLaunch: boolean;
     enableMediaCache: boolean;
+    /** Gigabytes of cached audio to keep before the oldest is dropped. Zero means no ceiling. */
+    mediaCacheLimitGb: number;
+    automixEnabled: boolean;
+    /** Whether the "you have no weights yet" prompt is showing. See `handleToggleAutomix`. */
+    isAutomixModelReminderOpen: boolean;
+    /** Which strategy plans a song change once blending is on. */
+    transitionMode: TransitionMode;
+    /** Seconds. The crossfade mode's ceiling; automix computes its own and ignores this. */
+    crossfadeMaxSec: number;
+    /** Let the mix be heard. Only reachable with automix on, and only where stems exist. */
+    transitionPerformance: boolean;
+    /**
+     * Draw the mix as a ring in the middle of the screen. Automix only, and only for blends long
+     * enough to watch.
+     */
+    transitionAnimation: boolean;
+    /**
+     * Draw the same mix on the now playing card's border, on the pages that card appears on.
+     *
+     * Its own switch rather than a placement rule under the one above, because the two are two
+     * pictures in two places and only the listener knows which they want where. They used to share
+     * a switch, with the ring standing down wherever the card was up - which meant turning the
+     * animation on and never seeing the ring again on the page most people watch.
+     */
+    transitionAnimationCard: boolean;
     backgroundOpacity: number;
     subtitleOverlayOpacity: number;
     subtitleOverlayBackground: boolean;
@@ -1423,6 +1619,10 @@ export type SettingsUiState = {
     subtitleFontFamily: string | null;
     subtitleFontFallbackFamilies: string[];
     lyricFilterPattern: string;
+    // 开头制作人员信息的处理策略，与上面的通用逐行过滤是两套独立机制。
+    lyricStaffPolicy: LyricStaffPolicy;
+    lyricStaffMinDwellSeconds: number;
+    lyricStaffPattern: string;
     showOpenPanelCloseButton: boolean;
     enableNowPlayingStage: boolean;
     // PlayerCap lyrics source (third stage source) config. enablePlayerCapStage is Web-only (Electron uses stageStatus.source).
@@ -1440,6 +1640,11 @@ export type SettingsUiState = {
     volume: number;
     isMuted: boolean;
     loopMode: 'off' | 'all' | 'one';
+    /** 歌词页左下角曲目卡片显示模式：auto=显示一段时间后隐藏，always=常驻，never=不显示 */
+    stageTrackPillMode: StageTrackPillMode;
+    /** auto 模式下的显示时长（秒），3-60 */
+    stageTrackPillTimeoutSec: number;
+    stageTrackPillOnHome: boolean;
     homeLayoutStyle: 'carousel' | 'grid';
     grid3dCardStyle: 'image' | 'card';
     showHomeTabPlaylist: boolean;
@@ -1457,7 +1662,7 @@ export type SettingsUiState = {
     setAudioQuality: (quality: AudioQuality) => void;
     setTransparentPlayerBackgroundFromSystem: (enabled: boolean) => void;
     handleTogglePlayerPageNativeBlur: (enable: boolean) => void;
-    setDesktopPreferenceSnapshot: (settings: { MINIMIZE_TO_TRAY?: unknown; HIDE_TASKBAR_ICON?: unknown; REMOTE_CONTROL_SKIP_TASKBAR?: unknown; VOICE_INPUT_PAUSE_ENABLED?: unknown; PREVENT_DISPLAY_SLEEP_DURING_PLAYBACK?: unknown; wallpaper_mode?: unknown; }) => void;
+    setDesktopPreferenceSnapshot: (settings: { MINIMIZE_TO_TRAY?: unknown; HIDE_TASKBAR_ICON?: unknown; REMOTE_CONTROL_SKIP_TASKBAR?: unknown; VOICE_INPUT_PAUSE_ENABLED?: unknown; PREVENT_DISPLAY_SLEEP_DURING_PLAYBACK?: unknown; MOD_SYSTEM_ENABLED?: unknown; wallpaper_mode?: unknown; }) => void;
     setStoredCappellaEmojiPack: (pack: StoredCappellaEmojiImage[]) => void;
     setCappellaCustomEmojiImages: (images: CappellaEmojiImage[]) => void;
     setIsLoadingCappellaCustomEmojiPack: (loading: boolean) => void;
@@ -1491,11 +1696,13 @@ export type SettingsUiState = {
     handleToggleAlwaysShowTrackSwitchButtons: (enable: boolean) => void;
     handleToggleAlwaysShowMainWindowTitlebar: (enable: boolean) => void;
     handleToggleTransparentPlayerBackground: (enable: boolean) => void;
+    handleWallpaperTransparentRefused: () => void;
     handleToggleAutoHidePlayerChrome: (enable: boolean) => void;
     handleToggleDisableVisualizerVignette: (disable: boolean) => void;
     handleToggleDisableVisualizerGeometricBackground: (disable: boolean) => void;
     handleToggleMinimizeToTray: (enable: boolean) => void;
     handleToggleVoiceInputPause: (enable: boolean) => void;
+    handleToggleModSystem: (enable: boolean) => void;
     handleTogglePreventDisplaySleepDuringPlayback: (enable: boolean) => void;
     handleToggleSleepTimer: (enable: boolean) => void;
     handleSetSleepTimerHours: (hours: number) => void;
@@ -1505,6 +1712,15 @@ export type SettingsUiState = {
     handleToggleWallpaperMode: (enable: boolean) => void;
     handleToggleOpenPlayerOnLaunch: (enable: boolean) => void;
     handleToggleMediaCache: (enable: boolean) => void;
+    handleSetMediaCacheLimitGb: (gigabytes: number) => void;
+    handleToggleAutomix: (enable: boolean) => void;
+    /** Closes the model prompt. `mute` is the listener choosing never to see it again. */
+    dismissAutomixModelReminder: (mute: boolean) => void;
+    handleSetTransitionMode: (mode: TransitionMode) => void;
+    handleSetCrossfadeMaxSec: (seconds: number) => void;
+    handleToggleTransitionPerformance: (enable: boolean) => void;
+    handleToggleTransitionAnimation: (enable: boolean) => void;
+    handleToggleTransitionAnimationCard: (enable: boolean) => void;
     handleSetBackgroundOpacity: (opacity: number) => void;
     handleSetSubtitleOverlayOpacity: (opacity: number) => void;
     handleToggleSubtitleOverlayBackground: (enabled: boolean) => void;
@@ -1577,6 +1793,9 @@ export type SettingsUiState = {
     handleSetSubtitleFontFallbackFamilies: (families: string[]) => void;
     handleSetAppLanguagePreference: (preference: AppLanguagePreference) => Promise<void>;
     handleSetLyricFilterPattern: (pattern: string) => void;
+    handleSetLyricStaffPolicy: (policy: LyricStaffPolicy) => void;
+    handleSetLyricStaffMinDwellSeconds: (seconds: number) => void;
+    handleSetLyricStaffPattern: (pattern: string) => void;
     handleToggleOpenPanelCloseButton: (enable: boolean) => void;
     handleToggleNowPlayingStage: (enable: boolean) => void;
     // Web stage-source tri-state mutually-exclusive selection: null disables, else one of 'now-playing' or 'playercap'. Electron uses stageStatus.source.
@@ -1595,6 +1814,9 @@ export type SettingsUiState = {
     handleSetVolume: (val: number) => void;
     handleToggleMute: () => void;
     handleToggleLoopMode: () => void;
+    handleSetStageTrackPillMode: (mode: StageTrackPillMode) => void;
+    handleSetStageTrackPillTimeoutSec: (sec: number) => void;
+    handleToggleStageTrackPillOnHome: (enable: boolean) => void;
     handleSetHomeLayoutStyle: (style: 'carousel' | 'grid') => void;
     handleSetGrid3dCardStyle: (style: 'image' | 'card') => void;
     handleToggleHomeTabPlaylist: (show: boolean) => void;
@@ -1641,6 +1863,7 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
     minimizeToTray: getStoredBoolean(MINIMIZE_TO_TRAY_STORAGE_KEY, false),
     voiceInputPauseEnabled: getStoredBoolean(VOICE_INPUT_PAUSE_STORAGE_KEY, false),
     preventDisplaySleepDuringPlayback: getStoredBoolean(PREVENT_DISPLAY_SLEEP_DURING_PLAYBACK_STORAGE_KEY, false),
+    modSystemEnabled: getStoredBoolean(MOD_SYSTEM_ENABLED_STORAGE_KEY, false),
     // A sleep timer is a one-shot action. Persist its preferred duration, never an armed state.
     sleepTimerEnabled: false,
     sleepTimerHours: readStoredSleepTimerHours(),
@@ -1651,7 +1874,19 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
     hideRemoteControlTaskbarIcon: getStoredBoolean(REMOTE_CONTROL_SKIP_TASKBAR_STORAGE_KEY, false),
     wallpaperMode: getStoredBoolean(WALLPAPER_MODE_STORAGE_KEY, false),
     openPlayerOnLaunch: getStoredBoolean(OPEN_PLAYER_ON_LAUNCH_STORAGE_KEY, false),
-    enableMediaCache: getStoredBoolean(ENABLE_MEDIA_CACHE_KEY, false),
+    enableMediaCache: readStoredEnableMediaCache(),
+    mediaCacheLimitGb: readStoredMediaCacheLimitGb(),
+    automixEnabled: getStoredBoolean(AUTOMIX_ENABLED_KEY, false),
+    isAutomixModelReminderOpen: false,
+    transitionMode: readStoredTransitionMode(),
+    crossfadeMaxSec: readStoredCrossfadeMaxSec(),
+    transitionPerformance: getStoredBoolean(
+        TRANSITION_PERFORMANCE_KEY, DEFAULT_TRANSITION_SETTINGS.performance,
+    ),
+    // Off by default: it draws over whatever the listener is already looking at, which is a
+    // choice to make rather than one to arrive at after an update.
+    transitionAnimation: getStoredBoolean(TRANSITION_ANIMATION_KEY, false),
+    transitionAnimationCard: readTransitionAnimationCard(),
     backgroundOpacity: readStoredBackgroundOpacity(),
     subtitleOverlayOpacity: readStoredSubtitleOverlayOpacity(),
     subtitleOverlayBackground: getStoredBoolean(SUBTITLE_OVERLAY_BACKGROUND_STORAGE_KEY, true),
@@ -1707,6 +1942,9 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
     subtitleFontFamily: readStoredSubtitleFontFamily(),
     subtitleFontFallbackFamilies: readStoredFontFamilyStack(SUBTITLE_FONT_FALLBACK_FAMILIES_STORAGE_KEY),
     lyricFilterPattern: readStoredLyricFilterPattern(),
+    lyricStaffPolicy: readStoredLyricStaffPolicy(),
+    lyricStaffMinDwellSeconds: readStoredLyricStaffMinDwellSeconds(),
+    lyricStaffPattern: getStoredString('lyrics_staff_pattern', ''),
     showOpenPanelCloseButton: getStoredBoolean('show_open_panel_close_button', true),
     enableNowPlayingStage: getStoredBoolean('enable_now_playing_stage', false),
     enablePlayerCapStage: getStoredBoolean('enable_playercap_stage', false),
@@ -1722,6 +1960,9 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
     volume: readStoredVolume(),
     isMuted: getStoredBoolean('player_is_muted', false),
     loopMode: readStoredLoopMode(),
+    stageTrackPillMode: readStoredStageTrackPillMode(),
+    stageTrackPillTimeoutSec: readStoredStageTrackPillTimeoutSec(),
+    stageTrackPillOnHome: getStoredBoolean('stage_track_pill_on_home', false),
     homeLayoutStyle: readStoredHomeLayoutStyle(),
     grid3dCardStyle: readStoredGrid3dCardStyle(),
     showHomeTabPlaylist: getStoredBoolean('show_home_tab_playlist', true),
@@ -1780,6 +2021,10 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
         if (typeof settings.PREVENT_DISPLAY_SLEEP_DURING_PLAYBACK === 'boolean') {
             patch.preventDisplaySleepDuringPlayback = settings.PREVENT_DISPLAY_SLEEP_DURING_PLAYBACK;
             setStoredBoolean(PREVENT_DISPLAY_SLEEP_DURING_PLAYBACK_STORAGE_KEY, settings.PREVENT_DISPLAY_SLEEP_DURING_PLAYBACK);
+        }
+        if (typeof settings.MOD_SYSTEM_ENABLED === 'boolean') {
+            patch.modSystemEnabled = settings.MOD_SYSTEM_ENABLED;
+            setStoredBoolean(MOD_SYSTEM_ENABLED_STORAGE_KEY, settings.MOD_SYSTEM_ENABLED);
         }
         if (typeof settings.HIDE_TASKBAR_ICON === 'boolean') {
             patch.hideTaskbarIcon = settings.HIDE_TASKBAR_ICON;
@@ -1971,6 +2216,14 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
             text: i18n.t('notifications.' + (enable ? 'transparentBgOn' : 'transparentBgOff')),
         });
     },
+    // Main-process guard fired the refusal (classic Windows wallpaper mode cannot present a
+    // transparent wallpaper window): surface why the toggle did not take effect.
+    handleWallpaperTransparentRefused: () => {
+        notify(get, {
+            type: 'info',
+            text: i18n.t('notifications.transparentBgWallpaperUnsupported'),
+        });
+    },
     handleToggleDisableVisualizerVignette: (disable) => {
         setStoredBoolean('disable_visualizer_vignette', disable);
         set({ disableVisualizerVignette: disable });
@@ -2008,6 +2261,15 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
             type: 'info',
             text: i18n.t('notifications.' + (enable ? 'voiceInputPauseOn' : 'voiceInputPauseOff')),
         });
+    },
+    // The main process owns the authoritative value: it decides whether any mod
+    // is loaded at all, so the switch is persisted there and only mirrored here.
+    handleToggleModSystem: (enable) => {
+        setStoredBoolean(MOD_SYSTEM_ENABLED_STORAGE_KEY, enable);
+        set({ modSystemEnabled: enable });
+        if (window.electron?.saveSettings) {
+            void window.electron.saveSettings('MOD_SYSTEM_ENABLED', enable);
+        }
     },
     handleTogglePreventDisplaySleepDuringPlayback: (enable) => {
         setStoredBoolean(PREVENT_DISPLAY_SLEEP_DURING_PLAYBACK_STORAGE_KEY, enable);
@@ -2103,8 +2365,52 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
         });
     },
     handleToggleMediaCache: (enable) => {
-        setStoredBoolean('enable_media_cache', enable);
+        setStoredBoolean(ENABLE_MEDIA_CACHE_KEY, enable);
         set({ enableMediaCache: enable });
+    },
+    handleSetMediaCacheLimitGb: (gigabytes) => {
+        const next = Number.isFinite(gigabytes) && gigabytes >= 0 ? gigabytes : DEFAULT_MEDIA_CACHE_LIMIT_GB;
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(MEDIA_CACHE_LIMIT_GB_KEY, String(next));
+        }
+        set({ mediaCacheLimitGb: next });
+    },
+    handleToggleAutomix: (enable) => {
+        setStoredBoolean(AUTOMIX_ENABLED_KEY, enable);
+        // Asked here rather than in the settings section because there are two switches - the
+        // options page and the volume row - and a prompt wired to one of them is missing from the
+        // one people actually reach mid-song.
+        set({ automixEnabled: enable, isAutomixModelReminderOpen: enable && shouldRemindAboutModels() });
+    },
+    dismissAutomixModelReminder: (mute) => {
+        if (mute) setStoredBoolean(AUTOMIX_MODEL_REMINDER_MUTED_KEY, true);
+        set({ isAutomixModelReminderOpen: false });
+    },
+    handleSetTransitionMode: (mode) => {
+        if (!isTransitionMode(mode)) return;
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(TRANSITION_MODE_KEY, mode);
+        }
+        set({ transitionMode: mode });
+    },
+    handleSetCrossfadeMaxSec: (seconds) => {
+        const next = clampCrossfadeSeconds(seconds);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(CROSSFADE_MAX_SEC_KEY, String(next));
+        }
+        set({ crossfadeMaxSec: next });
+    },
+    handleToggleTransitionPerformance: (enable) => {
+        setStoredBoolean(TRANSITION_PERFORMANCE_KEY, enable);
+        set({ transitionPerformance: enable });
+    },
+    handleToggleTransitionAnimation: (enable) => {
+        setStoredBoolean(TRANSITION_ANIMATION_KEY, enable);
+        set({ transitionAnimation: enable });
+    },
+    handleToggleTransitionAnimationCard: (enable) => {
+        setStoredBoolean(TRANSITION_ANIMATION_CARD_KEY, enable);
+        set({ transitionAnimationCard: enable });
     },
     handleSetBackgroundOpacity: (opacity) => {
         if (typeof window !== 'undefined') {
@@ -2481,6 +2787,9 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
         const next: TemperaTuning = {
             cameraIntensity: resolvePendoloNumber(patch.cameraIntensity, prev.cameraIntensity, 0, 2),
             glyphMotion: resolvePendoloNumber(patch.glyphMotion, prev.glyphMotion, 0, 2),
+            wholeLineLyrics: typeof patch.wholeLineLyrics === 'boolean'
+                ? patch.wholeLineLyrics
+                : prev.wholeLineLyrics,
             glyphSettleStretch: resolvePendoloNumber(patch.glyphSettleStretch, prev.glyphSettleStretch, 0, 1),
             colorMode: patch.colorMode === 'duo' || patch.colorMode === 'mono' || patch.colorMode === 'gradient' ? patch.colorMode : prev.colorMode,
             textInversion: typeof patch.textInversion === 'boolean' ? patch.textInversion : prev.textInversion,
@@ -2942,6 +3251,42 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
             localStorage.removeItem('lyrics_filter_pattern');
         }
     },
+    handleSetLyricStaffPolicy: (policy) => {
+        set({ lyricStaffPolicy: policy });
+
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        localStorage.setItem('lyrics_staff_policy', policy);
+    },
+    handleSetLyricStaffMinDwellSeconds: (seconds) => {
+        const next = Number.isFinite(seconds)
+            ? Math.min(LYRIC_STAFF_MIN_DWELL_RANGE.max, Math.max(LYRIC_STAFF_MIN_DWELL_RANGE.min, seconds))
+            : DEFAULT_LYRIC_STAFF_MIN_DWELL_SECONDS;
+
+        set({ lyricStaffMinDwellSeconds: next });
+
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        localStorage.setItem('lyrics_staff_min_dwell', String(next));
+    },
+    handleSetLyricStaffPattern: (pattern) => {
+        const next = pattern.trim();
+        set({ lyricStaffPattern: next });
+
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        if (next) {
+            localStorage.setItem('lyrics_staff_pattern', next);
+        } else {
+            localStorage.removeItem('lyrics_staff_pattern');
+        }
+    },
     handleToggleOpenPanelCloseButton: (enable) => {
         setStoredBoolean('show_open_panel_close_button', enable);
         set({ showOpenPanelCloseButton: enable });
@@ -3066,6 +3411,25 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
         }
         set({ loopMode: next });
     },
+    handleSetStageTrackPillMode: (mode) => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('stage_track_pill_mode', mode);
+        }
+        set({ stageTrackPillMode: mode });
+    },
+    handleSetStageTrackPillTimeoutSec: (sec) => {
+        const next = Math.max(3, Math.min(60, Math.round(sec)));
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('stage_track_pill_timeout_sec', String(next));
+        }
+        set({ stageTrackPillTimeoutSec: next });
+    },
+    handleToggleStageTrackPillOnHome: (enable) => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('stage_track_pill_on_home', String(enable));
+        }
+        set({ stageTrackPillOnHome: enable });
+    },
     handleSetHomeLayoutStyle: () => {
         if (typeof window !== 'undefined') {
             localStorage.setItem('home_layout_style', 'grid');
@@ -3136,6 +3500,7 @@ export const selectSettingsUiSnapshot = (state: SettingsUiState) => ({
     minimizeToTray: state.minimizeToTray,
     voiceInputPauseEnabled: state.voiceInputPauseEnabled,
     preventDisplaySleepDuringPlayback: state.preventDisplaySleepDuringPlayback,
+    modSystemEnabled: state.modSystemEnabled,
     sleepTimerEnabled: state.sleepTimerEnabled,
     sleepTimerHours: state.sleepTimerHours,
     sleepTimerMinutes: state.sleepTimerMinutes,
@@ -3149,6 +3514,7 @@ export const selectSettingsUiSnapshot = (state: SettingsUiState) => ({
     handleToggleWallpaperMode: state.handleToggleWallpaperMode,
     openPlayerOnLaunch: state.openPlayerOnLaunch,
     enableMediaCache: state.enableMediaCache,
+    mediaCacheLimitGb: state.mediaCacheLimitGb,
     backgroundOpacity: state.backgroundOpacity,
     subtitleOverlayOpacity: state.subtitleOverlayOpacity,
     subtitleOverlayBackground: state.subtitleOverlayBackground,
@@ -3208,6 +3574,10 @@ export const selectSettingsUiSnapshot = (state: SettingsUiState) => ({
     subtitleFontFallbackFamilies: state.subtitleFontFallbackFamilies,
     lyricFilterPattern: state.lyricFilterPattern,
     lyricFilterPatternError: getLyricFilterError(state.lyricFilterPattern),
+    lyricStaffPolicy: state.lyricStaffPolicy,
+    lyricStaffMinDwellSeconds: state.lyricStaffMinDwellSeconds,
+    lyricStaffPattern: state.lyricStaffPattern,
+    lyricStaffPatternError: getLyricStaffPatternError(state.lyricStaffPattern),
     showOpenPanelCloseButton: state.showOpenPanelCloseButton,
     enableNowPlayingStage: state.enableNowPlayingStage,
     enablePlayerCapStage: state.enablePlayerCapStage,
@@ -3219,6 +3589,12 @@ export const selectSettingsUiSnapshot = (state: SettingsUiState) => ({
     queueAddBehavior: state.queueAddBehavior,
     audioOutputDeviceId: state.audioOutputDeviceId,
     loopMode: state.loopMode,
+    stageTrackPillMode: state.stageTrackPillMode,
+    stageTrackPillTimeoutSec: state.stageTrackPillTimeoutSec,
+    stageTrackPillOnHome: state.stageTrackPillOnHome,
+    handleSetStageTrackPillMode: state.handleSetStageTrackPillMode,
+    handleSetStageTrackPillTimeoutSec: state.handleSetStageTrackPillTimeoutSec,
+    handleToggleStageTrackPillOnHome: state.handleToggleStageTrackPillOnHome,
     handleToggleCoverColorBg: state.handleToggleCoverColorBg,
     handleToggleStaticMode: state.handleToggleStaticMode,
     handleToggleDisableHomeDynamicBackground: state.handleToggleDisableHomeDynamicBackground,
@@ -3238,11 +3614,13 @@ export const selectSettingsUiSnapshot = (state: SettingsUiState) => ({
     handleToggleDisableVisualizerGeometricBackground: state.handleToggleDisableVisualizerGeometricBackground,
     handleToggleMinimizeToTray: state.handleToggleMinimizeToTray,
     handleToggleVoiceInputPause: state.handleToggleVoiceInputPause,
+    handleToggleModSystem: state.handleToggleModSystem,
     handleTogglePreventDisplaySleepDuringPlayback: state.handleTogglePreventDisplaySleepDuringPlayback,
     handleToggleHideTaskbarIcon: state.handleToggleHideTaskbarIcon,
     handleToggleHideRemoteControlTaskbarIcon: state.handleToggleHideRemoteControlTaskbarIcon,
     handleToggleOpenPlayerOnLaunch: state.handleToggleOpenPlayerOnLaunch,
     handleToggleMediaCache: state.handleToggleMediaCache,
+    handleSetMediaCacheLimitGb: state.handleSetMediaCacheLimitGb,
     handleSetBackgroundOpacity: state.handleSetBackgroundOpacity,
     handleSetSubtitleOverlayOpacity: state.handleSetSubtitleOverlayOpacity,
     handleToggleSubtitleOverlayBackground: state.handleToggleSubtitleOverlayBackground,
@@ -3317,6 +3695,9 @@ export const selectSettingsUiSnapshot = (state: SettingsUiState) => ({
     handleSetSubtitleFontFallbackFamilies: state.handleSetSubtitleFontFallbackFamilies,
     handleSetAppLanguagePreference: state.handleSetAppLanguagePreference,
     handleSetLyricFilterPattern: state.handleSetLyricFilterPattern,
+    handleSetLyricStaffPolicy: state.handleSetLyricStaffPolicy,
+    handleSetLyricStaffMinDwellSeconds: state.handleSetLyricStaffMinDwellSeconds,
+    handleSetLyricStaffPattern: state.handleSetLyricStaffPattern,
     handleToggleOpenPanelCloseButton: state.handleToggleOpenPanelCloseButton,
     handleToggleNowPlayingStage: state.handleToggleNowPlayingStage,
     handleSetQueueAddBehavior: state.handleSetQueueAddBehavior,

@@ -403,6 +403,7 @@ const decompressSonnet = (o: any): any => ({
 const compressTempera = (t: any): any => ({
     ci: t.cameraIntensity,
     gm: t.glyphMotion,
+    wll: t.wholeLineLyrics,
     gss: t.glyphSettleStretch,
     cm: t.colorMode,
     sb: t.showBlocks,
@@ -424,6 +425,7 @@ const compressTempera = (t: any): any => ({
 const decompressTempera = (o: any): any => ({
     cameraIntensity: o.ci !== undefined ? o.ci : DEFAULT_TEMPERA_TUNING.cameraIntensity,
     glyphMotion: o.gm !== undefined ? o.gm : DEFAULT_TEMPERA_TUNING.glyphMotion,
+    wholeLineLyrics: o.wll !== undefined ? o.wll : DEFAULT_TEMPERA_TUNING.wholeLineLyrics,
     glyphSettleStretch: o.gss !== undefined ? o.gss : DEFAULT_TEMPERA_TUNING.glyphSettleStretch,
     colorMode: o.cm !== undefined ? o.cm : DEFAULT_TEMPERA_TUNING.colorMode,
     showBlocks: o.sb !== undefined ? o.sb : DEFAULT_TEMPERA_TUNING.showBlocks,
@@ -503,6 +505,9 @@ export const compressConfig = (config: any): string => {
     if (config.songThemeAutoGenerateEnabled !== undefined) minified.stag = config.songThemeAutoGenerateEnabled;
     if (config.themeGenerationSource !== undefined) minified.tgs = config.themeGenerationSource;
     if (config.followSystemTheme !== undefined) minified.fst = config.followSystemTheme;
+    if (config.stageTrackPillMode !== undefined) minified.stp = config.stageTrackPillMode;
+    if (config.stageTrackPillTimeoutSec !== undefined) minified.stpt = config.stageTrackPillTimeoutSec;
+    if (config.stageTrackPillOnHome !== undefined) minified.stph = config.stageTrackPillOnHome;
 
     const jsonStr = JSON.stringify(minified);
     const bytes = new TextEncoder().encode(jsonStr);
@@ -557,7 +562,13 @@ export const decompressConfig = (str: string): any => {
         || parsed.sfi !== undefined
         || parsed.pdt !== undefined
         || parsed.snt !== undefined
-        || parsed.fst !== undefined;
+        || parsed.fst !== undefined
+        // The now playing card's three keys. Listed like the rest so a hand-written JSON that only
+        // carries the card is still recognised as the minified shape rather than falling through to
+        // the long-name branch, where none of them is a valid key.
+        || parsed.stp !== undefined
+        || parsed.stpt !== undefined
+        || parsed.stph !== undefined;
     if (isMinified) {
         const decompressed: any = {};
         if (parsed.t) {
@@ -616,6 +627,9 @@ export const decompressConfig = (str: string): any => {
         if (parsed.stag !== undefined) decompressed.songThemeAutoGenerateEnabled = parsed.stag;
         if (parsed.tgs !== undefined) decompressed.themeGenerationSource = parsed.tgs;
         if (parsed.fst !== undefined) decompressed.followSystemTheme = parsed.fst;
+        if (parsed.stp !== undefined) decompressed.stageTrackPillMode = parsed.stp;
+        if (parsed.stpt !== undefined) decompressed.stageTrackPillTimeoutSec = parsed.stpt;
+        if (parsed.stph !== undefined) decompressed.stageTrackPillOnHome = parsed.stph;
 
         return decompressed;
     } else {
@@ -633,6 +647,7 @@ export const decompressConfig = (str: string): any => {
             'pendoloTuning', 'sonnetTuning', 'temperaTuning',
             'urlBackgroundList', 'urlBackgroundSelectedId',
             'songThemeAutoSwitchEnabled', 'songThemeAutoGenerateEnabled', 'themeGenerationSource', 'followSystemTheme',
+            'stageTrackPillMode', 'stageTrackPillTimeoutSec', 'stageTrackPillOnHome',
         ];
         const hasValidKey = validKeys.some(k => parsed[k] !== undefined);
         if (!hasValidKey) {

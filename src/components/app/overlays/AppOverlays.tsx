@@ -2,6 +2,8 @@ import React from 'react';
 import FloatingPlayerControls from '../../FloatingPlayerControls';
 import SearchWorkspace from '../search/SearchWorkspace';
 import DevDebugOverlay from '../../DevDebugOverlay';
+import MemoryMonitorWindow from '../../debug/MemoryMonitorWindow';
+import NowPlayingToast from './NowPlayingToast';
 import type { AppOverlaysModel } from './buildAppOverlaysModel';
 
 // Centralized app-level overlay renderer so App.tsx does not mount leaf overlays directly.
@@ -13,7 +15,9 @@ const AppOverlays: React.FC<AppOverlaysProps> = ({ model }) => {
     const {
         searchOverlay,
         debugOverlay,
+        memoryMonitor,
         floatingControls,
+        nowPlayingToast,
     } = model;
 
     return (
@@ -22,7 +26,11 @@ const AppOverlays: React.FC<AppOverlaysProps> = ({ model }) => {
 
             {debugOverlay && <DevDebugOverlay {...debugOverlay} />}
 
+            {memoryMonitor && <MemoryMonitorWindow {...memoryMonitor} />}
+
             {floatingControls && <FloatingPlayerControls {...floatingControls} />}
+
+            {nowPlayingToast && <NowPlayingToast {...nowPlayingToast} />}
         </>
     );
 };

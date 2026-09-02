@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { MotionValue } from 'framer-motion';
-import { X, Command, MousePointer2, Keyboard, Settings2, Trash2, Database, Monitor, PlayCircle, Loader2, Server, Check, AlertCircle, FlaskConical, ChevronLeft, ChevronRight, RefreshCw, Download, ExternalLink, Sparkles, Palette, CircleHelp, Languages, Moon, Sun } from 'lucide-react';
+import { X, Command, Keyboard, Loader2, Check, AlertCircle, ChevronLeft, Download, ExternalLink, CircleHelp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getCacheUsageByCategory, clearCacheByCategory, clearAllData } from '../../services/db';
 import { DualTheme, StageStatus, StageSource, Theme, ThemeMode, type CadenzaTuning, type CappellaEmojiImage, type CappellaTuning, type FumeTuning, type NowPlayingConnectionStatus, type PartitaTuning, type ReplayGainMode, type TiltTuning, type StoredCustomLyricsFont, type VisualizerMode } from '../../types';
@@ -11,6 +11,7 @@ import VisPlayground from '../visualizer/VisPlayground';
 import { VISUALIZER_REGISTRY, getVisualizerModeLabel } from '../visualizer/registry';
 import ThemePark from './ThemePark';
 import LyricFilterSettingsModal from './LyricFilterSettingsModal';
+import type { LyricFilterDraft } from './LyricFilterSettingsModal';
 import GlobalLyricOffsetModal from './settings/GlobalLyricOffsetModal';
 import AppearanceSettingsSubview from './settings/AppearanceSettingsSubview';
 import DesktopSettingsSubview from './settings/DesktopSettingsSubview';
@@ -18,12 +19,21 @@ import GeneralSettingsSubview from './settings/GeneralSettingsSubview';
 import IntegrationSettingsSubview from './settings/IntegrationSettingsSubview';
 import type { PlayerCapConnectionStatus } from '../../types/playerCap';
 import LabSettingsModal from './settings/LabSettingsModal';
+import DeveloperSettingsSubview from './settings/DeveloperSettingsSubview';
 import PlaybackSettingsSubview from './settings/PlaybackSettingsSubview';
 import StorageSettingsSection from './settings/StorageSettingsSection';
 import { AiHelpPromptModal } from './AiHelpPromptModal';
+import { discordIconUrl, openDiscordInvite } from '../shared/discordCommunity';
 import meowImageUrl from '../../../build/miao.png';
 import type { LyricData } from '../../types';
 import { selectSettingsUiSnapshot, type SettingsSubviewId, type VisualizerSettingsSection, useSettingsUiStore } from '../../stores/useSettingsUiStore';
+import { SettingsAnchorProvider, useSettingsAnchorList, useSettingsAnchorStore } from './settings/navigation/SettingsAnchorContext';
+import SettingsSidebarChips from './settings/navigation/SettingsSidebarChips';
+import SettingsSidebarWide from './settings/navigation/SettingsSidebarWide';
+import SettingsSectionHeader from './settings/SettingsSectionHeader';
+import { buildSettingsNavGroups, findSettingsNavItem, type SettingsSectionId } from './settings/navigation/settingsNavModel';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { useSettingsScrollSpy } from '../../hooks/useSettingsScrollSpy';
 import { useShallow } from 'zustand/react/shallow';
 import type { ObsBrowserSourceStatus } from '../../types/obsBrowserSource';
 import { getWebAiProvider } from '../../services/runtimeConfig';
@@ -31,6 +41,7 @@ import type { LyricApiStatus } from '../../types/lyricApi';
 import type { SongResult } from '../../types';
 import type { ThemeCacheSongKey } from '../../services/themeCache';
 import type { ThemeGenerationSource } from '../../services/themePreferences';
+import { isMacPlatform as isMac } from '../../utils/platform';
 
 const DEFAULT_OPENAI_TEMPERATURE = '0.7';
 const VERSION_INFO = __DOCKER_STACK_VERSION__
@@ -63,7 +74,7 @@ interface SettingsModalProps {
     currentLyrics: LyricData | null;
     lyricCurrentTime: MotionValue<number>;
     currentSongTitle?: string | null;
-    onSaveLyricFilterPattern: (pattern: string) => Promise<void> | void;
+    onSaveLyricFilterPattern: (draft: LyricFilterDraft) => Promise<void> | void;
     stageStatus?: StageStatus | null;
     stageSource?: StageSource | null;
     onToggleStageMode?: (enabled: boolean) => Promise<void> | void;
@@ -170,6 +181,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         handleToggleWallpaperMode: onToggleWallpaperMode,
         openPlayerOnLaunch,
         enableMediaCache,
+        mediaCacheLimitGb,
         backgroundOpacity,
         subtitleOverlayOpacity,
         subtitleOverlayBackground,
@@ -221,6 +233,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         subtitleFontFamily,
         subtitleFontFallbackFamilies,
         lyricFilterPattern,
+        lyricStaffPolicy,
+        lyricStaffMinDwellSeconds,
+        lyricStaffPattern,
         showOpenPanelCloseButton,
         handleToggleCoverColorBg: onToggleCoverColorBg,
         handleToggleStaticMode: onToggleStaticMode,
@@ -240,6 +255,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         handleToggleHideRemoteControlTaskbarIcon: onToggleHideRemoteControlTaskbarIcon,
         handleToggleOpenPlayerOnLaunch: onToggleOpenPlayerOnLaunch,
         handleToggleMediaCache: onToggleMediaCache,
+        handleSetMediaCacheLimitGb: onSetMediaCacheLimitGb,
         handleSetBackgroundOpacity: setBackgroundOpacity,
         handleSetSubtitleOverlayOpacity: setSubtitleOverlayOpacity,
         handleToggleSubtitleOverlayBackground: onToggleSubtitleOverlayBackground,
@@ -302,6 +318,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         handleSetSubtitleFontFallbackFamilies: onSubtitleFontFallbackFamiliesChange,
         handleToggleOpenPanelCloseButton: onToggleOpenPanelCloseButton,
         handleSetGrid3dCardStyle: onChangeGrid3dCardStyle,
+        stageTrackPillMode,
+        stageTrackPillTimeoutSec,
+        stageTrackPillOnHome,
+        handleSetStageTrackPillMode: onChangeStageTrackPillMode,
+        handleSetStageTrackPillTimeoutSec: onChangeStageTrackPillTimeoutSec,
+        handleToggleStageTrackPillOnHome: onToggleStageTrackPillOnHome,
     } = useSettingsUiStore(useShallow(selectSettingsUiSnapshot));
     const resolvedToggleTransparentPlayerBackground = onToggleTransparentPlayerBackground ?? onToggleTransparentPlayerBackgroundFromStore;
     const setIsSubSettingsViewOpen = useSettingsUiStore(state => state.setIsSubSettingsViewOpen);
@@ -312,43 +334,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setTabDirection(tab === 'options' ? 'left' : 'right');
         setActiveTab(tab);
     };
-    const [activeSettingsSection, setActiveSettingsSection] = useState<string>('appearance');
-
-    // Drag to scroll logic for mobile pill tabs
-    const scrollContainerRef = useRef<HTMLDivElement>(null);
-    const [isDragging, setIsDragging] = useState(false);
-    const [startX, setStartX] = useState(0);
-    const [scrollLeft, setScrollLeft] = useState(0);
-    const hasDraggedRef = useRef(false);
-
-    const handleMouseDown = (e: React.MouseEvent) => {
-        if (!scrollContainerRef.current) return;
-        setIsDragging(true);
-        hasDraggedRef.current = false;
-        setStartX(e.pageX - scrollContainerRef.current.offsetLeft);
-        setScrollLeft(scrollContainerRef.current.scrollLeft);
-    };
-
-    const handleMouseLeave = () => {
-        setIsDragging(false);
-    };
-
-    const handleMouseUp = () => {
-        setIsDragging(false);
-    };
-
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isDragging || !scrollContainerRef.current) return;
-        e.preventDefault();
-        const x = e.pageX - scrollContainerRef.current.offsetLeft;
-        const walk = (x - startX) * 1.5;
-        if (Math.abs(walk) > 5) {
-            hasDraggedRef.current = true;
-        }
-        scrollContainerRef.current.scrollLeft = scrollLeft - walk;
-    };
-
-
+    const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>('appearance');
+    const contentScrollRef = useRef<HTMLDivElement>(null);
+    // Matches the md:flex-row split below; the two sidebars are different enough to render separately.
+    const isWideSettingsLayout = useMediaQuery('(min-width: 768px)');
+    const settingsAnchorStore = useSettingsAnchorStore();
+    const settingsAnchors = useSettingsAnchorList(settingsAnchorStore);
 
     const [showVisPlayground, setShowVisPlayground] = useState(false);
     const [showThemePark, setShowThemePark] = useState(false);
@@ -376,9 +367,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             initialSubview === 'storage' ||
             initialSubview === 'desktop' ||
             initialSubview === 'lab' ||
-            initialSubview === 'globalLyricOffset'
+            initialSubview === 'globalLyricOffset' ||
+            initialSubview === 'lyricFilter'
         ) {
-            setActiveSettingsSection(initialSubview === 'globalLyricOffset' ? 'playback' : initialSubview);
+            // 这两个是播放页歌词区里的二级面板，关掉后应该落回它们的入口所在分区。
+            const isPlaybackSubview = initialSubview === 'globalLyricOffset' || initialSubview === 'lyricFilter';
+            setActiveSettingsSection(isPlaybackSubview ? 'playback' : initialSubview);
         } else {
             setActiveSettingsSection(prev => prev || 'appearance');
         }
@@ -390,7 +384,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         playlist: '0 B',
         lyrics: '0 B',
         cover: '0 B',
-        media: '0 B'
+        media: '0 B',
+        analysis: '0 B'
     });
     const [mediaCount, setMediaCount] = useState(0);
     const [isCleaning, setIsCleaning] = useState<string | null>(null);
@@ -618,7 +613,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
 
-    const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('mac');
     const isWin = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('win');
 
 
@@ -741,7 +735,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             playlist: formatBytes(usage.playlist),
             lyrics: formatBytes(usage.lyrics),
             cover: formatBytes(usage.cover),
-            media: formatBytes(usage.media)
+            media: formatBytes(usage.media),
+            analysis: formatBytes(usage.analysis)
         });
         setMediaCount(usage.mediaCount);
     };
@@ -752,7 +747,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     }, [activeTab]);
 
-    const handleClear = async (category: 'playlist' | 'lyrics' | 'cover' | 'media') => {
+    const handleClear = async (category: 'playlist' | 'lyrics' | 'cover' | 'media' | 'analysis') => {
         setIsCleaning(category);
         await clearCacheByCategory(category);
         await fetchCacheUsage();
@@ -1146,15 +1141,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     );
     const canEnableAutoUpdate = Boolean(electronSettings.ENABLE_UPDATE_CHECK && updateStatus?.supported);
 
-    const SETTINGS_SECTIONS = [
-        { id: 'appearance', icon: Sparkles, label: t('options.visualSettings') },
-        { id: 'general', icon: Languages, label: t('options.generalSettings') },
-        { id: 'playback', icon: PlayCircle, label: t('options.playbackSettings') },
-        { id: 'integration', icon: Server, label: t('options.integrationSettings') },
-        { id: 'storage', icon: Database, label: t('options.storageSettings') },
-        ...(isElectron ? [{ id: 'desktop', icon: Command, label: t('options.desktopSettings') }] : []),
-        { id: 'lab', icon: FlaskConical, label: t('options.labSettings') }
-    ];
+    const settingsNavGroups = useMemo(
+        () => buildSettingsNavGroups(t, { isElectron }),
+        [t, isElectron],
+    );
+    const activeSettingsNavItem = findSettingsNavItem(settingsNavGroups, activeSettingsSection);
+    const prefersReducedMotion = useReducedMotion() ?? false;
+    const { activeAnchorId, scrollToAnchor } = useSettingsScrollSpy({
+        containerRef: contentScrollRef,
+        anchors: settingsAnchors,
+        enabled: isWideSettingsLayout && activeTab === 'options',
+        reducedMotion: prefersReducedMotion,
+    });
+
+    // Switching section swaps the whole column; keeping the old offset would land mid-content and
+    // leave the table of contents highlighting a section that is no longer on screen.
+    useEffect(() => {
+        if (contentScrollRef.current) {
+            contentScrollRef.current.scrollTop = 0;
+        }
+    }, [activeSettingsSection]);
 
     return (
         <motion.div
@@ -1330,6 +1336,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         <CircleHelp size={16} />
                                         {t('aiHelp.openButton', 'Need help?')}
                                     </button>
+                                    {/* 一排单色胶囊里唯一带颜色的那颗，靠色彩而不是体积被看见。 */}
+                                    <button
+                                        type="button"
+                                        onClick={openDiscordInvite}
+                                        className="px-6 py-2 bg-[#5865F2]/15 hover:bg-[#5865F2]/25 ring-1 ring-inset ring-[#5865F2]/30 transition-colors rounded-full text-sm font-medium flex items-center gap-2"
+                                        style={{ color: 'var(--text-primary)' }}
+                                    >
+                                        <img src={discordIconUrl} alt="" aria-hidden className="h-[18px] w-[18px] rounded-[5px]" />
+                                        {t('help.joinDiscord', 'Join our Discord')}
+                                    </button>
                                 </div>
 
                                 {/* Author Info (Moved from Footer) */}
@@ -1472,76 +1488,37 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 transition={shellTransition}
                                 className="flex flex-col md:flex-row gap-4 md:gap-6 h-full"
                             >
-                                <div
-                                    ref={scrollContainerRef}
-                                    onMouseDown={handleMouseDown}
-                                    onMouseLeave={handleMouseLeave}
-                                    onMouseUp={handleMouseUp}
-                                    onMouseMove={handleMouseMove}
-                                    className={`w-full md:w-1/3 md:max-w-[240px] shrink-0 overflow-x-auto md:overflow-x-hidden md:overflow-y-auto mobile-hide-scrollbar custom-scrollbar pr-0 md:pr-3 flex flex-row md:flex-col space-x-2 md:space-x-0 space-y-0 md:space-y-2 border-b md:border-b-0 md:border-r border-white/10 pb-3 md:pb-4 mb-2 md:mb-0 items-center md:items-stretch ${isDragging ? 'cursor-grabbing select-none' : 'cursor-default'}`}
-                                >
-                                    {SETTINGS_SECTIONS.map((section) => {
-                                        const Icon = section.icon;
-                                        const isActive = activeSettingsSection === section.id;
-                                        return (
-                                            <button
-                                                key={section.id}
-                                                type="button"
-                                                onClick={() => {
-                                                    if (hasDraggedRef.current) return;
-                                                    setActiveSettingsSection(section.id);
-                                                }}
-                                                className={`shrink-0 w-auto md:w-full p-2 md:p-3 rounded-xl border transition-colors flex items-center justify-center md:justify-between gap-2 md:gap-3 text-left ${isActive ? (isDaylight ? 'border-zinc-300/70 bg-white/80' : 'border-white/20 bg-white/10') : (isDaylight ? 'border-transparent hover:bg-white/50' : 'border-transparent hover:bg-white/5')}`}
-                                            >
-                                                <div className="flex items-center gap-2 md:gap-3">
-                                                    <div className="opacity-70" style={{ color: 'var(--text-primary)' }}>
-                                                        <Icon size={18} />
-                                                    </div>
-                                                    <div className="text-sm font-medium whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
-                                                        {section.label}
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                <div className="flex-1 overflow-y-auto custom-scrollbar pl-1 md:pl-2 pr-2 md:pr-4 relative pb-4">
-                                    <div className="mb-4 md:mb-6 border-b border-white/10 pb-3 md:pb-4">
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div>
-                                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                                    {activeSettingsSection === 'appearance' && (t('options.visualSettings') || "Visual Settings")}
-                                                    {activeSettingsSection === 'general' && (t('options.generalSettings') || "General Settings")}
-                                                    {activeSettingsSection === 'playback' && (t('options.playbackSettings') || "Playback Settings")}
-                                                    {activeSettingsSection === 'integration' && (t('options.integrationSettings') || "Integration Settings")}
-                                                    {activeSettingsSection === 'storage' && (t('options.storageSettings') || "Storage Settings")}
-                                                    {activeSettingsSection === 'desktop' && (t('options.desktopSettings') || "Desktop Settings")}
-                                                    {activeSettingsSection === 'lab' && (t('options.labSettings') || "Lab Settings")}
-                                                </h2>
-                                                <p className="text-xs opacity-50 mt-1" style={{ color: 'var(--text-secondary)' }}>
-                                                    {activeSettingsSection === 'appearance' && (t('options.visualSettingsPanelDesc') || "Customize the look and feel of Folia.")}
-                                                    {activeSettingsSection === 'general' && (t('options.generalSettingsDesc') || "Basic application preferences.")}
-                                                    {activeSettingsSection === 'playback' && (t('options.playbackSettingsPanelDesc') || "Audio output and playback behavior.")}
-                                                    {activeSettingsSection === 'integration' && (t('options.integrationSettingsDesc') || "Connect with external services.")}
-                                                    {activeSettingsSection === 'storage' && (t('options.storageSettingsPanelDesc') || "Manage cache and local data.")}
-                                                    {activeSettingsSection === 'desktop' && (t('options.desktopSettingsPanelDesc') || "System integration and updates.")}
-                                                    {activeSettingsSection === 'lab' && (t('options.labSettingsDesc') || "Experimental features.")}
-                                                </p>
-                                            </div>
-                                            {activeSettingsSection === 'appearance' && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => onSetDaylightPreference(!isDaylight)}
-                                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${utilityGhostButtonClass} ${isDaylight ? 'text-amber-500' : 'text-blue-300'}`}
-                                                    title={t('options.daylightMode')}
-                                                    aria-label={t('options.daylightMode')}
-                                                    aria-pressed={isDaylight}
-                                                >
-                                                    {isDaylight ? <Sun size={17} /> : <Moon size={17} />}
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
+                                <SettingsAnchorProvider store={settingsAnchorStore}>
+                                {isWideSettingsLayout ? (
+                                    <SettingsSidebarWide
+                                        groups={settingsNavGroups}
+                                        activeSectionId={activeSettingsSection}
+                                        onSelectSection={setActiveSettingsSection}
+                                        anchors={settingsAnchors}
+                                        activeAnchorId={activeAnchorId}
+                                        onSelectAnchor={scrollToAnchor}
+                                        isDaylight={isDaylight}
+                                        reducedMotion={prefersReducedMotion}
+                                        theme={theme}
+                                    />
+                                ) : (
+                                    <SettingsSidebarChips
+                                        groups={settingsNavGroups}
+                                        activeSectionId={activeSettingsSection}
+                                        onSelectSection={setActiveSettingsSection}
+                                        isDaylight={isDaylight}
+                                    />
+                                )}
+                                <div ref={contentScrollRef} className="flex-1 overflow-y-auto custom-scrollbar pl-1 md:pl-2 pr-2 md:pr-4 relative pb-4">
+                                    <SettingsSectionHeader
+                                        title={activeSettingsNavItem?.label ?? ''}
+                                        description={activeSettingsNavItem?.description ?? ''}
+                                        showDaylightToggle={activeSettingsSection === 'appearance'}
+                                        isDaylight={isDaylight}
+                                        onSetDaylightPreference={onSetDaylightPreference}
+                                        daylightLabel={t('options.daylightMode')}
+                                        utilityGhostButtonClass={utilityGhostButtonClass}
+                                    />
                                     <div className="space-y-8">
                                         {activeSettingsSection === 'appearance' && (
                                             <AppearanceSettingsSubview
@@ -1572,6 +1549,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 toggleOffBackgroundClass={toggleOffBackgroundClass}
                                                 transparentPlayerBackground={transparentPlayerBackground}
                                                 autoHidePlayerChrome={autoHidePlayerChrome}
+                                                stageTrackPillMode={stageTrackPillMode}
+                                                stageTrackPillTimeoutSec={stageTrackPillTimeoutSec}
+                                                stageTrackPillOnHome={stageTrackPillOnHome}
+                                                onChangeStageTrackPillMode={onChangeStageTrackPillMode}
+                                                onChangeStageTrackPillTimeoutSec={onChangeStageTrackPillTimeoutSec}
+                                                onToggleStageTrackPillOnHome={onToggleStageTrackPillOnHome}
                                                 utilityGhostButtonClass={utilityGhostButtonClass}
                                                 grid3dCardStyle={grid3dCardStyle}
                                                 onChangeGrid3dCardStyle={onChangeGrid3dCardStyle}
@@ -1591,6 +1574,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 isDaylight={isDaylight}
                                                 onAudioOutputDeviceChange={onAudioOutputDeviceChange}
                                                 onOpenGlobalLyricOffsetSettings={() => setShowGlobalLyricOffset(true)}
+                                                onOpenLyricFilterSettings={() => setShowLyricFilterSettings(true)}
                                                 replayGainMode={replayGainMode}
                                                 onReplayGainModeChange={onReplayGainModeChange}
                                                 settingsCardClass={settingsCardClass}
@@ -1664,11 +1648,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 enableMediaCache={enableMediaCache}
                                                 errorTextColor={errorTextColor}
                                                 isCleaning={isCleaning}
+                                                isDaylight={isDaylight}
                                                 isElectron={isElectron}
+                                                mediaCacheLimitGb={mediaCacheLimitGb}
                                                 mediaCount={mediaCount}
                                                 onChooseCacheDirectory={handleChooseCacheDirectory}
                                                 onClear={handleClear}
                                                 onClearAll={handleClearAllCache}
+                                                onSetMediaCacheLimitGb={onSetMediaCacheLimitGb}
                                                 onToggleMediaCache={onToggleMediaCache}
                                                 settingsCardClass={settingsCardClass}
                                                 settingsIconClass={settingsIconClass}
@@ -1726,7 +1713,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                             <LabSettingsModal
                                                 isOpen={true}
                                                 onClose={() => { }}
-                                                onOpenLyricFilterSettings={() => setShowLyricFilterSettings(true)}
                                                 theme={theme}
                                                 embedded={true}
                                                 voiceInputPause={{
@@ -1736,8 +1722,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 }}
                                             />
                                         )}
+                                        {activeSettingsSection === 'developer' && (
+                                            <DeveloperSettingsSubview
+                                                isDaylight={isDaylight}
+                                                settingsCardClass={settingsCardClass}
+                                                theme={theme}
+                                                toggleOffBackgroundClass={toggleOffBackgroundClass}
+                                            />
+                                        )}
                                     </div>
                                 </div>
+                                </SettingsAnchorProvider>
                             </motion.div>
 
                         )}
@@ -1980,6 +1975,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 isDaylight={isDaylight}
                 currentSongTitle={currentSongTitle}
                 initialPattern={lyricFilterPattern}
+                initialStaffPolicy={lyricStaffPolicy}
+                initialStaffMinDwellSeconds={lyricStaffMinDwellSeconds}
+                initialStaffPattern={lyricStaffPattern}
                 loadPreviewLyrics={loadLyricFilterPreview}
                 onClose={() => closeSubviewOrModal(() => setShowLyricFilterSettings(false))}
                 onSave={onSaveLyricFilterPattern}
