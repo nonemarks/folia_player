@@ -59,6 +59,11 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
 
     const [source, setSource] = useState<LyricMatchSource>('netease');
 
+    // Debug: log source changes
+    useEffect(() => {
+        console.log('[LyricMatchModal] source changed to:', source);
+    }, [source]);
+
     // Online data toggle state (dots)
     const [lyricsSource, setLyricsSource] = useState<'local' | 'embedded' | 'online' | undefined>(song.lyricsSource || 'online');
     const [useOnlineCover, setUseOnlineCover] = useState(song.useOnlineCover ?? !song.localCoverAssetId);
@@ -294,10 +299,12 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
                     </div>
 
                     {/* Content area: changes based on selected tab */}
-                    <ErrorBoundary>
+                    <ErrorBoundary onError={(err, info) => { console.error('[LyricMatchModal] ErrorBoundary caught:', err, info); }}>
                     {source === 'whisper' ? (
                         /* WHISPER TAB: Full-width settings + monitoring panel */
-                        <div className="flex-1 min-h-0 overflow-y-auto">
+                        <div className="flex-1 min-h-0 overflow-y-auto" data-debug-whisper="true">
+                            {/* DEBUG: visible marker to confirm Whisper tab renders */}
+                            <div style={{ padding: '4px 8px', background: 'rgba(99,102,241,0.1)', fontSize: '10px', color: '#818cf8' }}>[DEBUG: Whisper tab rendered]</div>
                             <WhisperSettingsPanel
                                 song={song}
                                 lyrics={song.matchedLyrics ?? null}

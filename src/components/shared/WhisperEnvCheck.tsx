@@ -164,6 +164,7 @@ const WhisperEnvCheck: React.FC<WhisperEnvCheckProps> = ({
     }, [refreshAvailability]);
 
     if (!availability) {
+        console.log('[WhisperEnvCheck] Still loading availability...');
         return alwaysShow ? (
             <div className={className}>
                 <div className="flex items-center justify-center p-4">
@@ -172,6 +173,9 @@ const WhisperEnvCheck: React.FC<WhisperEnvCheckProps> = ({
             </div>
         ) : <>{children}</>;
     }
+
+    // Debug: log availability state
+    console.log('[WhisperEnvCheck] availability:', availability);
 
     // If everything is ready and not forced show, just render children
     if (availability.available && !alwaysShow) {

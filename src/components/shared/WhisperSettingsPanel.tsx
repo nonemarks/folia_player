@@ -140,6 +140,9 @@ const WhisperSettingsPanel: React.FC<WhisperSettingsPanelProps> = ({
         ? { borderColor: 'var(--accent-color, rgba(99, 102, 241, 0.5))', backgroundColor: 'var(--accent-color, rgba(99, 102, 241, 0.1))' }
         : { borderColor: 'var(--border-primary, rgba(255,255,255,0.06))' };
 
+    // Debug: log render to confirm component mounts
+    console.log('[WhisperSettingsPanel] Rendering, song:', song?.title, 'lyrics:', !!lyrics, 'isDaylight:', isDaylight);
+
     return (
         <div className="flex flex-col h-full overflow-y-auto custom-scrollbar">
             {/* Section 1: Environment Status */}
