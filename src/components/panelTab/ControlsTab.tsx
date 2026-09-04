@@ -1,10 +1,11 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowUpDown, Check, Moon, RefreshCw, Sun } from 'lucide-react';
+import { ArrowUpDown, BarChart3, Check, Moon, RefreshCw, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Theme, ThemeMode, VisualizerMode } from '../../types';
 import type { ThemeSourceModel } from '../../hooks/themeControllerState';
 import { useThemeQuickEditorStore } from '../../stores/useThemeQuickEditorStore';
+import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
 import { useThemeSyncAction } from '../../hooks/useThemeSyncAction';
 import AudioEqualizerDialog from './AudioEqualizerDialog';
 import AppearanceSection from './controls/AppearanceSection';
@@ -81,6 +82,8 @@ const ControlsTab: React.FC<ControlsTabProps> = ({
     const { t } = useTranslation();
     const openThemeQuickEditor = useThemeQuickEditorStore(state => state.openEditor);
     const { themeSyncState, runThemeSync } = useThemeSyncAction();
+    // 从播放控制面板一键打开「歌词总览」二级面板（设置中心 → 播放 → 歌词总览）
+    const openSettings = useSettingsUiStore(state => state.openSettings);
 
     const formatThemeDisplayName = (name: string) => {
         if (themeSourceModel.activeSource !== 'default') {
@@ -162,6 +165,15 @@ const ControlsTab: React.FC<ControlsTabProps> = ({
                             aria-label={isDaylight ? t('theme.switchToDark') : t('theme.switchToLight')}
                         >
                             {isDaylight ? <Sun size={14} /> : <Moon size={14} />}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => openSettings('options', 'whisperLyricOverview')}
+                            className={`rounded-md p-1 transition-all ${isDaylight ? 'text-zinc-600 hover:bg-black/10' : 'text-zinc-300 hover:bg-white/10'}`}
+                            title={t('whisperOverview.entryTitle')}
+                            aria-label={t('whisperOverview.entryTitle')}
+                        >
+                            <BarChart3 size={14} />
                         </button>
                         {currentEditableSource ? (
                             <button

@@ -5,11 +5,14 @@
 import React, { useState, useCallback } from 'react';
 import { Sparkles, Loader2, Check, AlertCircle, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useShallow } from 'zustand/react/shallow';
 import type { LocalSong, SongResult, LyricData } from '../../types';
 import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
-import { alignLyricsWithWhisper, cancelAlignment, type WhisperAlignJob } from '../../services/whisperAlignService';
+import { alignLyricsWithWhisper, cancelAlignment, shouldAlignLyrics, type WhisperAlignJob } from '../../services/whisperAlignService';
 import WhisperEnvCheck from './WhisperEnvCheck';
+import WhisperAutoAlignToggle from './WhisperAutoAlignToggle';
+import WhisperModelSelector from './WhisperModelSelector';
+import WhisperLanguageSelector from './WhisperLanguageSelector';
+import WhisperVocalSeparationToggle from './WhisperVocalSeparationToggle';
 
 interface WhisperSettingsPanelProps {
     song: LocalSong | SongResult;
@@ -27,17 +30,9 @@ const WhisperSettingsPanel: React.FC<WhisperSettingsPanelProps> = ({
     isDaylight,
 }) => {
     const { t } = useTranslation();
-    const {
-        whisperAlignEnabled,
-        whisperAlignModel,
-        onToggleWhisperAlign,
-        onSetWhisperAlignModel,
-    } = useSettingsUiStore(useShallow(state => ({
-        whisperAlignEnabled: state.whisperAlignEnabled,
-        whisperAlignModel: state.whisperAlignModel,
-        onToggleWhisperAlign: state.handleToggleWhisperAlign,
-        onSetWhisperAlignModel: state.handleSetWhisperAlignModel,
-    })));
+    // Only the active model is needed here (for manual alignment); the toggle and
+    // model-selector UI read the store themselves via the shared components.
+    const whisperAlignModel = useSettingsUiStore(state => state.whisperAlignModel);
 
     // Manual alignment state
     const [alignStatus, setAlignStatus] = useState<AlignStatus>('idle');
@@ -45,8 +40,13 @@ const WhisperSettingsPanel: React.FC<WhisperSettingsPanelProps> = ({
     const [progressPercent, setProgressPercent] = useState(0);
     const [errorMsg, setErrorMsg] = useState('');
 
-    const isWordByWord = !!lyrics?.isWordByWord;
-    const hasLineTiming = Array.isArray(lyrics?.lines) && lyrics.lines.some(l => l.startTime != null && l.endTime != null);
+    // Use the exact predicate the alignment service applies, so the UI never offers a click
+    // that the service will silently skip (which made the progress bar vanish with no reason).
+    const canAlign = shouldAlignLyrics(lyrics);
+    // Only a genuine word-level source sets isWordByWord. The averaged pseudo-words the LRC
+    // parser synthesises do not, so they must not be shown as "already aligned" — that would
+    // block the user from running Whisper to replace the inaccurate averaged timing.
+    const alreadyAligned = !!lyrics?.isWordByWord;
 
     const handleManualAlign = useCallback(async () => {
         if (alignStatus === 'aligning') {
@@ -56,7 +56,7 @@ const WhisperSettingsPanel: React.FC<WhisperSettingsPanelProps> = ({
             return;
         }
 
-        if (!lyrics || !hasLineTiming) return;
+        if (!lyrics || !canAlign) return;
 
         setAlignStatus('aligning');
         setProgressLabel(t('options.whisperAlignPreparing'));
@@ -129,19 +129,12 @@ const WhisperSettingsPanel: React.FC<WhisperSettingsPanelProps> = ({
             setErrorMsg(failureDetail ? `${baseMsg} (${failureDetail})` : baseMsg);
             // Don't auto-dismiss error — let the user read it and retry manually
         }
-    }, [song, lyrics, hasLineTiming, whisperAlignModel, onLyricsUpdated, alignStatus, t]);
+    }, [song, lyrics, canAlign, whisperAlignModel, onLyricsUpdated, alignStatus, t]);
 
     // Theme helpers
     const textPrimary = isDaylight ? 'text-zinc-900' : 'text-white';
     const textSecondary = isDaylight ? 'text-zinc-500' : 'text-zinc-400';
     const borderColor = isDaylight ? 'border-black/5' : 'border-white/10';
-
-    const getAccentOptionStyle = (selected: boolean) => selected
-        ? { borderColor: 'var(--accent-color, rgba(99, 102, 241, 0.5))', backgroundColor: 'var(--accent-color, rgba(99, 102, 241, 0.1))' }
-        : { borderColor: 'var(--border-primary, rgba(255,255,255,0.06))' };
-
-    // Debug: log render to confirm component mounts
-    console.log('[WhisperSettingsPanel] Rendering, song:', song?.title, 'lyrics:', !!lyrics, 'isDaylight:', isDaylight);
 
     return (
         <div className="flex flex-col h-full overflow-y-auto custom-scrollbar">
@@ -155,69 +148,15 @@ const WhisperSettingsPanel: React.FC<WhisperSettingsPanelProps> = ({
                 </div>
                 <WhisperEnvCheck alwaysShow>
                     {/* Model selector - rendered inside WhisperEnvCheck when env is ready */}
-                    <div className="p-4 space-y-3 border-t" style={{ borderColor: 'var(--border-primary, rgba(255,255,255,0.06))' }}>
-                        <div className="space-y-1">
-                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {t('options.whisperAlignModel')}
-                            </div>
-                            <div className="text-[11px] opacity-50 max-w-[420px]" style={{ color: 'var(--text-secondary)' }}>
-                                {t('options.whisperAlignModelDesc')}
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            {([
-                                { value: 'tiny', label: t('options.whisperAlignModelTiny') },
-                                { value: 'base', label: t('options.whisperAlignModelBase') },
-                                { value: 'small', label: t('options.whisperAlignModelSmall') },
-                                { value: 'medium', label: t('options.whisperAlignModelMedium') },
-                            ] as Array<{ value: string; label: string }>).map((option) => {
-                                const selected = whisperAlignModel === option.value;
-                                return (
-                                    <button
-                                        key={option.value}
-                                        type="button"
-                                        onClick={() => onSetWhisperAlignModel(option.value)}
-                                        className="rounded-xl border px-3 py-2 text-center transition-colors"
-                                        style={getAccentOptionStyle(selected)}
-                                    >
-                                        <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-                                            {option.label}
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
+                    <WhisperModelSelector />
+                    <WhisperLanguageSelector />
+                    <WhisperVocalSeparationToggle />
                 </WhisperEnvCheck>
             </div>
 
             {/* Section 2: Auto-align toggle */}
             <div className={`p-4 border-b ${borderColor}`}>
-                <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                        <div className={`text-sm font-semibold ${textPrimary}`}>
-                            {t('options.whisperAlign')}
-                        </div>
-                        <div className={`text-[11px] max-w-[280px] ${textSecondary}`}>
-                            {t('options.whisperAlignDesc')}
-                        </div>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => onToggleWhisperAlign(!whisperAlignEnabled)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            whisperAlignEnabled
-                                ? 'bg-blue-500'
-                                : isDaylight ? 'bg-zinc-300' : 'bg-white/10'
-                        }`}
-                    >
-                        <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                whisperAlignEnabled ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                        />
-                    </button>
-                </div>
+                <WhisperAutoAlignToggle isDaylight={isDaylight} />
             </div>
 
             {/* Section 3: Manual alignment trigger + live status */}
@@ -230,14 +169,14 @@ const WhisperSettingsPanel: React.FC<WhisperSettingsPanelProps> = ({
                 </div>
 
                 {/* Status info */}
-                {isWordByWord && (
+                {alreadyAligned && (
                     <div className="flex items-center gap-2 mb-3 text-xs text-green-400">
                         <Check size={12} />
                         <span>{t('localMusic.whisperTabAlreadyAligned')}</span>
                     </div>
                 )}
 
-                {!hasLineTiming && !isWordByWord && (
+                {!canAlign && !alreadyAligned && (
                     <div className="flex items-start gap-2 mb-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
                         <AlertCircle size={12} className="shrink-0 mt-0.5 text-amber-400" />
                         <span>{t('localMusic.whisperTabNoLineTiming')}</span>
@@ -249,7 +188,7 @@ const WhisperSettingsPanel: React.FC<WhisperSettingsPanelProps> = ({
                     <button
                         type="button"
                         onClick={handleManualAlign}
-                        disabled={!hasLineTiming || isWordByWord}
+                        disabled={!canAlign}
                         className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{
                             borderColor: 'var(--accent-color, rgba(99, 102, 241, 0.5))',

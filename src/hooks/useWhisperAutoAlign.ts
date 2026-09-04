@@ -16,6 +16,13 @@ export function useWhisperAutoAlign(
     setLyrics: (lyrics: LyricData | null) => void,
 ) {
     const whisperAlignEnabled = useSettingsUiStore(state => state.whisperAlignEnabled);
+    // Respect the user's chosen model on the automatic path too. This hook previously passed no
+    // model, so alignLyricsWithWhisper fell back to 'base' regardless of the setting. On
+    // instrumental-heavy tracks (e.g. EDM) base under-detects badly — a 227s song yielded only 8
+    // segments vs 86 for medium — leaving most lyric lines with no Whisper time, so force
+    // calibration fell back to evenly spreading the original LRC line time and the whole timeline
+    // ended up misaligned.
+    const whisperAlignModel = useSettingsUiStore(state => state.whisperAlignModel);
     const lastAlignedSongIdRef = useRef<string | null>(null);
     const isAligningRef = useRef(false);
 
@@ -59,6 +66,7 @@ export function useWhisperAutoAlign(
         const runAlignment = async () => {
             try {
                 const alignedLyrics = await autoAlignIfNeeded(currentSong, lyrics, {
+                    model: whisperAlignModel,
                     onProgress: () => {
                         // Progress updates - could be used for UI feedback
                     },
@@ -81,5 +89,5 @@ export function useWhisperAutoAlign(
             cancelled = true;
             cancelAlignment();
         };
-    }, [lyrics, currentSong, whisperAlignEnabled, handleAligned]);
+    }, [lyrics, currentSong, whisperAlignEnabled, whisperAlignModel, handleAligned]);
 }

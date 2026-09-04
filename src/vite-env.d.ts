@@ -505,6 +505,8 @@ declare global {
     language?: string;
     jobId?: string;
     modelPath?: string;
+    vocalSeparation?: boolean;
+    vocalSeparationGpu?: boolean;
   }
 
   interface WhisperAlignWord {
@@ -523,6 +525,7 @@ declare global {
   interface WhisperAlignResult {
     segments: WhisperAlignSegment[];
     cancelled?: boolean;
+    vocalSeparated?: boolean;
   }
 
   interface WhisperAlignProgress {

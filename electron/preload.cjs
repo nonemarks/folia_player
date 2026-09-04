@@ -316,5 +316,4 @@ contextBridge.exposeInMainWorld('electron', {
             return () => ipcRenderer.removeListener('folia-mods:log', listener);
         },
     },
-    },
 });

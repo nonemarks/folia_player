@@ -1,0 +1,20 @@
+api-ts/qq.ts(1,27): error TS2307: Cannot find module '@yakult-green-tea/qq-music-api/serverless' or its corresponding type declarations.
+test/unit/worker/qqQrChannel.test.ts(2,54): error TS2307: Cannot find module '@yakult-green-tea/qq-music-api/mqtt' or its corresponding type declarations.
+test/unit/worker/qqQrChannel.test.ts(63,41): error TS7006: Parameter '_url' implicitly has an 'any' type.
+test/unit/worker/qqQrChannel.test.ts(63,47): error TS7006: Parameter '_protocol' implicitly has an 'any' type.
+test/unit/worker/qqQrChannel.test.ts(63,58): error TS7006: Parameter 'handlers' implicitly has an 'any' type.
+test/unit/worker/qqQrChannel.test.ts(67,19): error TS7006: Parameter 'data' implicitly has an 'any' type.
+worker/qq.ts(1,61): error TS2307: Cannot find module '@yakult-green-tea/qq-music-api/serverless' or its corresponding type declarations.
+worker/qq.ts(80,18): error TS7006: Parameter 'qrcodeId' implicitly has an 'any' type.
+worker/qq.ts(80,28): error TS7006: Parameter 'image' implicitly has an 'any' type.
+worker/qq.ts(80,35): error TS7006: Parameter 'ttlMs' implicitly has an 'any' type.
+worker/qq.ts(83,18): error TS7006: Parameter 'qrcodeId' implicitly has an 'any' type.
+worker/qq.ts(84,18): error TS7006: Parameter 'qrcodeId' implicitly has an 'any' type.
+worker/qq.ts(84,28): error TS7006: Parameter 'budgetMs' implicitly has an 'any' type.
+worker/qq.ts(88,18): error TS7006: Parameter 'qrcodeId' implicitly has an 'any' type.
+worker/qqQrChannel.ts(1,92): error TS2307: Cannot find module '@yakult-green-tea/qq-music-api/mqtt' or its corresponding type declarations.
+worker/qqQrChannel.ts(41,52): error TS7006: Parameter 'url' implicitly has an 'any' type.
+worker/qqQrChannel.ts(41,57): error TS7006: Parameter 'protocol' implicitly has an 'any' type.
+worker/qqQrChannel.ts(41,67): error TS7006: Parameter 'handlers' implicitly has an 'any' type.
+worker/qqQrChannel.ts(57,23): error TS7006: Parameter 'data' implicitly has an 'any' type.
+worker/qqQrChannel.ts(152,75): error TS7006: Parameter 'event' implicitly has an 'any' type.

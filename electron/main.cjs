@@ -1252,8 +1252,9 @@ const localCoverAssetStore = createLocalCoverAssetStore({
   },
 });
 
-// Initialize Whisper alignment module
-initWhisperAlign();
+// Initialize Whisper alignment module. getModelsDirs points vocal isolation at the same analysis
+// model directories the Automix host uses (htdemucs.onnx + the Python runtime) - see whisperAlign.cjs.
+initWhisperAlign({ getModelsDirs: getModelsDirectories });
 
 function getAudioCacheBaseName(cacheKey) {
   return crypto.createHash('sha256').update(cacheKey).digest('hex');

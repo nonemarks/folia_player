@@ -2,10 +2,10 @@
 // Manual trigger button for Whisper word-level lyric alignment.
 
 import React, { useState, useCallback } from 'react';
-import { Sparkles, Loader2, Check, AlertCircle, Download, ExternalLink } from 'lucide-react';
+import { Sparkles, Loader2, Check, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { LyricData, LocalSong, SongResult } from '../../types';
-import { alignLyricsWithWhisper, cancelAlignment, type WhisperAlignJob } from '../../services/whisperAlignService';
+import { alignLyricsWithWhisper, cancelAlignment, shouldAlignLyrics, type WhisperAlignJob } from '../../services/whisperAlignService';
 import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
 
 interface WhisperAlignButtonProps {
@@ -24,16 +24,21 @@ const WhisperAlignButton: React.FC<WhisperAlignButtonProps> = ({
     isDaylight,
 }) => {
     const { t } = useTranslation();
-    const whisperAlignEnabled = useSettingsUiStore(state => state.whisperAlignEnabled);
+    // Respect the user's chosen model on this inline button too. It previously passed no model, so
+    // alignLyricsWithWhisper fell back to 'base' regardless of the setting — the same miss already
+    // fixed on the other four align entry points (settings panel / auto-align / force-regenerate / auto-match).
+    const whisperAlignModel = useSettingsUiStore(state => state.whisperAlignModel);
     const [status, setStatus] = useState<AlignStatus>('idle');
     const [progressLabel, setProgressLabel] = useState('');
     const [progressPercent, setProgressPercent] = useState(0);
     const [errorMsg, setErrorMsg] = useState('');
 
-    // Don't show button if lyrics already have word-level timing
-    const isWordByWord = !!lyrics?.isWordByWord;
-    // Don't show if no line timing at all (need at least line timing to align)
-    const hasLineTiming = Array.isArray(lyrics?.lines) && lyrics.lines.some(l => l.startTime != null && l.endTime != null);
+    // Mirror the alignment service's predicate so the button is only offered when the service
+    // will actually run; otherwise a click silently returns null and the bar disappears.
+    const canAlign = shouldAlignLyrics(lyrics);
+    // Only genuine word-level sources set isWordByWord; the averaged pseudo-words the LRC
+    // parser synthesises do not, so line-level tracks still offer the align button.
+    const alreadyAligned = !!lyrics?.isWordByWord;
 
     const handleAlign = useCallback(async () => {
         if (status === 'aligning') {
@@ -67,6 +72,7 @@ const WhisperAlignButton: React.FC<WhisperAlignButtonProps> = ({
 
         try {
             const result = await alignLyricsWithWhisper(song, lyrics!, {
+                model: whisperAlignModel,
                 onProgress: (job: WhisperAlignJob) => {
                     setProgressPercent(job.progress ?? 0);
                     switch (job.status) {
@@ -118,10 +124,10 @@ const WhisperAlignButton: React.FC<WhisperAlignButtonProps> = ({
             setErrorMsg(failureDetail ? `${baseMsg} (${failureDetail})` : baseMsg);
             // Don't auto-dismiss error — let the user read it and retry manually
         }
-    }, [song, lyrics, onLyricsUpdated, status, t]);
+    }, [song, lyrics, onLyricsUpdated, status, t, whisperAlignModel]);
 
-    // Don't render if already word-by-word or no line timing
-    if (isWordByWord || !hasLineTiming) {
+    // Don't render if already word-by-word or there is nothing alignable
+    if (alreadyAligned || !canAlign) {
         return null;
     }
 

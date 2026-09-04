@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: docs_and_skills
+title: 项目文档与 AI Agent Skill 集
+scope:
+    - docs/
+    - skills/
+source_files: []
+depends_on: []
+related_to: []

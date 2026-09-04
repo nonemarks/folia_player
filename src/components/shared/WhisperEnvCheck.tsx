@@ -5,18 +5,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, Download, ExternalLink, Check, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { getWhisperAvailabilityDetail, downloadWhisperModel, installWhisperCli, installFfmpeg, type WhisperAvailabilityDetail } from '../../services/whisperAlignService';
+import { getWhisperAvailabilityDetail, installWhisperCli, installFfmpeg, type WhisperAvailabilityDetail } from '../../services/whisperAlignService';
+import { getWhisperAvailabilityUnified, isWhisperModAvailable } from '../../services/whisperModService';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-export type WhisperModelDownloadState = {
-    modelName: string;
-    status: 'idle' | 'downloading' | 'done' | 'error';
-    progress: number;
-    error?: string;
-};
 
 export type WhisperCliInstallState = {
     status: 'idle' | 'installing' | 'done' | 'error';
@@ -53,15 +47,21 @@ const WhisperEnvCheck: React.FC<WhisperEnvCheckProps> = ({
 }) => {
     const { t } = useTranslation();
     const [availability, setAvailability] = useState<WhisperAvailabilityDetail | null>(null);
-    const [downloadStates, setDownloadStates] = useState<Record<string, WhisperModelDownloadState>>({});
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [cliInstallState, setCliInstallState] = useState<WhisperCliInstallState>({ status: 'idle', progress: 0 });
     const [ffmpegInstallState, setFfmpegInstallState] = useState<FfmpegInstallState>({ status: 'idle', progress: 0 });
 
-    useEffect(() => {
-        getWhisperAvailabilityDetail()
+    const loadAvailability = useCallback(() => {
+        setLoadError(null);
+        // Timeout protection: if IPC doesn't respond within 8s, treat as error
+        const timeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout: Whisper status check took too long')), 8000)
+        );
+        Promise.race([getWhisperAvailabilityUnified(), timeout])
             .then(setAvailability)
             .catch((err) => {
                 console.error('[WhisperEnvCheck] Failed to get availability:', err);
+                setLoadError(err instanceof Error ? err.message : String(err));
                 setAvailability({
                     available: false,
                     cliInstalled: false,
@@ -73,9 +73,13 @@ const WhisperEnvCheck: React.FC<WhisperEnvCheckProps> = ({
             });
     }, []);
 
+    useEffect(() => {
+        loadAvailability();
+    }, [loadAvailability]);
+
     const refreshAvailability = useCallback(() => {
-        getWhisperAvailabilityDetail().then(setAvailability);
-    }, []);
+        loadAvailability();
+    }, [loadAvailability]);
 
     const handleInstallCli = useCallback(async () => {
         setCliInstallState({ status: 'installing', progress: 0 });
@@ -129,53 +133,20 @@ const WhisperEnvCheck: React.FC<WhisperEnvCheckProps> = ({
         }
     }, [refreshAvailability, t]);
 
-    const handleDownloadModel = useCallback(async (modelName: string) => {
-        setDownloadStates(prev => ({
-            ...prev,
-            [modelName]: { modelName, status: 'downloading', progress: 0 },
-        }));
-        try {
-            await downloadWhisperModel(modelName, (progress) => {
-                setDownloadStates(prev => ({
-                    ...prev,
-                    [modelName]: {
-                        modelName,
-                        status: 'downloading',
-                        progress: progress.progress ?? 0,
-                    },
-                }));
-            });
-            setDownloadStates(prev => ({
-                ...prev,
-                [modelName]: { modelName, status: 'done', progress: 100 },
-            }));
-            setTimeout(refreshAvailability, 500);
-        } catch (err) {
-            setDownloadStates(prev => ({
-                ...prev,
-                [modelName]: {
-                    modelName,
-                    status: 'error',
-                    progress: 0,
-                    error: err instanceof Error ? err.message : String(err),
-                },
-            }));
-        }
-    }, [refreshAvailability]);
-
     if (!availability) {
-        console.log('[WhisperEnvCheck] Still loading availability...');
         return alwaysShow ? (
             <div className={className}>
-                <div className="flex items-center justify-center p-4">
-                    <Loader2 size={16} className="animate-spin opacity-50" />
+                <div className="flex flex-col items-center justify-center p-6 gap-3">
+                    <Loader2 size={24} className="animate-spin opacity-50" />
+                    <span className="text-xs opacity-40" style={{ color: 'var(--text-secondary)' }}>
+                        {t('options.whisperAlignEnvChecking') || 'Checking environment...'}
+                    </span>
                 </div>
             </div>
         ) : <>{children}</>;
     }
 
-    // Debug: log availability state
-    console.log('[WhisperEnvCheck] availability:', availability);
+    // Debug: log availability state (removed — was too noisy)
 
     // If everything is ready and not forced show, just render children
     if (availability.available && !alwaysShow) {
@@ -303,6 +274,25 @@ const WhisperEnvCheck: React.FC<WhisperEnvCheckProps> = ({
 
     return (
         <div className={className}>
+            {/* Timeout / IPC error retry */}
+            {loadError && (
+                <div className="p-3 mb-2 space-y-2 rounded-lg" style={{ backgroundColor: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)' }}>
+                    <div className="flex items-start gap-2 text-xs text-red-400">
+                        <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                        <span>{loadError}</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={loadAvailability}
+                        className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors opacity-80 hover:opacity-100"
+                        style={{ borderColor: 'rgba(248,113,113,0.3)', color: 'var(--text-primary)' }}
+                    >
+                        <RefreshCw size={10} />
+                        {t('options.whisperAlignInstallRetry') || 'Retry'}
+                    </button>
+                </div>
+            )}
+
             {/* Not Electron warning */}
             {!isElectron && (
                 <div className="p-4 space-y-2">
@@ -427,55 +417,10 @@ const WhisperEnvCheck: React.FC<WhisperEnvCheckProps> = ({
                             </div>
                         </div>
                     </div>
-                    {/* Model download buttons */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {availability.models.map((model) => {
-                            const dlState = downloadStates[model.name];
-                            const isDownloading = dlState?.status === 'downloading';
-                            const isDone = model.downloaded || dlState?.status === 'done';
-                            const isError = dlState?.status === 'error';
-
-                            return (
-                                <button
-                                    key={model.name}
-                                    type="button"
-                                    onClick={() => !isDone && !isDownloading && handleDownloadModel(model.name)}
-                                    disabled={isDownloading || isDone}
-                                    className={`rounded-xl border px-3 py-2 text-center transition-colors ${
-                                        isDone ? 'opacity-60' : isError ? 'opacity-80' : ''
-                                    }`}
-                                    style={
-                                        isDone
-                                            ? { borderColor: 'rgba(74, 222, 128, 0.4)', backgroundColor: 'rgba(74, 222, 128, 0.08)' }
-                                            : isError
-                                            ? { borderColor: 'rgba(248, 113, 113, 0.4)', backgroundColor: 'rgba(248, 113, 113, 0.08)' }
-                                            : undefined
-                                    }
-                                >
-                                    <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-                                        {model.name.charAt(0).toUpperCase() + model.name.slice(1)}
-                                    </div>
-                                    <div className="text-[10px] opacity-50 mt-0.5">
-                                        {isDone ? (
-                                            <span className="text-green-400 flex items-center justify-center gap-0.5">
-                                                <Check size={8} /> {t('options.whisperAlignModelDownloaded')}
-                                            </span>
-                                        ) : isDownloading ? (
-                                            <span className="flex items-center justify-center gap-0.5">
-                                                <Loader2 size={8} className="animate-spin" /> {dlState.progress}%
-                                            </span>
-                                        ) : isError ? (
-                                            <span className="text-red-400">{t('options.whisperAlignModelDownloadError')}</span>
-                                        ) : (
-                                            <span className="flex items-center justify-center gap-0.5">
-                                                <Download size={8} /> {model.size}
-                                            </span>
-                                        )}
-                                    </div>
-                                </button>
-                            );
-                        })}
-                    </div>
+                    {/* Model download now lives in WhisperModelSelector (rendered as children
+                        below), so this panel keeps only the guidance header. The old grid was
+                        gated on !hasModel and vanished once any model existed, which stranded
+                        users who had selected an undownloaded model with no way to fetch it. */}
                 </div>
             )}
 
@@ -572,8 +517,9 @@ const WhisperEnvCheck: React.FC<WhisperEnvCheckProps> = ({
                 </div>
             )}
 
-            {/* Render children when CLI is available but no model */}
-            {isElectron && availability.cliInstalled && !availability.hasModel && children}
+            {/* Render children (the model selector) whenever the CLI is installed, regardless of
+                hasModel — the selector is now the persistent model select + download entry. */}
+            {isElectron && availability.cliInstalled && children}
         </div>
     );
 };

@@ -3,9 +3,12 @@
 // Orchestrates: detect missing word timing → get audio → IPC call whisper →
 // run wordAligner → update LyricData.
 
-import type { LyricData, Line, LocalSong, SongResult } from '../types';
-import { alignWhisperToLyrics, needsWordAlignment, hasLineTimingButNoWordTiming, type WhisperResult } from '../utils/lyrics/wordAligner';
+import type { LyricData, Line, LocalSong, OnlineLyricsState, SongResult } from '../types';
+import { alignWhisperToLyrics, type WhisperResult } from '../utils/lyrics/wordAligner';
 import type { AudioQualityPreference } from '../types/onlineMusic';
+import { getCacheEntriesByPrefix, getCacheKeysByPrefix, getFromCache, removeFromCache, removeCacheEntriesByPrefix, saveToCache } from './db';
+import { useSettingsUiStore } from '../stores/useSettingsUiStore';
+import { detectLyricLanguage } from '../utils/lyrics/detectLyricLanguage';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -325,9 +328,117 @@ export async function installFfmpeg(onProgress?: (progress: any) => void): Promi
 
 /**
  * Check if a LyricData needs word-level alignment.
+ *
+ * Gate on the `isWordByWord` flag — NOT on "does any line have words". The LRC/VTT parsers
+ * synthesise evenly-distributed per-character words (buildTimedWords) purely so the karaoke
+ * renderer has something to animate; those averaged pseudo-words do not reflect real vocal
+ * timing and do not set `isWordByWord`. Only genuine word-level sources (TTML Word / QRC /
+ * KRC / AWLRC / a prior Whisper pass) set the flag. Keying off "has words" made Whisper skip
+ * every line-level track, leaving the inaccurate averaged timing permanently unfixable.
  */
 export function shouldAlignLyrics(lyrics: LyricData | null): boolean {
-    return hasLineTimingButNoWordTiming(lyrics);
+    if (!lyrics || !lyrics.lines || lyrics.lines.length === 0) return false;
+    if (lyrics.isWordByWord) return false;
+    // Usable line-level timestamps are required to anchor the alignment.
+    return lyrics.lines.some(l => l.startTime > 0 && l.endTime > l.startTime);
+}
+
+// ---------------------------------------------------------------------------
+// Alignment result cache
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a stable fingerprint of the source line-level lyrics (timing + text).
+ * The alignment output is determined by the source lines, the model and the aligner algorithm, so
+ * this lets the cache invalidate automatically when the underlying lyrics change. (The aligner
+ * algorithm is the one input that does not vary per-lyrics; it is folded in at the key level via
+ * ALIGNER_VERSION rather than hashed here.)
+ */
+function computeLyricsFingerprint(lyrics: LyricData): string {
+    const lines = lyrics?.lines ?? [];
+    const basis = lines.map(l => `${l.startTime}>${l.endTime}>${l.fullText ?? ''}`).join('|');
+    let hash = 2166136261; // FNV-1a offset basis
+    for (let i = 0; i < basis.length; i++) {
+        hash ^= basis.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return `${lines.length}.${(hash >>> 0).toString(36)}`;
+}
+
+/** Every Whisper alignment result is stored in IndexedDB under this cache-key prefix. */
+const WHISPER_ALIGN_CACHE_PREFIX = 'whisper-aligned:';
+
+/**
+ * Alignment-algorithm generation, folded into every cache key.
+ *
+ * A cached result is a pure function of (source lyrics, model, ALIGNER ALGORITHM). Bumping this
+ * invalidates every stored alignment at once, so a track aligned by an older aligner is
+ * re-transcribed with the current one instead of being handed back stale timing. Raise it whenever
+ * the aligner's output changes for the same input — e.g. the line-start hard-lock that stops Whisper
+ * drifting a line off its original LRC timestamp (v2), or the whole-timeline global-offset correction
+ * that slides a constant LRC-vs-audio offset back onto the singing (v3). Without it
+ * computeLyricsFingerprint below (source lyrics only) is identical across an algorithm change and the
+ * old result is served forever
+ * — the listener keeps seeing the very offset the new aligner was meant to remove.
+ */
+const ALIGNER_VERSION = 'v3';
+
+/**
+ * Cache key for a Whisper alignment result, scoped by song + model + aligner version + source-lyrics
+ * fingerprint so a re-match, a different model, or an aligner upgrade never reuses a stale result.
+ */
+function buildAlignCacheKey(songId: string | number, model: string, lyrics: LyricData): string {
+    return `${WHISPER_ALIGN_CACHE_PREFIX}${songId}:${model}:${ALIGNER_VERSION}:${computeLyricsFingerprint(lyrics)}`;
+}
+
+/**
+ * Remove every persisted trace of a Whisper alignment and report how many entries were dropped,
+ * so the next play re-runs transcription instead of being served a stale result — the way to
+ * compare how a different model or parameters change word timing.
+ *
+ * Clearing the `whisper-aligned:` intermediate cache alone is NOT enough for online tracks: once
+ * autoMatchBestLyric aligns a song, onlinePlayback writes the isWordByWord result back into the
+ * `lyric_<song>` resource cache and, for a cross-provider match, into OnlineLyricsState's
+ * onlineOverrideLyrics. Playback reads those first and skips re-alignment, so they are cleared
+ * here too. Provider word-by-word lyrics (QRC/KRC/TTML) are also isWordByWord and get dropped with
+ * them — an accepted trade-off, since those tracks simply re-fetch on the next play. Line-level
+ * source lyrics (isWordByWord=false) and user-imported lyrics are preserved.
+ */
+export async function clearWhisperAlignCache(): Promise<number> {
+    let cleared = 0;
+
+    // 1. Whisper's intermediate alignment cache (api_cache table, `whisper-aligned:` prefix).
+    const alignKeys = await getCacheKeysByPrefix([WHISPER_ALIGN_CACHE_PREFIX]);
+    if (alignKeys.length > 0) {
+        await removeCacheEntriesByPrefix([WHISPER_ALIGN_CACHE_PREFIX]);
+        cleared += alignKeys.length;
+    }
+
+    // 2. The aligned result written back into the lyric library (metadata_cache table, `lyric_`
+    //    prefix) — this is what an online track actually shows on the next play.
+    const lyricEntries = await getCacheEntriesByPrefix<LyricData | OnlineLyricsState>('lyric_');
+    for (const entry of lyricEntries) {
+        if (entry.key.endsWith('_state')) {
+            // OnlineLyricsState: reset only an override holding isWordByWord lyrics; leave an
+            // imported selection and a pure-music marker (override already null) untouched.
+            const state = entry.data as OnlineLyricsState;
+            if (state && state.lyricsSource !== 'imported' && state.hasOnlineOverride && state.onlineOverrideLyrics?.isWordByWord) {
+                await saveToCache(entry.key, { ...state, onlineOverrideLyrics: null, hasOnlineOverride: false });
+                cleared += 1;
+            }
+        } else {
+            // lyric_ resource cache: isWordByWord=true means an aligned/word-by-word result, so
+            // drop it; line-level source lyrics (isWordByWord=false) are kept to save a re-fetch.
+            const lyricData = entry.data as LyricData;
+            if (lyricData?.isWordByWord) {
+                await removeFromCache(entry.key);
+                cleared += 1;
+            }
+        }
+    }
+
+    console.log(`[WhisperAlign] Cleared ${cleared} cached Whisper alignment result(s)`);
+    return cleared;
 }
 
 /**
@@ -345,13 +456,68 @@ export async function alignLyricsWithWhisper(
         language?: string;
         model?: string;
         onProgress?: WhisperAlignProgressCallback;
+        /**
+         * Bypass the isWordByWord gate and the cache to re-transcribe a track that was already
+         * aligned. Without it the "regenerate word-level lyrics" action silently returned null on
+         * any song a previous (possibly inaccurate) pass had marked isWordByWord, so the user
+         * could never re-run alignment to compare models — the track stayed frozen on old timing.
+         */
+        force?: boolean;
     },
 ): Promise<LyricData | null> {
-    const { language, model, onProgress } = options || {};
+    const { language, model, onProgress, force } = options || {};
 
-    // Check if alignment is needed
-    if (!shouldAlignLyrics(lyrics)) {
+    // Resolve the transcription language once, here at the single convergence point for all five
+    // alignment entries (manual panel, song-change auto-align, force regenerate, auto-match-best-
+    // lyric, inline button). Priority: explicit caller language > user setting (when not 'auto') >
+    // inference from the lyric script. Fixes CJK songs being transcribed as English because
+    // Whisper's audio-head auto-detect mistakes an instrumental intro for its default language.
+    const settings = useSettingsUiStore.getState();
+    const userLang = settings.whisperAlignLanguage;
+    const effectiveLanguage = language
+        || (userLang && userLang !== 'auto' ? userLang : undefined)
+        || detectLyricLanguage(lyrics);
+
+    // Vocal isolation, read at the same convergence point so all five alignment entries honour it
+    // without each threading it through. The main process runs htdemucs over the whole track and
+    // falls back to the plain mix when it cannot - see separateVocals in electron/whisperAlign.cjs.
+    const vocalSeparation = settings.whisperAlignVocalSeparation;
+    const vocalSeparationGpu = settings.whisperAlignVocalSeparationGpu;
+
+    // Check if alignment is needed. When the lyrics already carry word-level timing, or
+    // lack usable line-level timestamps, there is nothing for Whisper to do. `force` drops the
+    // isWordByWord condition so an already aligned — but inaccurate — track can be re-transcribed;
+    // it still needs line-level timestamps to anchor the alignment. Log the exact reason so a
+    // silent skip is diagnosable instead of looking like a vanished progress bar.
+    const hasUsableLineTiming = (lyrics?.lines ?? []).some(l => l.startTime >= 0 && l.endTime > l.startTime);
+    if (force ? !hasUsableLineTiming : !shouldAlignLyrics(lyrics)) {
+        const lines = lyrics?.lines ?? [];
+        const hasStrictLineTiming = lines.some(l => l.startTime > 0 && l.endTime > l.startTime);
+        const hasWordTiming = lines.some(l => l.words && l.words.length > 0 && l.words.some(w => w.endTime > w.startTime + 0.01));
+        console.log(`[WhisperAlign] Skipping song ${song.id}: nothing to align (force=${!!force}, lines=${lines.length}, strictLineTiming=${hasStrictLineTiming}, wordTiming=${hasWordTiming}, isWordByWord=${!!lyrics?.isWordByWord})`);
         return null;
+    }
+
+    const effectiveModel = model || 'base';
+    const cacheKey = buildAlignCacheKey(song.id, effectiveModel, lyrics);
+
+    // Serve a previously aligned result when the same song + model + source lyrics were
+    // already processed. This skips the expensive audio fetch, transcription and alignment,
+    // and works even when Whisper is currently unavailable (e.g. the model was removed).
+    // force skips the cache read so "regenerate" always re-transcribes instead of being handed
+    // back the previous (possibly inaccurate) result; the fresh pass is still written below.
+    const cached = force ? null : await getFromCache<LyricData>(cacheKey);
+    if (cached) {
+        console.log(`[WhisperAlign] Cache hit for song ${song.id} (model=${effectiveModel}); skipping transcription`);
+        onProgress?.({
+            id: `whisper-cache-${song.id}`,
+            songId: String(song.id),
+            songName: ('title' in song ? song.title : ('name' in song ? song.name : undefined)) ?? String(song.id),
+            status: 'completed',
+            progress: 100,
+            result: cached,
+        });
+        return cached;
     }
 
     // Check if Whisper is available
@@ -449,8 +615,10 @@ export async function alignLyricsWithWhisper(
 
         const whisperResult: WhisperResult = await window.electron!.whisperAlignTranscribe!(audioPath, {
             model: model || 'base',
-            language,
+            language: effectiveLanguage,
             jobId,
+            vocalSeparation,
+            vocalSeparationGpu,
         });
 
         if ((whisperResult as any).cancelled) {
@@ -479,8 +647,23 @@ export async function alignLyricsWithWhisper(
             enableAvgDistribution: false,
         });
 
+        // Attach the run info the overview UI shows next to the alignment quality report.
+        // alignWhisperToLyrics fills the quality half; model/language/segments are only
+        // known here, after transcription.
+        if (alignedLyrics.alignDiagnostics) {
+            alignedLyrics.alignDiagnostics.model = model || 'base';
+            alignedLyrics.alignDiagnostics.language = effectiveLanguage || 'auto';
+            alignedLyrics.alignDiagnostics.segments = whisperResult.segments.length;
+            alignedLyrics.alignDiagnostics.vocalSeparated = Boolean((whisperResult as any).vocalSeparated);
+            alignedLyrics.alignDiagnostics.alignedAt = Date.now();
+        }
+
         // Step 4: Complete
         updateJob({ status: 'completed', progress: 100, result: alignedLyrics });
+
+        // Persist the aligned result so repeat alignments of the same song + model + source
+        // lyrics are served from cache instead of re-running Whisper transcription.
+        await saveToCache(cacheKey, alignedLyrics);
 
         // Clean up temp audio file if we created one
         if (audioPath && !('filePath' in song && song.filePath === audioPath)) {

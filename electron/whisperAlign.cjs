@@ -10,6 +10,15 @@ const https = require('https');
 const http = require('http');
 const { app, net } = require('electron');
 
+// Vocal isolation reuses the Automix htdemucs path DIRECTLY rather than through the analysis worker.
+// worker.cjs gates separation at a 40s window (its MAX_SAMPLES memory guard), which is an Automix
+// constraint, not a limit of the runner - htdemucs_runner.py chunks a whole track by the model's own
+// segment. sidecar.cjs is plain node (no 'electron'), so the main process can require it as-is, and
+// modelPaths.cjs resolves the SAME runtime + weights the Automix host does, so "is it installed"
+// cannot disagree between the two features.
+const sidecar = require('./analysis/sidecar.cjs');
+const { resolveRuntime, resolveModelFile } = require('./analysis/modelPaths.cjs');
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -19,12 +28,16 @@ const WHISPER_CACHE_DIR_NAME = 'whisper-cache';
 const WHISPER_CLI_DIR_NAME = 'whisper-cli';
 const FFMPEG_DIR_NAME = 'ffmpeg';
 
-// Supported models (tiny through medium for reasonable performance)
+// Supported models (tiny through large-v3 / large-v3-turbo for reasonable performance)
 const SUPPORTED_MODELS = {
     'tiny':    { size: '~75MB',  multilingual: true,  recommended: false },
     'base':    { size: '~142MB', multilingual: true,  recommended: false },
     'small':   { size: '~466MB', multilingual: true,  recommended: true  },
     'medium':  { size: '~1.5GB', multilingual: true,  recommended: false },
+    // Full large-v3: strongest multilingual (incl. Chinese) accuracy; has g_aheads_large_v3 so --dtw yields word-level timing.
+    'large-v3': { size: '~3.1GB', multilingual: true, recommended: false },
+    // Distilled large-v3 (4 decoder layers): English-tuned, fast; weaker on Chinese than full large-v3.
+    'large-v3-turbo': { size: '~1.62GB', multilingual: true, recommended: false },
 };
 
 // ---------------------------------------------------------------------------
@@ -37,6 +50,10 @@ const activeJobs = new Map();
 let whisperCliPath = null;
 let ffmpegPath = null;
 let modelsDirectory = null;
+/** Resolves the analysis-model directories (htdemucs.onnx + the Python runtime), injected by main so
+ *  vocal isolation looks in the same places Automix does. Null when init was called without it, which
+ *  only means isolation is unavailable and every transcribe falls back to the mix. */
+let getModelsDirs = null;
 
 // ---------------------------------------------------------------------------
 // Initialization
@@ -46,9 +63,12 @@ let modelsDirectory = null;
  * Initialize the Whisper align module.
  * @param {object} options
  * @param {string} [options.customModelsDir] - Custom directory for Whisper models
+ * @param {function} [options.getModelsDirs] - Returns the analysis model directories (htdemucs.onnx +
+ *   the Python runtime) that vocal isolation resolves through; the same fn the Automix host gets.
  */
 function initWhisperAlign(options = {}) {
     modelsDirectory = options.customModelsDir || path.join(app.getPath('userData'), WHISPER_MODELS_DIR_NAME);
+    getModelsDirs = typeof options.getModelsDirs === 'function' ? options.getModelsDirs : null;
 
     // Ensure models directory exists
     if (!fs.existsSync(modelsDirectory)) {
@@ -80,6 +100,25 @@ function initWhisperAlign(options = {}) {
  */
 function findWhisperCli() {
     const cliName = getWhisperCliName();
+
+    // 0. Explicit override via the FOLIA_WHISPER_CLI env var. Lets a power user point the
+    //    app at a self-built GPU (CUDA/Vulkan) whisper-cli that the auto-installer cannot
+    //    provide — e.g. a CUDA 12.8+ build required for RTX 50-series/Blackwell (sm_120),
+    //    which the published cublas 11.8/12.4 Windows binaries do not support. Accepts
+    //    either a full path to the executable or a directory containing it.
+    const override = process.env.FOLIA_WHISPER_CLI;
+    if (override && override.trim()) {
+        const trimmed = override.trim();
+        let resolved = null;
+        if (fs.existsSync(trimmed)) {
+            resolved = fs.statSync(trimmed).isDirectory() ? path.join(trimmed, cliName) : trimmed;
+        }
+        if (resolved && fs.existsSync(resolved)) {
+            console.log(`[WhisperAlign] Using custom whisper-cli (FOLIA_WHISPER_CLI): ${resolved}`);
+            return resolved;
+        }
+        console.warn(`[WhisperAlign] FOLIA_WHISPER_CLI is set but not usable (expected an executable or a folder holding ${cliName}): ${trimmed}`);
+    }
 
     // 1. Installed by the app (userData directory)
     const installedPath = path.join(app.getPath('userData'), WHISPER_CLI_DIR_NAME, cliName);
@@ -158,7 +197,7 @@ async function downloadModel(modelName, onProgress) {
         onProgress({ status: 'downloading', model: modelName, url: downloadUrl, progress: 0 });
     }
 
-    // Download using https module with mirror fallback
+    // Download via Electron net (proxy-aware) with mirror fallback
     try {
         await downloadModelWithMirrors(downloadUrl, modelFile, modelName, onProgress);
 
@@ -180,7 +219,9 @@ async function downloadModel(modelName, onProgress) {
  * Download a model file with mirror fallback for HuggingFace URLs.
  */
 async function downloadModelWithMirrors(downloadUrl, destPath, modelName, onProgress) {
-    // HuggingFace mirrors for users in China
+    // HuggingFace mirrors for users in China. Requests go through Electron's net module
+    // (Chromium network stack), which honours the system/session proxy — Node's https.get
+    // ignores proxies entirely, so direct HF downloads failed for anyone behind a proxy.
     const hfMirrors = [
         '',  // direct
         'https://hf-mirror.com',
@@ -192,66 +233,7 @@ async function downloadModelWithMirrors(downloadUrl, destPath, modelName, onProg
             : downloadUrl;
 
         try {
-            await new Promise((resolve, reject) => {
-                const urlObj = new URL(url);
-                const mod = urlObj.protocol === 'https:' ? https : http;
-
-                const req = mod.get(url, {
-                    headers: { 'User-Agent': 'Folia-Whisper-Installer' },
-                    timeout: 120000,
-                }, (res) => {
-                    // Follow redirects
-                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                        const redirectUrl = new URL(res.headers.location, url).toString();
-                        downloadModelWithMirrors(redirectUrl, destPath, modelName, onProgress).then(resolve, reject);
-                        return;
-                    }
-
-                    if (res.statusCode !== 200) {
-                        res.resume();
-                        reject(new Error(`HTTP ${res.statusCode}`));
-                        return;
-                    }
-
-                    const contentLength = parseInt(res.headers['content-length'] || '0', 10);
-                    let downloadedBytes = 0;
-                    const fileStream = fs.createWriteStream(destPath);
-
-                    res.on('data', (chunk) => {
-                        fileStream.write(chunk);
-                        downloadedBytes += chunk.length;
-
-                        if (onProgress && contentLength > 0) {
-                            onProgress({
-                                status: 'downloading',
-                                model: modelName,
-                                url: downloadUrl,
-                                progress: Math.round((downloadedBytes / contentLength) * 100),
-                                downloadedBytes,
-                                totalBytes: contentLength,
-                            });
-                        }
-                    });
-
-                    res.on('end', () => {
-                        fileStream.end();
-                        fileStream.on('finish', resolve);
-                        fileStream.on('error', reject);
-                    });
-
-                    res.on('error', (err) => {
-                        try { fileStream.close(); } catch {}
-                        reject(err);
-                    });
-                });
-
-                req.on('error', reject);
-                req.on('timeout', () => {
-                    req.destroy();
-                    reject(new Error('Download timeout'));
-                });
-            });
-
+            await downloadModelViaNet(url, destPath, modelName, downloadUrl, onProgress);
             return; // success
         } catch (err) {
             console.warn(`[WhisperInstaller] Model download failed from ${mirror || 'direct'}: ${err.message}`);
@@ -261,6 +243,83 @@ async function downloadModelWithMirrors(downloadUrl, destPath, modelName, onProg
     }
 
     throw new Error('Unable to download model from any source. Please check your network connection.');
+}
+
+/**
+ * Download one model URL to destPath via Electron's net module (proxy-aware), streaming to
+ * disk with backpressure and reporting progress. net follows redirects automatically and uses
+ * the default session's proxy (set to system proxy at startup). Rejects on non-200, stream
+ * error, or 120s of inactivity.
+ */
+function downloadModelViaNet(url, destPath, modelName, originalUrl, onProgress) {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        let fileStream = null;
+        const fail = (err) => {
+            if (settled) return;
+            settled = true;
+            try { if (fileStream) fileStream.close(); } catch {}
+            reject(err);
+        };
+        const succeed = () => { if (!settled) { settled = true; resolve(); } };
+
+        const request = net.request({ method: 'GET', url, redirect: 'follow' });
+        request.setHeader('User-Agent', 'Folia-Whisper-Installer');
+
+        // net.request has no built-in timeout; abort after 120s without any activity.
+        let idleTimer = null;
+        const clearIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
+        const resetIdle = () => {
+            clearIdle();
+            idleTimer = setTimeout(() => { try { request.abort(); } catch {} fail(new Error('Download timeout')); }, 120000);
+        };
+        resetIdle();
+
+        request.on('response', (res) => {
+            if (res.statusCode !== 200) {
+                clearIdle();
+                try { res.resume(); } catch {}
+                fail(new Error(`HTTP ${res.statusCode}`));
+                return;
+            }
+
+            const cl = res.headers['content-length'];
+            const contentLength = parseInt(Array.isArray(cl) ? cl[0] : (cl || '0'), 10);
+            let downloadedBytes = 0;
+            fileStream = fs.createWriteStream(destPath);
+
+            res.on('data', (chunk) => {
+                resetIdle();
+                downloadedBytes += chunk.length;
+                // Backpressure: a fast proxied transfer must not buffer a 1.5GB model in RAM.
+                if (!fileStream.write(chunk)) { try { res.pause(); } catch {} }
+
+                if (onProgress && contentLength > 0) {
+                    onProgress({
+                        status: 'downloading',
+                        model: modelName,
+                        url: originalUrl,
+                        progress: Math.round((downloadedBytes / contentLength) * 100),
+                        downloadedBytes,
+                        totalBytes: contentLength,
+                    });
+                }
+            });
+
+            fileStream.on('drain', () => { try { res.resume(); } catch {} });
+            fileStream.on('error', (err) => { clearIdle(); fail(err); });
+
+            res.on('end', () => {
+                clearIdle();
+                fileStream.end();
+                fileStream.on('finish', succeed);
+            });
+            res.on('error', (err) => { clearIdle(); fail(err); });
+        });
+
+        request.on('error', (err) => { clearIdle(); fail(err); });
+        request.end();
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +336,8 @@ async function downloadModelWithMirrors(downloadUrl, destPath, modelName, onProg
  * @param {string} [options.modelPath] - Override model path
  * @param {string} [options.jobId] - Job ID for cancellation
  * @param {function} [options.onProgress] - Progress callback
+ * @param {boolean} [options.vocalSeparation=false] - Isolate vocals with htdemucs before transcribing
+ * @param {boolean} [options.vocalSeparationGpu=true] - Ask htdemucs for the CUDA EP (falls back to CPU)
  * @returns {Promise<object>} Whisper transcription result
  */
 async function transcribeAudio(audioPath, options = {}) {
@@ -287,6 +348,8 @@ async function transcribeAudio(audioPath, options = {}) {
         modelPath: customModelPath,
         jobId = `job-${Date.now()}`,
         onProgress,
+        vocalSeparation = false,
+        vocalSeparationGpu = true,
     } = options;
 
     // Validate audio file
@@ -317,9 +380,29 @@ async function transcribeAudio(audioPath, options = {}) {
     // support MP3/FLAC via dr_mp3/dr_flac, conversion ensures reliability.
     let effectiveAudioPath = audioPath;
     let convertedWavPath = null;
+    let usedVocalSeparation = false;   // true only when isolation actually produced the WAV we transcribe
     const audioExt = path.extname(audioPath).toLowerCase();
 
-    if (audioExt !== '.wav') {
+    // Optional vocal isolation FIRST: run htdemucs over the whole track and transcribe the vocals
+    // stem, so an instrumental intro or a loud backing track cannot pull whisper off the words - the
+    // same class of mis-hearing a wrong language hint causes, but coming from the mix rather than the
+    // model. Strictly before whisper-cli and awaited to completion, so the Python child's ~1GB peak is
+    // released when it exits and never overlaps the model load (see the OOM note in the close handler).
+    // Any failure returns null and we fall through to the ordinary mixed-audio conversion below.
+    if (vocalSeparation) {
+        const vocalsWav = await separateVocals(audioPath, jobId, vocalSeparationGpu, onProgress);
+        if (vocalsWav) {
+            effectiveAudioPath = vocalsWav;   // already 16kHz mono WAV; no conversion needed
+            convertedWavPath = vocalsWav;     // tracked so the close handler deletes it
+            usedVocalSeparation = true;
+            console.log(`[WhisperAlign] Transcribing isolated vocals: ${vocalsWav}`);
+        } else {
+            console.warn('[WhisperAlign] Vocal separation unavailable; transcribing the full mix');
+        }
+    }
+
+    // Convert only when isolation did not already hand us a WAV of this same audio.
+    if (effectiveAudioPath === audioPath && audioExt !== '.wav') {
         if (onProgress) onProgress({ status: 'starting', model, audioPath, detail: 'converting-audio' });
 
         const wavResult = await convertToWav(audioPath, jobId);
@@ -346,15 +429,35 @@ async function transcribeAudio(audioPath, options = {}) {
 
     if (onProgress) onProgress({ status: 'starting', model, audioPath });
 
-    // Build whisper-cli arguments
+    // Build whisper-cli arguments.
+    //
+    // Token-level (word) timestamps in current whisper.cpp builds require THREE flags
+    // together. The old single '--word-timestamps 1' was removed upstream and now makes
+    // the CLI print its usage text and exit WITHOUT writing any output file — surfacing as
+    // "Whisper output file not found":
+    //   --output-json-full : plain --output-json omits tokens[] entirely; only the "full"
+    //                        variant embeds per-token timing.
+    //   --no-flash-attn    : --dtw token timestamps are silently disabled while flash
+    //                        attention is on ("dtw_token_timestamps is not supported with
+    //                        flash_attn - disabling"), and flash-attn defaults to ON.
+    //   --dtw <preset>     : actually computes token-level timestamps. The preset string is NOT the
+    //                        model id: whisper.cpp spells the large family with DOTS (large.v3 /
+    //                        large.v3.turbo, see examples/cli/cli.cpp), while our SUPPORTED_MODELS keys
+    //                        use the ggml hyphens (large-v3 / large-v3-turbo). base/medium carry no
+    //                        version suffix so they match either spelling — which hid this bug — but the
+    //                        large-vN family must have '-' rewritten to '.' or the CLI exits 3 with
+    //                        "unknown DTW preset".
     const args = [
         '-m', modelPath,
         '-f', effectiveAudioPath,
-        '--output-json',
     ];
 
     if (wordTimestamps) {
-        args.push('--word-timestamps', '1');  // Enable word-level timestamps in JSON output
+        // whisper.cpp DTW preset spelling: rewrite hyphens to dots (large-v3-turbo -> large.v3.turbo).
+        const dtwPreset = model.replace(/-/g, '.');
+        args.push('--output-json-full', '--no-flash-attn', '--dtw', dtwPreset);
+    } else {
+        args.push('--output-json');
     }
 
     // Language: omit -l flag for auto-detection (whisper.cpp default)
@@ -426,6 +529,10 @@ async function transcribeAudio(audioPath, options = {}) {
         });
 
         proc.on('close', (code) => {
+            // Read the job BEFORE deleting it. The old order deleted first and then got, so `job`
+            // was always undefined and the cancellation branch below never ran — a cancelled run
+            // fell through to the generic non-zero-exit error instead of 'Transcription cancelled'.
+            const job = activeJobs.get(jobId);
             activeJobs.delete(jobId);
 
             // Clean up converted WAV file if we created one
@@ -433,7 +540,6 @@ async function transcribeAudio(audioPath, options = {}) {
                 try { fs.unlinkSync(convertedWavPath); } catch {}
             }
 
-            const job = activeJobs.get(jobId);
             if (job?.cancelled) {
                 // Clean up temp file
                 try { fs.unlinkSync(outputFile); } catch {}
@@ -445,7 +551,17 @@ async function transcribeAudio(audioPath, options = {}) {
                 console.error(`[WhisperAlign] Process exited with code ${code}. stderr: ${stderr}`);
                 // Provide more helpful error messages for common failures
                 let errorMsg = `Whisper transcription failed (exit code ${code})`;
-                if (stderr.includes('failed to open') || stderr.includes('cannot open') || stderr.includes('No such file')) {
+                if (code === null) {
+                    // code === null means the process was killed by a signal, not a normal exit.
+                    // The usual cause here is the OS OOM-killer: loading the model plus its compute
+                    // buffers spikes memory, and when that overlaps a concurrent htdemucs separation
+                    // (~1.2GB) the process is terminated during startup — stderr stops right after
+                    // the system_info line. Surface that instead of a bare "exit code null".
+                    errorMsg = 'Whisper transcription was terminated by the OS (exit code null), most ' +
+                        'likely out of memory. This tends to happen when a larger model runs while ' +
+                        'background audio separation is active. Try a smaller model, enable GPU via ' +
+                        'FOLIA_WHISPER_CLI (moves the model into VRAM), or retry when idle.';
+                } else if (stderr.includes('failed to open') || stderr.includes('cannot open') || stderr.includes('No such file')) {
                     errorMsg += ': Audio file could not be read. Try installing ffmpeg for audio format conversion.';
                 } else if (stderr.includes('unsupported format') || stderr.includes('unknown format')) {
                     errorMsg += ': Unsupported audio format. Install ffmpeg for automatic WAV conversion.';
@@ -514,7 +630,10 @@ async function transcribeAudio(audioPath, options = {}) {
 
                 if (onProgress) onProgress({ status: 'completed', model, progress: 100 });
 
-                resolve(whisperResult);
+                // vocalSeparated reports whether isolation ACTUALLY ran, not whether it was asked for:
+                // the renderer's diagnostics overview can then tell "vocals isolated" from "requested
+                // but fell back to the mix" without a second signal.
+                resolve({ ...whisperResult, vocalSeparated: usedVocalSeparation });
             } catch (err) {
                 console.error(`[WhisperAlign] Failed to parse output: ${err.message}`);
                 reject(new Error(`Failed to parse Whisper output: ${err.message}`));
@@ -523,6 +642,13 @@ async function transcribeAudio(audioPath, options = {}) {
 
         proc.on('error', (err) => {
             activeJobs.delete(jobId);
+            // 'close' does not fire when the spawn itself fails (ENOENT and friends), so without this the
+            // converted / isolated-vocals WAV would be left behind in temp on exactly the "whisper-cli not
+            // installed" path. Same guarded unlink as the close handler; if both ever fire the second is a
+            // caught no-op.
+            if (convertedWavPath) {
+                try { fs.unlinkSync(convertedWavPath); } catch {}
+            }
             console.error(`[WhisperAlign] Process error: ${err.message}`);
             if (err.code === 'ENOENT') {
                 reject(new Error(
@@ -622,21 +748,35 @@ function parseWhisperCppOutput(raw) {
         const text = seg.text || '';
         const words = [];
 
-        // Extract word-level tokens if available
+        // Extract word-level tokens if available (--output-json-full --dtw embeds tokens[]).
         if (seg.tokens && Array.isArray(seg.tokens)) {
             for (const token of seg.tokens) {
-                if (token.timestamps) {
-                    const wordStart = (typeof token.timestamps.from === 'number' ? token.timestamps.from : parseTimestamp(token.timestamps.from)) / 1000;
-                    const wordEnd = (typeof token.timestamps.to === 'number' ? token.timestamps.to : parseTimestamp(token.timestamps.to)) / 1000;
-                    const wordText = (token.text || '').trim();
-                    if (wordText) {
-                        words.push({
-                            word: wordText,
-                            start: wordStart,
-                            end: wordEnd,
-                        });
-                    }
+                const wordText = (token.text || '').trim();
+                if (!wordText) continue;
+                // Skip whisper special tokens (e.g. [_BEG_], [_TT_50364_], [EOT]); they carry no
+                // lyric content and would pollute the word pool. id >= 50257 is the special-token
+                // range; also match the bracketed text form for builds that omit ids.
+                if (/^\[.*\]$/.test(wordText) || (typeof token.id === 'number' && token.id >= 50257)) continue;
+
+                // Prefer offsets (clean ms integers). token.timestamps are "HH:MM:SS,mmm" strings
+                // whose comma decimal parseFloat() truncates to whole seconds, so they are only a
+                // fallback here.
+                let wordStart = null;
+                let wordEnd = null;
+                if (token.offsets && typeof token.offsets.from === 'number') {
+                    wordStart = token.offsets.from / 1000;
+                    wordEnd = (typeof token.offsets.to === 'number' ? token.offsets.to : token.offsets.from) / 1000;
+                } else if (token.timestamps) {
+                    wordStart = (typeof token.timestamps.from === 'number' ? token.timestamps.from : parseTimestamp(token.timestamps.from)) / 1000;
+                    wordEnd = (typeof token.timestamps.to === 'number' ? token.timestamps.to : parseTimestamp(token.timestamps.to)) / 1000;
                 }
+                if (wordStart === null) continue;
+
+                words.push({
+                    word: wordText,
+                    start: wordStart,
+                    end: wordEnd ?? wordStart,
+                });
             }
         }
 
@@ -677,7 +817,10 @@ function parseTimestamp(ts) {
     if (typeof ts !== 'string') return 0;
     const parts = ts.split(':');
     if (parts.length === 3) {
-        const [h, m, s] = parts;
+        const [h, m, sRaw] = parts;
+        // whisper.cpp emits "HH:MM:SS,mmm" with a comma decimal separator; parseFloat stops at
+        // the comma and would drop sub-second precision, so normalise it to a dot first.
+        const s = sRaw.replace(',', '.');
         return (parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + parseFloat(s)) * 1000;
     }
     return 0;
@@ -946,6 +1089,149 @@ async function convertToWav(inputPath, jobId) {
             resolve(null);
         }, 60000);
     });
+}
+
+// ---------------------------------------------------------------------------
+// Vocal isolation (htdemucs) for cleaner transcription
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs one ffmpeg command, resolving true only if it exited 0 AND wrote a non-empty `output`.
+ *
+ * shell:false, unlike convertToWav: a whole-track path can contain spaces, and with no shell to
+ * re-split the line Node quotes each argv itself. findFfmpeg hands back either an absolute path or a
+ * bare name; CreateProcess resolves the bare name off PATH, so both work without a shell.
+ */
+function runFfmpegTo(ffmpeg, args, output, timeoutMs = 120_000) {
+    return new Promise((resolve) => {
+        const proc = spawn(ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stderr = '';
+        proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+        const timer = setTimeout(() => {
+            try { proc.kill(); } catch {}
+            console.warn(`[WhisperAlign] ffmpeg timed out after ${timeoutMs / 1000}s: ${args.join(' ')}`);
+            resolve(false);
+        }, timeoutMs);
+        timer.unref?.();
+
+        proc.on('error', (err) => {
+            clearTimeout(timer);
+            console.warn(`[WhisperAlign] ffmpeg spawn error: ${err.message}`);
+            resolve(false);
+        });
+        proc.on('close', (code) => {
+            clearTimeout(timer);
+            if (code === 0 && fs.existsSync(output) && fs.statSync(output).size > 0) {
+                resolve(true);
+                return;
+            }
+            console.warn(`[WhisperAlign] ffmpeg failed (exit ${code}): ${stderr.slice(-300)}`);
+            resolve(false);
+        });
+    });
+}
+
+/**
+ * Isolate the vocals of a WHOLE track and return a 16kHz mono WAV whisper-cli can transcribe, or null
+ * on any failure. Null is a clean fallback, not an error - see the call site in transcribeAudio.
+ *
+ * Same runtime, same weights, same modelPaths as Automix (see the require note at the top of this
+ * file). The runner chunks by the model's own segment, so a full song is not the problem worker.cjs's
+ * 40s MAX_SAMPLES gate makes it look like; the sidecar timeout is scaled up to match the duration.
+ *
+ * @param {string} audioPath  track to isolate, any format ffmpeg can decode
+ * @param {string} jobId      temp-file naming
+ * @param {boolean} useGpu    ask the runner for the CUDA EP (it falls back to CPU if it cannot)
+ * @param {function} [onProgress]
+ * @returns {Promise<string|null>} path to the vocals WAV, or null
+ */
+async function separateVocals(audioPath, jobId, useGpu, onProgress) {
+    const dirs = (typeof getModelsDirs === 'function' ? getModelsDirs() : []) || [];
+    const pythonExe = resolveRuntime(dirs);
+    const modelPath = resolveModelFile(dirs, 'htdemucs');
+    if (!pythonExe || !modelPath) {
+        console.log('[WhisperAlign] Vocal separation skipped: htdemucs weights or Python runtime not installed');
+        return null;
+    }
+    const ffmpeg = await findFfmpeg();
+    if (!ffmpeg) {
+        console.warn('[WhisperAlign] Vocal separation skipped: ffmpeg not available');
+        return null;
+    }
+
+    const tmpDir = os.tmpdir();
+    const mixRaw = path.join(tmpDir, `folia-vocals-mix-${jobId}.raw`);
+    const vocalsRaw = path.join(tmpDir, `folia-vocals-stem-${jobId}.raw`);
+    const vocalsWav = path.join(tmpDir, `folia-vocals-${jobId}.wav`);
+
+    try {
+        // 1. Decode the whole track to interleaved f32le stereo at the 44100 the model expects. Raw
+        //    float32 rather than a container, because that is exactly what the runner reads.
+        if (onProgress) onProgress({ status: 'separating-vocals', detail: 'decoding-audio' });
+        const decoded = await runFfmpegTo(ffmpeg,
+            ['-i', audioPath, '-ar', '44100', '-ac', '2', '-f', 'f32le', '-y', mixRaw], mixRaw);
+        if (!decoded) return null;
+
+        // 2. Split the interleaved frames (L0 R0 L1 R1 ...) into two contiguous channels, the layout
+        //    sidecar.separate repacks for the runner. Alignment-safe copy: a readFile Buffer is not
+        //    guaranteed 4-byte aligned and a misaligned Float32Array view over it throws.
+        const buf = fs.readFileSync(mixRaw);
+        const sampleCount = Math.floor(buf.length / 4);
+        const interleaved = new Float32Array(sampleCount);
+        Buffer.from(interleaved.buffer).set(buf.subarray(0, sampleCount * 4));
+        const total = Math.floor(sampleCount / 2);
+        if (total < 44100) {   // under a second of audio: nothing worth isolating, and a degenerate guard
+            console.warn(`[WhisperAlign] Vocal separation skipped: decoded audio too short (${total} frames)`);
+            return null;
+        }
+        const left = new Float32Array(total);
+        const right = new Float32Array(total);
+        for (let i = 0; i < total; i++) { left[i] = interleaved[2 * i]; right[i] = interleaved[2 * i + 1]; }
+
+        // 3. Separate, awaited to completion so the Python child's peak is released before whisper
+        //    loads. The sidecar's 120s default is tuned for Automix's 40s window; a whole song on the
+        //    CPU runs longer, so scale the ceiling with the duration (bounded, so a real hang ends).
+        if (onProgress) onProgress({ status: 'separating-vocals', detail: useGpu ? 'separating-gpu' : 'separating-cpu' });
+        const durationSec = total / 44100;
+        const timeoutMs = Math.min(600_000, Math.max(sidecar.TIMEOUT_MS, Math.round(durationSec * 3000)));
+        const stems = await sidecar.separate({
+            pythonExe, script: sidecar.RUNNER_SCRIPT, modelPath, left, right,
+            provider: useGpu ? 'cuda' : 'cpu', timeoutMs,
+        });
+        const vocals = stems && stems.vocals;
+        if (!vocals || !vocals.left || !vocals.right) {
+            console.warn('[WhisperAlign] Vocal separation returned no vocals stem');
+            return null;
+        }
+
+        // 4. Re-interleave the vocals and encode to the 16kHz mono s16 WAV whisper-cli wants. Let
+        //    ffmpeg do the stereo->mono downmix rather than averaging here, so the result matches what
+        //    the ordinary convertToWav path would have produced from this same stem.
+        if (onProgress) onProgress({ status: 'separating-vocals', detail: 'encoding-vocals' });
+        const vocTotal = Math.min(vocals.left.length, vocals.right.length);
+        const vocInterleaved = new Float32Array(vocTotal * 2);
+        for (let i = 0; i < vocTotal; i++) { vocInterleaved[2 * i] = vocals.left[i]; vocInterleaved[2 * i + 1] = vocals.right[i]; }
+        fs.writeFileSync(vocalsRaw, Buffer.from(vocInterleaved.buffer, vocInterleaved.byteOffset, vocInterleaved.byteLength));
+        const encoded = await runFfmpegTo(ffmpeg,
+            ['-f', 'f32le', '-ar', '44100', '-ac', '2', '-i', vocalsRaw,
+             '-ar', '16000', '-ac', '1', '-sample_fmt', 's16', '-y', vocalsWav], vocalsWav);
+        if (!encoded) return null;
+
+        console.log(`[WhisperAlign] Vocal isolation complete: ${durationSec.toFixed(1)}s of audio -> ${vocalsWav}`);
+        return vocalsWav;
+    } catch (error) {
+        // Everything - a runner crash, a CUDA failure the runner did not catch, an OOM kill, a decode
+        // error - lands here and becomes "no isolation", never a failed alignment.
+        console.warn(`[WhisperAlign] Vocal separation failed: ${error && error.message ? error.message : error}`);
+        return null;
+    } finally {
+        // The raw intermediates are ours and worthless after this. The WAV is returned to the caller,
+        // which tracks it as convertedWavPath and deletes it once transcription finishes.
+        for (const file of [mixRaw, vocalsRaw]) {
+            try { fs.rmSync(file, { force: true }); } catch {}
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1582,8 +1868,10 @@ async function installWhisperCli(onProgress) {
             try { fs.chmodSync(targetPath, 0o755); } catch {}
         }
 
-        // 7. Update the global whisperCliPath
-        whisperCliPath = targetPath;
+        // 7. Update the global whisperCliPath. Re-resolve through findWhisperCli() so an
+        //    explicit FOLIA_WHISPER_CLI override still wins over the freshly auto-installed
+        //    (CPU) build; otherwise fall back to what we just installed.
+        whisperCliPath = findWhisperCli() || targetPath;
 
         if (onProgress) onProgress({ status: 'installed', progress: 100, path: targetPath, version: release.tag_name });
 

@@ -13,6 +13,8 @@ import ThemePark from './ThemePark';
 import LyricFilterSettingsModal from './LyricFilterSettingsModal';
 import type { LyricFilterDraft } from './LyricFilterSettingsModal';
 import GlobalLyricOffsetModal from './settings/GlobalLyricOffsetModal';
+import WhisperSettingsModal from './settings/WhisperSettingsModal';
+import WhisperLyricOverviewModal from './settings/WhisperLyricOverviewModal';
 import AppearanceSettingsSubview from './settings/AppearanceSettingsSubview';
 import DesktopSettingsSubview from './settings/DesktopSettingsSubview';
 import GeneralSettingsSubview from './settings/GeneralSettingsSubview';
@@ -346,6 +348,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [showThemePark, setShowThemePark] = useState(false);
     const [showLyricFilterSettings, setShowLyricFilterSettings] = useState(false);
     const [showGlobalLyricOffset, setShowGlobalLyricOffset] = useState(false);
+    const [showWhisperSettings, setShowWhisperSettings] = useState(false);
+    const [showWhisperLyricOverview, setShowWhisperLyricOverview] = useState(false);
     const [showAiHelpPrompt, setShowAiHelpPrompt] = useState(false);
     const [versionCopied, setVersionCopied] = useState(false);
     const [stageAddressCopied, setStageAddressCopied] = useState(false);
@@ -359,6 +363,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setShowThemePark(initialSubview === 'themePark');
         setShowLyricFilterSettings(initialSubview === 'lyricFilter');
         setShowGlobalLyricOffset(initialSubview === 'globalLyricOffset');
+        setShowWhisperSettings(initialSubview === 'whisper');
+        setShowWhisperLyricOverview(initialSubview === 'whisperLyricOverview');
 
         if (
             initialSubview === 'appearance' ||
@@ -369,10 +375,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             initialSubview === 'desktop' ||
             initialSubview === 'lab' ||
             initialSubview === 'globalLyricOffset' ||
-            initialSubview === 'lyricFilter'
+            initialSubview === 'lyricFilter' ||
+            initialSubview === 'whisper' ||
+            initialSubview === 'whisperLyricOverview'
         ) {
-            // 这两个是播放页歌词区里的二级面板，关掉后应该落回它们的入口所在分区。
-            const isPlaybackSubview = initialSubview === 'globalLyricOffset' || initialSubview === 'lyricFilter';
+            // 这几个是播放页歌词区里的二级面板，关掉后应该落回它们的入口所在分区。
+            const isPlaybackSubview = initialSubview === 'globalLyricOffset' || initialSubview === 'lyricFilter' || initialSubview === 'whisper' || initialSubview === 'whisperLyricOverview';
             setActiveSettingsSection(isPlaybackSubview ? 'playback' : initialSubview);
         } else {
             setActiveSettingsSection(prev => prev || 'appearance');
@@ -948,6 +956,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         || showThemePark
         || showLyricFilterSettings
         || showGlobalLyricOffset
+        || showWhisperSettings
+        || showWhisperLyricOverview
         || showAiHelpPrompt;
 
     const closeAllSubviews = () => {
@@ -959,6 +969,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setShowThemePark(false);
         setShowLyricFilterSettings(false);
         setShowGlobalLyricOffset(false);
+        setShowWhisperSettings(false);
+        setShowWhisperLyricOverview(false);
         setShowAiHelpPrompt(false);
     };
 
@@ -1576,6 +1588,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 onAudioOutputDeviceChange={onAudioOutputDeviceChange}
                                                 onOpenGlobalLyricOffsetSettings={() => setShowGlobalLyricOffset(true)}
                                                 onOpenLyricFilterSettings={() => setShowLyricFilterSettings(true)}
+                                                onOpenWhisperSettings={() => setShowWhisperSettings(true)}
+                                                onOpenWhisperLyricOverview={() => setShowWhisperLyricOverview(true)}
                                                 replayGainMode={replayGainMode}
                                                 onReplayGainModeChange={onReplayGainModeChange}
                                                 settingsCardClass={settingsCardClass}
@@ -1990,6 +2004,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 lyrics={currentLyrics}
                 lyricCurrentTime={lyricCurrentTime}
                 onClose={() => closeSubviewOrModal(() => setShowGlobalLyricOffset(false))}
+            />
+            <WhisperSettingsModal
+                isOpen={showWhisperSettings}
+                isDaylight={isDaylight}
+                onOpenOverview={() => { setShowWhisperSettings(false); setShowWhisperLyricOverview(true); }}
+                onClose={() => closeSubviewOrModal(() => setShowWhisperSettings(false))}
+            />
+            <WhisperLyricOverviewModal
+                isOpen={showWhisperLyricOverview}
+                isDaylight={isDaylight}
+                currentSongTitle={currentSongTitle}
+                lyrics={currentLyrics}
+                onClose={() => closeSubviewOrModal(() => setShowWhisperLyricOverview(false))}
             />
             <AiHelpPromptModal
                 isOpen={showAiHelpPrompt}

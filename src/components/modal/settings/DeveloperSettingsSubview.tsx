@@ -1,5 +1,5 @@
-import React, { useSyncExternalStore } from 'react';
-import { Activity, FolderOpen, ScrollText } from 'lucide-react';
+import React, { useCallback, useState, useSyncExternalStore } from 'react';
+import { Activity, FolderOpen, ScrollText, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Theme } from '../../../types';
 import {
@@ -132,6 +132,31 @@ const DeveloperSettingsSubview: React.FC<DeveloperSettingsSubviewProps> = ({
     // other, on a switch that had in fact flipped. A derived value is not a subscription.
     const capturing = useSyncExternalStore(subscribeToConsoleLog, isConsoleCaptureEnabled);
     const debug = useSyncExternalStore(subscribeToDebugModule, getDebugModuleSnapshot);
+
+    // Whisper alignment cache clearing: `busy` drives the button label/disabled state, and the
+    // message reports the outcome (how many were dropped, or that there was nothing to clear).
+    const [whisperCacheBusy, setWhisperCacheBusy] = useState(false);
+    const [whisperCacheMessage, setWhisperCacheMessage] = useState<string | null>(null);
+    const handleClearWhisperCache = useCallback(async () => {
+        setWhisperCacheBusy(true);
+        setWhisperCacheMessage(null);
+        try {
+            // Lazy import: the developer page should not pull the whole Whisper service (audio
+            // fetch, aligner, db) into the settings bundle until this button is actually used.
+            const { clearWhisperAlignCache } = await import('../../../services/whisperAlignService');
+            const count = await clearWhisperAlignCache();
+            setWhisperCacheMessage(
+                count > 0
+                    ? (t('options.clearWhisperCacheDone', { count }) || `Cleared ${count} cached alignment(s).`)
+                    : (t('options.clearWhisperCacheEmpty') || 'No cached alignments to clear.'),
+            );
+        } catch (error) {
+            console.warn('[DeveloperSettings] Failed to clear Whisper alignment cache:', error);
+            setWhisperCacheMessage(t('options.clearWhisperCacheError') || 'Failed to clear the cache.');
+        } finally {
+            setWhisperCacheBusy(false);
+        }
+    }, [t]);
 
     return (
         <div className="space-y-4">
@@ -274,6 +299,44 @@ const DeveloperSettingsSubview: React.FC<DeveloperSettingsSubviewProps> = ({
                         })}
                     </div>
                 </div>
+            </div>
+
+            {/* Whisper alignment cache. Clearing it makes the next play re-run transcription
+                instead of reusing a stored result — the only way to compare how a different
+                model or parameter set changes the word-level timing. */}
+            <div className={`rounded-2xl border p-4 space-y-3 ${settingsCardClass}`}>
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                        <div className="p-2 rounded-lg opacity-60 shrink-0">
+                            <Trash2 size={14} />
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {t('options.clearWhisperCache') || 'Whisper alignment cache'}
+                            </span>
+                            <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                                {t('options.clearWhisperCacheDesc')
+                                    || 'Delete every cached word-by-word alignment so the next play re-runs transcription. Use it to compare models or parameters.'}
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        disabled={whisperCacheBusy}
+                        onClick={() => void handleClearWhisperCache()}
+                        className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] transition-colors disabled:opacity-40 ${isDaylight ? 'border-black/10 hover:bg-black/[0.05]' : 'border-white/10 hover:bg-white/[0.07]'}`}
+                        style={{ color: 'var(--text-secondary)' }}
+                    >
+                        {whisperCacheBusy
+                            ? (t('options.clearWhisperCacheClearing') || 'Clearing…')
+                            : (t('options.clearWhisperCacheButton') || 'Clear all')}
+                    </button>
+                </div>
+                {whisperCacheMessage && (
+                    <div className="text-[11px] opacity-60" style={{ color: 'var(--text-secondary)' }}>
+                        {whisperCacheMessage}
+                    </div>
+                )}
             </div>
 
             <div className="text-[11px] leading-relaxed opacity-45" style={{ color: 'var(--text-secondary)' }}>

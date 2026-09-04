@@ -23,6 +23,8 @@ constants worker.cjs used before this moved out.
 """
 import sys
 import os
+import io
+import contextlib
 import numpy as np
 import onnxruntime as ort
 
@@ -54,7 +56,7 @@ def build_window(segment):
 
 
 def make_session(model_path):
-    """One CPU session, and nothing clever around it.
+    """One session, CPU by default and CUDA when asked AND able.
 
     There used to be a graph cache here - optimize once into a `.opt` beside the weights, load
     THAT afterwards - plus a `--warmup` entry point and a whole IPC path for building it when a
@@ -64,12 +66,45 @@ def make_session(model_path):
     This export has 1556 nodes and no such peak. Optimizing it costs 353MB and 0.65s, and the
     cache bought 783MB against 792MB without - inside the noise. So the cache is gone, and the
     machinery that built it went with it.
+
+    The provider is read off HTDEMUCS_PROVIDER, which sidecar.cjs sets from its caller: worker.cjs
+    never passes one, so the Automix background path stays CPU exactly as it was, and only the
+    whisper-align foreground (which opts into GPU) ever asks for 'cuda'. Asking is best-effort -
+    preload_dlls pulls the SYSTEM CUDA/cuDNN in first (ORT does not dlopen them itself on Windows),
+    then the CUDA EP is requested ahead of the CPU EP. Every way that can fail - no onnxruntime-gpu
+    in this runtime, no CUDA, no cuDNN, an sm_120 the build does not know - is caught and retried on
+    the CPU EP, because a separation that runs slow beats one that does not run at all.
     """
     so = ort.SessionOptions()
     so.enable_cpu_mem_arena = False      # matches worker.cjs; the arena alone is ~5GB peak
     so.enable_mem_reuse = False          # the flag this whole Python process exists for, see the top
     so.intra_op_num_threads = 4          # a quarter of a typical machine, like worker.cjs THREADS
-    return ort.InferenceSession(model_path, sess_options=so, providers=["CPUExecutionProvider"])
+
+    if os.environ.get("HTDEMUCS_PROVIDER", "cpu").lower() != "cuda":
+        return ort.InferenceSession(model_path, sess_options=so, providers=["CPUExecutionProvider"])
+
+    # ORT >= 1.21 can pull the system CUDA/cuDNN in here rather than at session-create time. It is
+    # best-effort, and when its own bare-name load misses a DLL - all of them under Python 3.8+, where
+    # a bare name no longer searches PATH - it prints "Failed to load cublas64_12.dll ..." plus a
+    # "Please follow ...install CUDA" footer to STDOUT, even on a machine where CUDA is about to work.
+    # That chatter is a Python-level print, so redirect_stdout swallows it whole (an earlier attempt to
+    # silence it on stderr failed only for targeting the wrong stream - it is fd 1, not fd 2). Losing it
+    # costs nothing: the CUDA EP below resolves the same DLLs through the ordinary Windows search (PATH)
+    # when it initialises, and if it cannot it says so itself and falls back - preload_dlls is never the
+    # actionable signal. Verified on a CUDA 12.9 / cuDNN 9 host: the EP comes up as CUDAExecutionProvider.
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            ort.preload_dlls()
+    except Exception:
+        pass
+    try:
+        return ort.InferenceSession(
+            model_path, sess_options=so,
+            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+        )
+    except Exception as error:
+        print(f"[htdemucs] CUDA EP unavailable ({error}); falling back to CPU", file=sys.stderr)
+        return ort.InferenceSession(model_path, sess_options=so, providers=["CPUExecutionProvider"])
 
 
 def separate(sess, left, right):
@@ -227,7 +262,11 @@ def run_files(model_path, in_path, out_path, total):
     ws, commit = peak_mb()
     seg = segment_of(sess)
     stride = seg - seg // 4
+    # The provider that ACTUALLY initialised, not the one asked for - get_providers() drops a CUDA
+    # EP that fell back to CPU, so this is how the log tells the truth about whether GPU was used.
+    providers = sess.get_providers()
     print(json.dumps({
+        "provider": providers[0] if providers else "?",
         "peak_ws_mb": round(ws, 1), "peak_commit_mb": round(commit, 1),
         "peak_after_load_mb": round(load_peak, 1),
         "total": total, "sec": round(total / 44100.0, 1),

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: electron_host
+title: Folia 播放器 Electron 主进程宿主
+scope:
+    - electron/
+source_files: []
+depends_on: []
+related_to: []

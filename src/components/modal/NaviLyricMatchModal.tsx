@@ -21,6 +21,8 @@ import { LyricPreviewPanel } from './LyricPreviewPanel';
 import { getSizedCoverUrl } from '../../utils/coverUrl';
 import { getProviderSongMetadata } from '../../services/onlineMusic/songMetadata';
 import ErrorBoundary from '../shared/ErrorBoundary';
+import WhisperSettingsPanel from '../shared/WhisperSettingsPanel';
+import { isWhisperFeaturePresent } from '../../services/whisperModService';
 
 export interface NavidromeMatchData {
     matchedSongId?: MediaId;
@@ -79,6 +81,21 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
     // Online data toggle state
     const [lyricsSource, setLyricsSource] = useState<'navi' | 'online'>('online');
     const [source, setSource] = useState<LyricMatchSource>('netease');
+
+    // Whether the Whisper feature surface is present (mod enabled or direct IPC bridge).
+    const [whisperAvailable, setWhisperAvailable] = useState(true); // default true to avoid flicker
+    useEffect(() => {
+        isWhisperFeaturePresent().then(setWhisperAvailable);
+    }, []);
+
+    // Hide the Whisper tab when the feature surface is absent (mirrors LyricMatchModal).
+    const availableSources = useMemo(
+        () => LYRIC_MATCH_SOURCES.filter(src => src !== 'whisper' || whisperAvailable),
+        [whisperAvailable]
+    );
+
+    // Current effective lyrics carried by this song's match cache; feeds the Whisper tab.
+    const whisperLyrics = initialMatchData?.matchedLyrics ?? null;
 
     const navidromeMetadata = getProviderSongMetadata(song);
     const navidromeArtist = navidromeMetadata.artists.map(a => a.name).join(', ');
@@ -238,6 +255,28 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
         }
     };
 
+    // Persist Whisper-aligned (word-by-word) lyrics back into the match cache, then refresh.
+    const handleWhisperAligned = async (aligned: LyricData | null) => {
+        if (!aligned) {
+            onMatch();
+            return;
+        }
+        try {
+            const nextData: NavidromeMatchData = {
+                ...(initialMatchData ?? {}),
+                matchedLyrics: aligned,
+                matchedIsPureMusic: false,
+                lyricsSource: 'online',
+                useOnlineLyrics: true,
+                hasManualLyricSelection: true,
+            };
+            await saveToCache(`navidrome_match_${song.navidromeData.id}`, nextData);
+            onMatch();
+        } catch (error) {
+            console.error('Failed to save Whisper-aligned lyrics:', error);
+        }
+    };
+
     const coverUrl = navidromeMetadata.coverUrl || song.navidromeData?.coverArtUrl || null;
     const selectedCoverUrl = getMatchResultCoverUrl(selectedResult, source);
     const selectedArtists = getMatchResultArtists(selectedResult);
@@ -257,10 +296,10 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
                 <div className="flex-1 flex min-h-0 overflow-hidden">
                     <ErrorBoundary>
                     {/* LEFT PANEL */}
-                    <div className={`w-[62%] flex flex-col border-r ${borderColor}`}>
+                    <div className={`${source === 'whisper' ? 'w-full' : 'w-[62%]'} flex flex-col border-r ${borderColor}`}>
                         <div className="p-4">
                             <div className={`flex border-b ${borderColor} pb-2 mb-3.5 gap-4`}>
-                                {LYRIC_MATCH_SOURCES
+                                {availableSources
                                     .map(id => ({ id, label: getLyricMatchSourceLabel(id) }))
                                     .map(t => {
                                     const isSelected = source === t.id;
@@ -310,6 +349,16 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
                                 </form>
                             )}
                         </div>
+                        {source === 'whisper' ? (
+                            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-4">
+                                <WhisperSettingsPanel
+                                    song={song}
+                                    lyrics={whisperLyrics}
+                                    onLyricsUpdated={(aligned) => { void handleWhisperAligned(aligned); }}
+                                    isDaylight={isDaylight}
+                                />
+                            </div>
+                        ) : (
                         <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-4">
                             {isSearching ? (
                                 <div className="flex justify-center items-center h-40"><Loader2 className="animate-spin opacity-50" size={28} /></div>
@@ -353,9 +402,11 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
                                 </div>
                             )}
                         </div>
+                        )}
                     </div>
 
                     {/* RIGHT PANEL: Centered-style preview with lower-half LyricPreviewPanel */}
+                    {source !== 'whisper' && (
                     <div className={`w-[38%] flex flex-col items-center justify-between px-6 py-6 border-l ${borderColor} min-h-0 overflow-hidden`}>
                         {/* Upper section: Cover and Info centered (Scrollable when height is constrained) */}
                         <div className="flex flex-col items-center justify-start w-full flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
@@ -399,19 +450,24 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
                             <LyricPreviewPanel selectedResult={selectedResult} source={source} isDaylight={isDaylight} />
                         </div>
                     </div>
+                    )}
                     </ErrorBoundary>
                 </div>
 
                 <div className={`px-6 py-4 border-t ${borderColor} flex justify-end gap-3`}>
+                    {source !== 'whisper' && (
                     <button onClick={handleNoMatch} className={`px-5 py-2 ${noMatchBtnBg} text-red-400 border rounded-lg transition-colors mr-auto text-sm`}>
                         {t('localMusic.skipOnlineMatch')}
                     </button>
+                    )}
                     <button onClick={onClose} className={`px-5 py-2 ${cancelBtnBg} rounded-lg transition-colors ${textPrimary} text-sm`}>
-                        {t('localMusic.cancel')}
+                        {source === 'whisper' ? t('localMusic.close') : t('localMusic.cancel')}
                     </button>
+                    {source !== 'whisper' && (
                     <button onClick={handleConfirm} disabled={!selectedResult || isMatching} className="px-5 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm text-white">
                         {isMatching ? <><Loader2 className="animate-spin" size={14} />{t('localMusic.saving')}</> : t('localMusic.save')}
                     </button>
+                    )}
                 </div>
             </div>
         </div>

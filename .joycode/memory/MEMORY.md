@@ -1,0 +1,1 @@
+- [whisper-mod-conversion](whisper-mod-conversion.md) — Whisper功能从内嵌IPC转为mod扩展架构的设计决策和当前状态

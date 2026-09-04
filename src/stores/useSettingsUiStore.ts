@@ -63,7 +63,7 @@ const LAST_SEEN_GUIDE_VERSION_STORAGE_KEY = 'folia_last_seen_guide_version';
 
 export type AudioQuality = AudioQualityPreference;
 export type SettingsModalInitialTab = 'help' | 'options';
-export type SettingsSubviewId = 'appearance' | 'general' | 'playback' | 'integration' | 'storage' | 'desktop' | 'lab' | 'visualizer' | 'themePark' | 'lyricFilter' | 'globalLyricOffset';
+export type SettingsSubviewId = 'appearance' | 'general' | 'playback' | 'integration' | 'storage' | 'desktop' | 'lab' | 'visualizer' | 'themePark' | 'lyricFilter' | 'globalLyricOffset' | 'whisper' | 'whisperLyricOverview';
 export type VisualizerSettingsSection = 'common' | 'background' | 'visualizer' | 'subtitle';
 export type SettingsModalState = {
     isOpen: boolean;
@@ -1514,6 +1514,9 @@ export type SettingsUiState = {
     autoUseBestLyric: boolean;
     whisperAlignEnabled: boolean;
     whisperAlignModel: string;
+    whisperAlignLanguage: string;
+    whisperAlignVocalSeparation: boolean;
+    whisperAlignVocalSeparationGpu: boolean;
     preferredAlternativeLyricSource: LyricProviderSource;
     localLyricsPriority: LocalLyricsPriority;
     hidePlayerProgressBar: boolean;
@@ -1695,6 +1698,9 @@ export type SettingsUiState = {
     handleToggleAutoUseBestLyric: (enable: boolean) => void;
     handleToggleWhisperAlign: (enable: boolean) => void;
     handleSetWhisperAlignModel: (model: string) => void;
+    handleSetWhisperAlignLanguage: (language: string) => void;
+    handleSetWhisperAlignVocalSeparation: (enable: boolean) => void;
+    handleSetWhisperAlignVocalSeparationGpu: (enable: boolean) => void;
     handleSetPreferredAlternativeLyricSource: (source: LyricProviderSource) => void;
     handleSetLocalLyricsPriority: (priority: LocalLyricsPriority) => void;
     handleToggleHidePlayerProgressBar: (enable: boolean) => void;
@@ -1856,6 +1862,12 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
     autoUseBestLyric: getStoredBoolean('auto_use_best_lyric', true),
     whisperAlignEnabled: getStoredBoolean('whisper_align_enabled', false),
     whisperAlignModel: getStoredString('whisper_align_model', 'base'),
+    whisperAlignLanguage: getStoredString('whisper_align_language', 'auto'),
+    // Off by default: whole-track htdemucs isolation is expensive and its benefit is unproven for
+    // every track. GPU on by default so that when a listener does turn isolation on, it is fast on a
+    // machine that can (the runner falls back to the CPU EP where it cannot) - see htdemucs_runner.py.
+    whisperAlignVocalSeparation: getStoredBoolean('whisper_align_vocal_separation', false),
+    whisperAlignVocalSeparationGpu: getStoredBoolean('whisper_align_vocal_separation_gpu', true),
     preferredAlternativeLyricSource: readStoredPreferredAlternativeLyricSource(),
     localLyricsPriority: readStoredLocalLyricsPriority(),
     hidePlayerProgressBar: getStoredBoolean('hide_player_progress_bar', false),
@@ -2131,6 +2143,20 @@ export const useSettingsUiStore = create<SettingsUiState>((set, get) => ({
             localStorage.setItem('whisper_align_model', model);
         }
         set({ whisperAlignModel: model });
+    },
+    handleSetWhisperAlignLanguage: (language) => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('whisper_align_language', language);
+        }
+        set({ whisperAlignLanguage: language });
+    },
+    handleSetWhisperAlignVocalSeparation: (enable) => {
+        setStoredBoolean('whisper_align_vocal_separation', enable);
+        set({ whisperAlignVocalSeparation: enable });
+    },
+    handleSetWhisperAlignVocalSeparationGpu: (enable) => {
+        setStoredBoolean('whisper_align_vocal_separation_gpu', enable);
+        set({ whisperAlignVocalSeparationGpu: enable });
     },
     handleSetPreferredAlternativeLyricSource: (source) => {
         if (typeof window !== 'undefined') {

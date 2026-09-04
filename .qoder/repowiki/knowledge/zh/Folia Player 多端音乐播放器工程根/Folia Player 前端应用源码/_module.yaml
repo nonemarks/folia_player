@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: frontend_app
+title: Folia Player 前端应用源码
+scope:
+    - src/
+source_files: []
+depends_on: []
+related_to:
+    - path: api_adapters
+    - path: electron_host/api_bridges
+    - path: sync_server

@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Loader2, Music, Search, X } from 'lucide-react';
-import type { OnlineLyricsState, SongResult } from '../../types';
+import type { LyricData, OnlineLyricsState, SongResult } from '../../types';
 import { formatSongName } from '../../utils/songNameFormatter';
-import { loadOnlineLyricsState, saveOnlineLyricsState } from '../../utils/onlineLyricsState';
+import { loadOnlineLyricsState, resolveOnlineLyrics, saveOnlineLyricsState } from '../../utils/onlineLyricsState';
+import { getSongCacheWithLegacyMigration } from '../../services/onlineMusic/resourceCache';
+import { migrateLyricDataRenderHints } from '../../utils/lyrics/renderHints';
 import { calculateMatchScore } from '../../utils/lyrics/matchScore';
 import { buildLyricSearchQuery } from '../../utils/lyrics/searchQuery';
 import { fetchLyricsForMatchSource, LYRIC_MATCH_SOURCES, searchLyricsByMatchSource, sourceSupportsManualSearch } from '../../utils/lyrics/lyricMatchSources';
@@ -17,6 +19,8 @@ import { LyricPreviewPanel } from './LyricPreviewPanel';
 import { getProviderSongMetadata } from '../../services/onlineMusic/songMetadata';
 import { getSizedCoverUrl } from '../../utils/coverUrl';
 import ErrorBoundary from '../shared/ErrorBoundary';
+import WhisperSettingsPanel from '../shared/WhisperSettingsPanel';
+import { isWhisperFeaturePresent } from '../../services/whisperModService';
 
 // src/components/modal/OnlineLyricMatchModal.tsx
 
@@ -47,6 +51,61 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
     const [isSearching, setIsSearching] = useState(false);
     const [isMatching, setIsMatching] = useState(false);
     const [source, setSource] = useState<LyricMatchSource>('netease');
+
+    // Whether the Whisper feature surface is present (mod enabled or direct IPC bridge).
+    const [whisperAvailable, setWhisperAvailable] = useState(true); // default true to avoid flicker
+    useEffect(() => {
+        isWhisperFeaturePresent().then(setWhisperAvailable);
+    }, []);
+
+    // Current effective lyrics for this online song; feeds the Whisper tab's manual alignment.
+    const [currentLyrics, setCurrentLyrics] = useState<LyricData | null>(null);
+    useEffect(() => {
+        let isCurrent = true;
+        void (async () => {
+            const state = await loadOnlineLyricsState(song);
+            // Mirror the playback path: auto-matched lyrics live in the 'lyric' resource cache
+            // (the key WITHOUT the _state suffix), not inside OnlineLyricsState. Passing null as the
+            // resolve fallback made an auto-matched song resolve to nothing here, so the Whisper tab
+            // wrongly reported "no line-level timing" even though lyrics were on screen.
+            const cachedLyrics = await getSongCacheWithLegacyMigration<LyricData>('lyric', song, migrateLyricDataRenderHints);
+            if (isCurrent) setCurrentLyrics(resolveOnlineLyrics(state, cachedLyrics) ?? null);
+        })();
+        return () => { isCurrent = false; };
+    }, [song]);
+
+    // Hide the Whisper tab when the feature surface is absent (mirrors LyricMatchModal).
+    const availableSources = React.useMemo(
+        () => LYRIC_MATCH_SOURCES.filter(src => src !== 'whisper' || whisperAvailable),
+        [whisperAvailable]
+    );
+
+    // Persist Whisper-aligned lyrics back into the active lyrics source, then refresh.
+    const handleWhisperAligned = async (aligned: LyricData | null) => {
+        if (!aligned) {
+            onMatch();
+            return;
+        }
+        try {
+            const previousState = await loadOnlineLyricsState(song);
+            const fromImported = previousState?.lyricsSource === 'imported' && !!previousState?.importedLyrics;
+            const nextState: OnlineLyricsState = {
+                lyricsSource: previousState?.lyricsSource ?? 'online',
+                importedLyrics: fromImported ? aligned : (previousState?.importedLyrics ?? null),
+                importedLyricsName: previousState?.importedLyricsName ?? null,
+                hasOnlineOverride: fromImported ? (previousState?.hasOnlineOverride ?? false) : true,
+                onlineOverrideLyrics: fromImported ? (previousState?.onlineOverrideLyrics ?? null) : aligned,
+                matchedSongId: previousState?.matchedSongId,
+                matchedIsPureMusic: previousState?.matchedIsPureMusic ?? false,
+                matchedLyricsSource: previousState?.matchedLyricsSource,
+                matchedLyricsProviderPlatform: previousState?.matchedLyricsProviderPlatform,
+            };
+            await saveOnlineLyricsState(song, nextState);
+            onMatch();
+        } catch (error) {
+            console.error('Failed to save Whisper-aligned lyrics:', error);
+        }
+    };
 
     const songInfo = React.useMemo(() => {
         const metadata = getProviderSongMetadata(song);
@@ -187,9 +246,9 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
                 <div className="flex-1 flex min-h-0 overflow-hidden">
                     <ErrorBoundary>
                     {/* LEFT PANEL */}
-                    <div className={`w-[62%] flex flex-col border-r ${borderColor} p-6 gap-5 min-h-0`}>
+                    <div className={`${source === 'whisper' ? 'w-full' : 'w-[62%]'} flex flex-col border-r ${borderColor} p-6 gap-5 min-h-0`}>
                         <div className={`flex border-b ${borderColor} pb-2 gap-4`}>
-                            {LYRIC_MATCH_SOURCES
+                            {availableSources
                                 .map(id => ({ id, label: getLyricMatchSourceLabel(id) }))
                                 .map(t => {
                                 const isSelected = source === t.id;
@@ -214,6 +273,17 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
                             })}
                         </div>
 
+                        {source === 'whisper' ? (
+                            <div className="flex-1 min-h-0 overflow-y-auto">
+                                <WhisperSettingsPanel
+                                    song={song}
+                                    lyrics={currentLyrics}
+                                    onLyricsUpdated={(aligned) => { void handleWhisperAligned(aligned); }}
+                                    isDaylight={isDaylight}
+                                />
+                            </div>
+                        ) : (
+                        <>
                         {sourceSupportsManualSearch(source) && (
                             <div className="flex gap-3">
                                 <div className={`flex-1 flex items-center gap-3 rounded-2xl border px-4 py-3 ${inputBg}`}>
@@ -291,9 +361,12 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
                                 })
                             )}
                         </div>
+                        </>
+                        )}
                     </div>
 
                     {/* RIGHT PANEL: Centered-style preview with lower-half LyricPreviewPanel */}
+                    {source !== 'whisper' && (
                     <div className={`w-[38%] flex flex-col items-center justify-between px-6 py-6 border-l ${borderColor} min-h-0 overflow-hidden`}>
                         {/* Upper section: Cover and Info centered (Scrollable when height is constrained) */}
                         <div className="flex flex-col items-center justify-start w-full flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
@@ -338,13 +411,15 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
                             <LyricPreviewPanel selectedResult={selectedResult} source={source} isDaylight={isDaylight} />
                         </div>
                     </div>
+                    )}
                     </ErrorBoundary>
                 </div>
 
                 <div className={`px-6 py-5 border-t ${borderColor} flex justify-end gap-3`}>
                     <button onClick={onClose} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${cancelBtnBg} ${textPrimary}`}>
-                        {t('localMusic.cancel')}
+                        {source === 'whisper' ? t('localMusic.close') : t('localMusic.cancel')}
                     </button>
+                    {source !== 'whisper' && (
                     <button
                         onClick={() => void handleConfirm()}
                         disabled={!selectedResult || isMatching}
@@ -352,6 +427,7 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
                     >
                         {isMatching ? t('localMusic.matching') : t('options.save')}
                     </button>
+                    )}
                 </div>
             </div>
         </div>

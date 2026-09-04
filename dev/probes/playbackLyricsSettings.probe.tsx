@@ -24,6 +24,8 @@ const PlaybackLyricsSettingsProbe: React.FC = () => (
                 onAudioOutputDeviceChange={() => true}
                 onOpenGlobalLyricOffsetSettings={() => {}}
                 onOpenLyricFilterSettings={() => {}}
+                onOpenWhisperSettings={() => {}}
+                onOpenWhisperLyricOverview={() => {}}
                 replayGainMode="off"
                 onReplayGainModeChange={() => {}}
                 settingsCardClass="border-white/10 bg-white/[0.04]"

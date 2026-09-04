@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: packaging
+title: 跨平台打包与桌面壁纸辅助工具
+scope:
+    - packaging/
+source_files: []
+depends_on: []
+related_to: []

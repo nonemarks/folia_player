@@ -1,0 +1,220 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: main
+nodes_managed: true
+exported_at: "2026-09-03T07:33:35Z"
+modules:
+    "":
+        dir_name: Folia Player 多端音乐播放器工程根
+        title: Folia Player 多端音乐播放器工程根
+        scope:
+            - README.md
+            - .gitignore
+            - package.json
+            - tsconfig.json
+            - vite.config.ts
+            - playwright.config.ts
+            - vitest.config.ts
+            - vercel.json
+            - wrangler.jsonc
+            - metadata.json
+            - .all-contributorsrc
+            - .editorconfig
+            - .env.example
+            - .gitattributes
+            - .npmrc
+            - .nvmrc
+            - AGENTS.md
+            - CONTRIBUTORS.md
+            - LICENSE
+            - benchmark_chorus.js
+            - build-electron.cjs
+            - dev-probe.html
+            - index.html
+            - mod-export.html
+            - package-lock.json
+            - postcss.config.js
+            - realeco-release
+            - stage-client.html
+            - tailwind.config.js
+            - tsc_output.txt
+        source_files: []
+        children:
+            - api_adapters
+            - deploy_docker
+            - dev_probes
+            - docs_and_skills
+            - electron_host
+            - frontend_app
+            - mod_system
+            - packaging
+            - sync_server
+            - tests
+        depends_on: []
+        related_to: []
+    api_adapters:
+        dir_name: 多平台 API 适配层（Vercel Edge _ Cloudflare Worker）
+        title: 多平台 API 适配层（Vercel Edge / Cloudflare Worker）
+        scope:
+            - api/
+            - api-ts/
+            - worker/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: deploy_docker
+            - path: frontend_app
+    deploy_docker:
+        dir_name: Folia Web 多容器 Docker 部署编排
+        title: Folia Web 多容器 Docker 部署编排
+        scope:
+            - deploy/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: api_adapters
+            - path: sync_server
+    dev_probes:
+        dir_name: 组件探针开发沙箱（Component Probes）
+        title: 组件探针开发沙箱（Component Probes）
+        scope:
+            - dev/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: tests
+    docs_and_skills:
+        dir_name: 项目文档与 AI Agent Skill 集
+        title: 项目文档与 AI Agent Skill 集
+        scope:
+            - docs/
+            - skills/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    electron_host:
+        dir_name: Folia 播放器 Electron 主进程宿主
+        title: Folia 播放器 Electron 主进程宿主
+        scope:
+            - electron/
+        source_files: []
+        children:
+            - electron_host/api_bridges
+            - electron_host/platform_integrations
+            - electron_host/startup_and_services
+        depends_on: []
+        related_to: []
+    electron_host/api_bridges:
+        dir_name: Electron 外部 API 桥接层（酷狗、歌词、Stage）
+        title: Electron 外部 API 桥接层（酷狗、歌词、Stage）
+        scope:
+            - electron/kugouApiBridge.cjs
+            - electron/lyricApi.cjs
+            - electron/stageApi.cjs
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: frontend_app
+    electron_host/platform_integrations:
+        dir_name: Electron 平台集成（Discord Rich Presence、Linux 密码存储、Windows_Wayland 壁纸模式）
+        title: Electron 平台集成（Discord Rich Presence、Linux 密码存储、Windows/Wayland 壁纸模式）
+        scope:
+            - electron/discordPresence.cjs
+            - electron/linuxPasswordStore.cjs
+            - electron/windowsWallpaperController.cjs
+            - electron/wallpaperWatchdog.cjs
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    electron_host/startup_and_services:
+        dir_name: Electron 主进程启动与系统服务
+        title: Electron 主进程启动与系统服务
+        scope:
+            - electron/neteaseApiStartup.cjs
+            - electron/qqApiStartup.cjs
+            - electron/qqAuthSessionRepository.cjs
+            - electron/updateChannels.cjs
+            - electron/localCoverAssets.cjs
+            - electron/audioCachePrune.cjs
+            - electron/voiceInputPause.cjs
+            - electron/whisperAlign.cjs
+            - electron/windowPlaybackHandoff.cjs
+            - electron/displaySleepBlocker.cjs
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend_app:
+        dir_name: Folia Player 前端应用源码
+        title: Folia Player 前端应用源码
+        scope:
+            - src/
+        source_files: []
+        children:
+            - frontend_app/app_bootstrap
+        depends_on: []
+        related_to:
+            - path: api_adapters
+            - path: electron_host/api_bridges
+            - path: sync_server
+    frontend_app/app_bootstrap:
+        dir_name: 应用启动与根组件装配层
+        title: 应用启动与根组件装配层
+        scope:
+            - src/App.tsx
+            - src/bootstrap.tsx
+            - src/index.tsx
+            - src/index.css
+            - src/types.ts
+            - src/vite-env.d.ts
+            - src/README.md
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    mod_system:
+        dir_name: Folia 模组目录（mods）
+        title: Folia 模组目录（mods）
+        scope:
+            - mods/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    packaging:
+        dir_name: 跨平台打包与桌面壁纸辅助工具
+        title: 跨平台打包与桌面壁纸辅助工具
+        scope:
+            - packaging/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    sync_server:
+        dir_name: Folia 主题与设置同步服务端
+        title: Folia 主题与设置同步服务端
+        scope:
+            - sync-server/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: deploy_docker
+            - path: frontend_app
+    tests:
+        dir_name: 测试套件（单元测试、UI 截图与手工脚本）
+        title: 测试套件（单元测试、UI 截图与手工脚本）
+        scope:
+            - test/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: dev_probes

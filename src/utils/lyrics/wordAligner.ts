@@ -51,8 +51,16 @@ interface AiToken {
 
 const MIN_DURATION = 0.04;   // minimum gap between consecutive timestamps (s)
 const HALLUCINATION_GAP = 3.0; // gap threshold for hallucination detection (s)
-const CALIBRATION_THRESHOLD = 1.5; // force-calibration threshold (s)
 const SMOOTH_INTERP_GAP = 2.5;   // above this gap, use right-adsorption strategy
+
+// Global-offset correction (the post-pass in alignWhisperToLyrics). A source LRC can sit a constant
+// Δ from the actual audio — common for online tracks whose best-match lyric comes from a different
+// provider/release than the playing audio. When every line's Whisper-vs-LRC correction clusters
+// tightly (a systematic offset, NOT the per-line drift 6c already flattens), the whole timeline is
+// slid by that Δ so it lands on the singing while keeping the LRC's locked relative structure.
+const GLOBAL_OFFSET_MIN_ANCHOR_LINES = 3;  // anchored lines needed before a global offset is trusted
+const GLOBAL_OFFSET_MAX_SPREAD = 0.35;     // MAD of per-line corrections above this => drift, not a constant offset (s)
+const GLOBAL_OFFSET_MIN_SHIFT = 0.25;      // ignore a global offset smaller than this (sub-perceptual) (s)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -221,12 +229,28 @@ function tokenizeLine(line: string): Array<{ text: string; pre: string; endIdx: 
 // ---------------------------------------------------------------------------
 
 export interface WordAlignerOptions {
-    /** Enable force calibration against original line timestamps. Default: true */
+    /**
+     * Hard-lock every line's start to its ORIGINAL line-level timestamp. Default: true.
+     *
+     * The lyric's own startTime is authoritative: Whisper shapes the rhythm of the words INSIDE a
+     * line but is never allowed to move where the line begins — the first word is pinned to the LRC
+     * time. (This used to correct a line only after it had drifted past a threshold, which let every
+     * smaller per-line error survive and stack into the offset the listener actually sees.) Turn it
+     * off only to keep Whisper's raw, un-anchored line starts.
+     */
     enableForceCalibration?: boolean;
     /** Enable average distribution after force calibration. Default: false */
     enableAvgDistribution?: boolean;
-    /** Calibration threshold in seconds. Default: 1.5 */
-    calibrationThreshold?: number;
+    /**
+     * Correct a CONSTANT global offset between the source LRC and the actual audio. Default: true.
+     *
+     * enableForceCalibration locks each line to the LRC's RELATIVE timeline; this additionally slides
+     * the WHOLE timeline by one Δ when Whisper shows the LRC sits a consistent distance from the
+     * singing (e.g. an online track matched to another provider's LRC). It fires only when the
+     * per-line corrections cluster tightly — a genuine constant offset — so cumulative drift (which
+     * the lock already flattens) is never mistaken for one and double-corrected.
+     */
+    enableGlobalOffsetCorrection?: boolean;
 }
 
 /**
@@ -245,7 +269,7 @@ export function alignWhisperToLyrics(
 ): LyricData {
     const enableForceCalibration = options?.enableForceCalibration ?? true;
     const enableAvgDistribution = options?.enableAvgDistribution ?? false;
-    const calibrationThreshold = options?.calibrationThreshold ?? CALIBRATION_THRESHOLD;
+    const enableGlobalOffsetCorrection = options?.enableGlobalOffsetCorrection ?? true;
 
     // -----------------------------------------------------------------------
     // 1. Extract AI word pool from Whisper result
@@ -342,6 +366,19 @@ export function alignWhisperToLyrics(
     const matcher = new SequenceMatcher(userTokensStr, aiTokensStr);
     const opcodes = matcher.getOpcodes();
 
+    // Diagnostic counters: how much of the lyric text Whisper actually matched.
+    // Low match rate means the timeline is mostly interpolation, not real timestamps.
+    // 'replace' (both sides non-empty, no common token) MUST be counted too, otherwise a
+    // fully-mismatched alignment reports 0/0/0 and hides that every lyric token failed.
+    // Replace-region tokens rescued by matchReplaceRegion are moved back to diagEqual below.
+    let diagEqual = 0, diagDelete = 0, diagInsert = 0, diagReplaceUser = 0, diagReplaceAi = 0;
+    for (const [tag, i1, i2, j1, j2] of opcodes) {
+        if (tag === 'equal') diagEqual += i2 - i1;
+        else if (tag === 'delete') diagDelete += i2 - i1;
+        else if (tag === 'insert') diagInsert += j2 - j1;
+        else if (tag === 'replace') { diagReplaceUser += i2 - i1; diagReplaceAi += j2 - j1; }
+    }
+
     // -----------------------------------------------------------------------
     // 5. Back-fill timestamps from alignment
     // -----------------------------------------------------------------------
@@ -361,10 +398,15 @@ export function alignWhisperToLyrics(
             }
         } else if (tag === 'replace') {
             // Local sub-alignment to salvage matchable tokens within replace region
-            lastValidTime = matchReplaceRegion(
+            const region = matchReplaceRegion(
                 userCharSequence, aiCharSequence,
                 i1, i2, j1, j2, lastValidTime,
             );
+            lastValidTime = region.lastValidTime;
+            // Rescued tokens got a real Whisper timestamp: count them as matched and
+            // remove them from the unmatched replace-user tally.
+            diagEqual += region.rescued;
+            diagReplaceUser -= region.rescued;
         }
         // 'delete': user has token but AI doesn't → leave for interpolation
         // 'insert': AI has token but user doesn't → ignore
@@ -384,6 +426,10 @@ export function alignWhisperToLyrics(
 
     let currentLastTime = 0.0;
     const resultLines: Line[] = [];
+    let diagNoAnchor = 0, diagShift = 0, diagBoundary = 0;
+    // Per-line (originalTs - Whisper line start) samples, gathered in 6c and reduced to one global
+    // offset Δ after the loop — but only when they cluster tightly (see GLOBAL_OFFSET_* above).
+    const correctionSamples: number[] = [];
 
     for (let i = 0; i < lyricLines.length; i++) {
         const lineTokens = linesTokensMap.get(i) ?? [];
@@ -410,8 +456,13 @@ export function alignWhisperToLyrics(
             currentLastTime = validTimes[validTimes.length - 1]!;
         }
 
-        // 6c. Force calibration
-        if (enableForceCalibration && originalTs > 0) {
+        // 6c. Hard-lock the line to the ORIGINAL line-level timeline. The lyric's own startTime is
+        //     authoritative and never moves: the first word is pinned to it and every other word
+        //     shifts by the same amount, so Whisper still shapes the rhythm WITHIN the line but
+        //     cannot drag the line's start off the LRC. There is deliberately NO threshold — the old
+        //     1.5s gate only corrected a line once it had drifted further than that, so every smaller
+        //     per-line error survived and stacked into the offset the listener sees.
+        if (enableForceCalibration && originalTs >= 0) {
             let isForceCalibrated = false;
 
             if (validTimes.length === 0) {
@@ -422,12 +473,16 @@ export function alignWhisperToLyrics(
                     }
                     currentLastTime = lineTokens[lineTokens.length - 1]!.time!;
                     isForceCalibrated = true;
+                    diagNoAnchor++;
                 }
             } else {
                 const generatedStart = validTimes[0]!;
-                const diff = generatedStart - originalTs;
-                if (Math.abs(diff) > calibrationThreshold) {
-                    const correction = originalTs - generatedStart;
+                const correction = originalTs - generatedStart;
+                // Record how far this line's LRC start sits from Whisper's, for the global-offset
+                // estimate after the loop. Recorded for every anchored line (even correction === 0),
+                // so the median and its spread see the whole distribution, not just the shifted lines.
+                correctionSamples.push(correction);
+                if (correction !== 0) {
                     for (const t of lineTokens) {
                         if (t.time !== null) {
                             t.time += correction;
@@ -437,8 +492,9 @@ export function alignWhisperToLyrics(
                     if (lastToken && lastToken.time !== null) {
                         currentLastTime = lastToken.time;
                     }
-                    isForceCalibrated = true;
+                    diagShift++;
                 }
+                isForceCalibrated = true;
             }
 
             // Boundary check: this line must not overlap with next line
@@ -456,6 +512,7 @@ export function alignWhisperToLyrics(
                     }
                     currentLastTime = lineTokens[lineTokens.length - 1]!.time!;
                     isForceCalibrated = true;
+                    diagBoundary++;
                 }
             }
 
@@ -529,22 +586,70 @@ export function alignWhisperToLyrics(
             }
         }
 
-        // 6e. Build output Line with Word[] from aligned tokens
+        // 6e. Build the output Line. Its startTime is the lyric's ORIGINAL line-level start, passed
+        //     through UNCHANGED: Whisper distributes the words inside the line (6c pins the first word
+        //     to this exact start) but never decides where the line begins. Reading startTime back off
+        //     words[0] here is what let each line slide off the LRC and stack into the visible drift.
+        //     endTime still follows the last aligned word, so the line's span covers the words it holds.
         const words = buildWordsFromTokens(lineTokens, originalLine);
-        const lineStartTime = words.length > 0 ? words[0].startTime : originalLine.startTime;
         const lineEndTime = words.length > 0 ? words[words.length - 1].endTime : originalLine.endTime;
 
         resultLines.push({
             ...originalLine,
             words,
-            startTime: lineStartTime,
+            startTime: originalLine.startTime,
             endTime: lineEndTime,
         });
     }
 
+    // 7. Global-offset correction. 6c locked every line to the LRC's RELATIVE timeline, which fixes
+    //    the spacing of lines but faithfully preserves any CONSTANT offset the whole LRC has from the
+    //    actual audio (an online track matched to another provider's LRC, a padded intro, etc) — the
+    //    listener hears every line late/early by the same amount. Detect exactly that and slide the
+    //    entire timeline onto the singing: when the per-line corrections all cluster around one Δ (low
+    //    MAD) it is a systematic offset, whereas cumulative drift spreads them out and is left alone
+    //    (6c already flattened it). One uniform shift keeps the locked relative structure intact —
+    //    only the global position moves, so this never re-introduces per-line jitter.
+    let globalOffsetApplied = 0;
+    if (enableGlobalOffsetCorrection && correctionSamples.length >= GLOBAL_OFFSET_MIN_ANCHOR_LINES) {
+        const delta = median(correctionSamples);
+        const spread = median(correctionSamples.map(c => Math.abs(c - delta)));
+        if (spread < GLOBAL_OFFSET_MAX_SPREAD && Math.abs(delta) > GLOBAL_OFFSET_MIN_SHIFT) {
+            for (const line of resultLines) {
+                line.startTime = Math.max(0, line.startTime - delta);
+                line.endTime = Math.max(0, line.endTime - delta);
+                for (const w of line.words) {
+                    w.startTime = Math.max(0, w.startTime - delta);
+                    w.endTime = Math.max(0, w.endTime - delta);
+                }
+            }
+            globalOffsetApplied = delta;
+        }
+    }
+
+    const diagMatchRate = userCharSequence.length > 0
+        ? (diagEqual / userCharSequence.length) * 100
+        : 0;
+    console.log(`[WordAligner] lines=${lyricLines.length} userTokens=${userCharSequence.length} aiTokens=${aiCharSequence.length} matched=${diagEqual}(${diagMatchRate.toFixed(1)}%) unmatched=${diagDelete + diagReplaceUser} extra=${diagInsert + diagReplaceAi} | forceCal: noAnchor=${diagNoAnchor} shift=${diagShift} boundary=${diagBoundary} globalOffset=${globalOffsetApplied.toFixed(3)}s`);
+
+    // Attach the quality report so the overview UI can explain an inaccurate timeline
+    // (low match rate / many no-anchor lines) without the user reading raw logs.
+    // Run info (model/language/segments) is filled in later by whisperAlignService.
     return {
         lines: resultLines,
         isWordByWord: true,
+        alignDiagnostics: {
+            matchRate: Math.round(diagMatchRate * 10) / 10,
+            userTokens: userCharSequence.length,
+            aiTokens: aiCharSequence.length,
+            matchedTokens: diagEqual,
+            deletedTokens: diagDelete + diagReplaceUser,
+            insertedTokens: diagInsert + diagReplaceAi,
+            noAnchorLines: diagNoAnchor,
+            shiftCalibratedLines: diagShift,
+            boundaryRespacedLines: diagBoundary,
+            globalOffsetMs: Math.round(globalOffsetApplied * 1000),
+        },
     };
 }
 
@@ -552,17 +657,31 @@ export function alignWhisperToLyrics(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Median of a numeric array (copy-sorted; 0 for an empty input). The robust centre for the global
+ * offset estimate — unlike a mean it is not dragged off by a single mis-matched line.
+ */
+function median(values: number[]): number {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = sorted.length >> 1;
+    return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
+}
+
 function matchReplaceRegion(
     userSeq: AlignToken[],
     aiSeq: AiToken[],
     i1: number, i2: number,
     j1: number, j2: number,
     lastValidTime: number,
-): number {
+): { lastValidTime: number; rescued: number } {
     const userSlice = userSeq.slice(i1, i2).map(t => t.cleanText);
     const aiSlice = aiSeq.slice(j1, j2).map(t => t.text);
-    if (userSlice.length === 0 || aiSlice.length === 0) return lastValidTime;
+    if (userSlice.length === 0 || aiSlice.length === 0) return { lastValidTime, rescued: 0 };
 
+    // Count lyric tokens this local sub-alignment rescues with a real Whisper timestamp,
+    // so the confidence report credits replace-region matches instead of showing them as unmatched.
+    let rescued = 0;
     const subMatcher = new SequenceMatcher(userSlice, aiSlice);
     for (const [tag, si1, si2, sj1, sj2] of subMatcher.getOpcodes()) {
         if (tag !== 'equal') continue;
@@ -575,9 +694,10 @@ function matchReplaceRegion(
             }
             userSeq[userIdx].time = matchedTime;
             lastValidTime = matchedTime;
+            rescued++;
         }
     }
-    return lastValidTime;
+    return { lastValidTime, rescued };
 }
 
 function cleanHallucinations(lineTokens: AlignToken[]): void {

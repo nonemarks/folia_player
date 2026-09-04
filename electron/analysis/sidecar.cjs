@@ -30,7 +30,9 @@ const RUNNER_SCRIPT = path.join(__dirname, 'htdemucs_runner.py')
     .replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
 
 /** A hung separation should not wedge the queue forever. The longest real run measured is ~17s (a
- *  40s window plus a cold model load); this is the line for "not running", not a performance target. */
+ *  40s window plus a cold model load); this is the line for "not running", not a performance target.
+ *  It is a DEFAULT: a caller separating a whole track rather than a transition window passes its own
+ *  larger `timeoutMs`, because a full song on the CPU runs past this. See `separate`. */
 const TIMEOUT_MS = 120_000;
 
 /**
@@ -40,16 +42,16 @@ const TIMEOUT_MS = 120_000;
  * files below: that stdout is a diagnostic channel rather than data, and that a successful run still
  * has to say what it cost - logging only failures is what let a 4GB spike run unmeasured for a day.
  */
-const runRunner = (pythonExe, args) => new Promise((resolve, reject) => {
-    const child = spawn(pythonExe, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+const runRunner = (pythonExe, args, env, timeoutMs = TIMEOUT_MS) => new Promise((resolve, reject) => {
+    const child = spawn(pythonExe, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
     let output = '';
     child.stderr.on('data', (chunk) => { output += String(chunk); });
     child.stdout.on('data', (chunk) => { output += String(chunk); });
 
     const timer = setTimeout(() => {
         child.kill();
-        reject(new Error(`htdemucs runner timed out after ${TIMEOUT_MS / 1000}s`));
-    }, TIMEOUT_MS);
+        reject(new Error(`htdemucs runner timed out after ${timeoutMs / 1000}s`));
+    }, timeoutMs);
     timer.unref?.();
 
     child.on('error', (error) => { clearTimeout(timer); reject(error); });
@@ -81,8 +83,14 @@ const floatsFrom = (buf) => {
  * @param script    absolute path to htdemucs_runner.py (ships with the app)
  * @param modelPath absolute path to htdemucs.onnx
  * @param left,right equal-length Float32Array, the raw stereo mix at 44100
+ * @param provider  'cpu' (default) or 'cuda'. Carried to the runner as HTDEMUCS_PROVIDER rather than
+ *   an argv slot, so the runner's contract is unchanged and worker.cjs - which never passes it - keeps
+ *   running the CPU EP exactly as before. 'cuda' only does anything in a runtime built with
+ *   onnxruntime-gpu AND on a machine with system CUDA/cuDNN; the runner falls back to CPU otherwise.
+ * @param timeoutMs kill the runner past this. Defaults to TIMEOUT_MS, tuned for Automix's 40s window;
+ *   a whole-track caller passes more, since a full song on the CPU runs longer than that.
  */
-const separate = async ({ pythonExe, script, modelPath, left, right }) => {
+const separate = async ({ pythonExe, script, modelPath, left, right, provider = 'cpu', timeoutMs = TIMEOUT_MS }) => {
     const total = left.length;
     // A per-call 0700 directory rather than two predictable names in the shared temp root. os.tmpdir()
     // is multi-user on Linux/macOS, and a name built only from pid+time+counter lets another local user
@@ -99,7 +107,8 @@ const separate = async ({ pythonExe, script, modelPath, left, right }) => {
         Buffer.from(right.buffer, right.byteOffset, total * 4).copy(inBuf, total * 4);
         await fsp.writeFile(inPath, inBuf);
 
-        await runRunner(pythonExe, [script, inPath, outPath, String(total), modelPath]);
+        await runRunner(pythonExe, [script, inPath, outPath, String(total), modelPath],
+            { ...process.env, HTDEMUCS_PROVIDER: provider }, timeoutMs);
 
         const floats = floatsFrom(await fsp.readFile(outPath));
         if (floats.length !== RETURNED.length * 2 * total) {

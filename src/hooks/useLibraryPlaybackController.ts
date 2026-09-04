@@ -754,6 +754,7 @@ export function useLibraryPlaybackController({
                             preferredSource: settings.preferredAlternativeLyricSource,
                             song: navidromeSong,
                             whisperAlignEnabled: settings.whisperAlignEnabled,
+                            whisperAlignModel: settings.whisperAlignModel,
                         });
                         if (bestMatch?.isPureMusic) {
                             isAutoMatched = true;
@@ -1212,6 +1213,7 @@ export function useLibraryPlaybackController({
                     metadataCandidate: matchContext.metadataCandidate,
                     song: localData,
                     whisperAlignEnabled: settings.whisperAlignEnabled,
+                    whisperAlignModel: settings.whisperAlignModel,
                 });
 
                 if (!bestMatch) {
@@ -1259,6 +1261,7 @@ export function useLibraryPlaybackController({
                     preferredSource: settings.preferredAlternativeLyricSource,
                     song: navidromeSong,
                     whisperAlignEnabled: settings.whisperAlignEnabled,
+                    whisperAlignModel: settings.whisperAlignModel,
                 });
 
                 if (!bestMatch) {
@@ -1310,6 +1313,7 @@ export function useLibraryPlaybackController({
                 preferredSource: settings.preferredAlternativeLyricSource,
                 song: currentSong,
                 whisperAlignEnabled: settings.whisperAlignEnabled,
+                whisperAlignModel: settings.whisperAlignModel,
                 providerCandidate: sourceRef.kind === 'online'
                     && (sourceRef.providerId === 'netease' || sourceRef.providerId === 'kugou')
                     ? { providerId: sourceRef.providerId as 'netease' | 'kugou', song: currentSong, lyricsResult: ownLyricsResult }

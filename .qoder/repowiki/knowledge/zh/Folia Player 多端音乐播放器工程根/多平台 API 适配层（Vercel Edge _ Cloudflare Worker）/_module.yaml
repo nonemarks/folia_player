@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: api_adapters
+title: 多平台 API 适配层（Vercel Edge / Cloudflare Worker）
+scope:
+    - api/
+    - api-ts/
+    - worker/
+source_files: []
+depends_on: []
+related_to:
+    - path: deploy_docker
+    - path: frontend_app

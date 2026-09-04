@@ -46,16 +46,41 @@ const PBS = (triple) => 'https://github.com/astral-sh/python-build-standalone/re
  * Pinned, because this is a binary artifact users download and a floating version would mean two
  * listeners on the same app version running different inference.
  *
- * onnxruntime 1.29 is not a free choice. The model's iSTFT is a real DFT operator with `inverse`
- * and `onesided` both set, and ORT rejected that combination as a shape-inference error until
- * 1.25 - measured, 1.22 and 1.23 both refuse to LOAD the model. That floor is also what decides
- * the platform table below, because 1.25 is where the macOS x86_64 wheel stops existing.
+ * onnxruntime's floor is not a free choice, and there are TWO floors. The model's iSTFT is a real
+ * DFT operator with `inverse` and `onesided` both set: ORT refused to even LOAD that combination, as
+ * a shape-inference error, until 1.25 (measured - 1.22 and 1.23 both reject the model). But loading
+ * is not running. 1.26 loads it and then MIS-RUNS the iSTFT: its Reshape comes out {1376,1025,2}
+ * against a requested {8,172,4096} and the session throws during inference - on the CPU EP exactly as
+ * on CUDA, measured here - so 1.26 breaks EVERY separation, not just the GPU ones. The RUN floor is
+ * therefore 1.27+, and this recipe pins 1.29.0, whose CPU build runs the model clean (measured: 3s of
+ * stereo in, correctly-sized stems out). 1.25 is separately where the macOS x86_64 wheel stops
+ * existing, which is what decides the platform table below.
+ *
+ * The onnxruntime wheel is chosen PER PLATFORM, and Windows alone gets the GPU build:
+ *   - win32-x64 -> onnxruntime-gpu==1.29.0 from the Azure onnxruntime-cuda-12 feed, NOT PyPI. Since
+ *     1.27, PyPI's onnxruntime-gpu is built against CUDA 13.0; Microsoft publishes the CUDA-12 build
+ *     of those same versions on that feed instead. We want the CUDA-12 one: CUDA 12.8 is the first
+ *     toolkit that knows Blackwell (sm_120), and by NVIDIA's minor-version compatibility a 12.x build
+ *     runs on any CUDA 12.x host - so the 12.9 the RTX 50-series listener already has is covered,
+ *     with no CUDA 13 runtime they would otherwise never install. The wheel is fetched in its own pip
+ *     call pinned to that index (see `ortIndex`): pip will not deterministically prefer one index over
+ *     another for an identical version string, so one mixed call could silently pull the CUDA-13 wheel.
+ *     The CUDA/cuDNN runtime DLLs are NOT bundled - the runner resolves them off the system and falls
+ *     back to the CPU EP when they are missing, so a box without CUDA still separates, just on the CPU.
+ *   - darwin-arm64 / linux-x64 -> onnxruntime==1.29.0. There is no onnxruntime-gpu wheel for macOS
+ *     at all (its GPU path is CoreML, which ships in the plain package), and this build's GPU target
+ *     is the Windows/CUDA listener; the plain package's CPU EP is what those two have always run.
  *
  * The dependency list is explicit and installed with --no-deps. onnxruntime declares more than it
- * needs to import (protobuf, sympy, coloredlogs); these five are what the runner actually touches,
+ * needs to import (protobuf, sympy, coloredlogs); these are what the runner actually touches,
  * and it is the set the hand-built runtime shipped with and ran on.
  */
-const WHEELS = ['onnxruntime==1.29.0', 'numpy==2.4.6', 'flatbuffers', 'packaging', 'psutil'];
+const ORT_CPU = 'onnxruntime==1.29.0';
+const ORT_GPU = 'onnxruntime-gpu==1.29.0';
+/** The CUDA-12 build of ORT_GPU. PyPI's onnxruntime-gpu at this version is the CUDA-13 build; the
+ *  CUDA-12 one - the one that runs on a listener's existing CUDA 12.x - is only on this Azure feed. */
+const ORT_GPU_INDEX = 'https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/';
+const COMMON_WHEELS = ['numpy==2.4.6', 'flatbuffers', 'packaging', 'psutil'];
 const PY_TAG = '3.11';
 
 /**
@@ -73,18 +98,22 @@ const TARGETS = {
         wheelTag: 'win_amd64',
         exe: 'python.exe',
         sitePackages: ['Lib', 'site-packages'],
+        ort: ORT_GPU,
+        ortIndex: ORT_GPU_INDEX,
     },
     'darwin-arm64': {
         triple: 'aarch64-apple-darwin',
         wheelTag: 'macosx_14_0_arm64',
         exe: join('bin', 'python3'),
         sitePackages: ['lib', `python${PY_TAG}`, 'site-packages'],
+        ort: ORT_CPU,
     },
     'linux-x64': {
         triple: 'x86_64-unknown-linux-gnu',
         wheelTag: 'manylinux_2_28_x86_64',
         exe: join('bin', 'python3'),
         sitePackages: ['lib', `python${PY_TAG}`, 'site-packages'],
+        ort: ORT_CPU,
     },
 };
 
@@ -223,18 +252,26 @@ const buildOne = async (platform) => {
         if (path.startsWith('bin/') && path !== exe) delete entries[path];
     }
 
-    // --no-deps with an explicit list: see WHEELS. Downloaded rather than installed, because the
-    // interpreter these wheels are FOR cannot run on the machine fetching them - so pip is never
-    // asked to resolve or build anything, only to pick the right prebuilt file for a platform tag.
+    // --no-deps with an explicit list: see ORT_CPU/ORT_GPU/COMMON_WHEELS. Downloaded rather than
+    // installed, because the interpreter these wheels are FOR cannot run on the machine fetching
+    // them - so pip is never asked to resolve or build anything, only to pick the right prebuilt
+    // file for a platform tag. The onnxruntime spec is this target's own (GPU on Windows, CPU else).
     console.log('  fetching wheels');
     const wheelDir = join(CACHE, `wheels-${platform}`);
     await rm(wheelDir, { recursive: true, force: true });
     await mkdir(wheelDir, { recursive: true });
-    run(HOST_PYTHON, [
-        '-m', 'pip', 'download', '--quiet', '--no-deps', '--only-binary=:all:',
-        '--platform', target.wheelTag, '--python-version', PY_TAG,
-        '-d', `wheels-${platform}`, ...WHEELS,
-    ], CACHE);
+    const pipDownload = ['-m', 'pip', 'download', '--quiet', '--no-deps', '--only-binary=:all:',
+        '--platform', target.wheelTag, '--python-version', PY_TAG, '-d', `wheels-${platform}`];
+    if (target.ortIndex) {
+        // The ORT wheel comes from its own index ONLY (see ORT_GPU_INDEX): the same version string on
+        // PyPI is a different CUDA build, and pip does not deterministically prefer one index over
+        // another for an equal version, so the two are fetched apart to keep the CUDA-12 wheel the one
+        // we get. The rest are CPU-only and index-agnostic, so they come from the default PyPI.
+        run(HOST_PYTHON, [...pipDownload, '--index-url', target.ortIndex, target.ort], CACHE);
+        run(HOST_PYTHON, [...pipDownload, ...COMMON_WHEELS], CACHE);
+    } else {
+        run(HOST_PYTHON, [...pipDownload, target.ort, ...COMMON_WHEELS], CACHE);
+    }
     const site = target.sitePackages.join('/');
     for (const wheel of await readdir(wheelDir)) {
         for (const [name, body] of Object.entries(unzipSync(await readFile(join(wheelDir, wheel))))) {

@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: dev_probes
+title: 组件探针开发沙箱（Component Probes）
+scope:
+    - dev/
+source_files: []
+depends_on: []
+related_to:
+    - path: tests

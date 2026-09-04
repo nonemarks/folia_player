@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AudioLines, ChevronRight, ListFilter, Monitor, PlayCircle, RefreshCw, Settings2, Timer, Sparkles } from 'lucide-react';
+import { AudioLines, BarChart3, ChevronRight, ListFilter, Monitor, PlayCircle, RefreshCw, Settings2, Timer, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import type { LocalLyricsPriority, QueueAddBehavior, ReplayGainMode, Theme } from '../../../types';
@@ -8,7 +8,6 @@ import { useAudioOutputDevices } from '../../../hooks/useAudioOutputDevices';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { LYRIC_MATCH_SOURCES } from '../../../utils/lyrics/lyricMatchSources';
 import { getLyricProviderPreferenceLabel } from '../../../utils/lyrics/lyricSourceLabels';
-import WhisperEnvCheck from '../../shared/WhisperEnvCheck';
 import TransitionSettingsSection from './TransitionSettingsSection';
 import { SettingsAnchor } from './navigation/SettingsAnchorContext';
 import SettingsSectionHeading from './navigation/SettingsSectionHeading';
@@ -25,6 +24,8 @@ type PlaybackSettingsSubviewProps = {
     onAudioOutputDeviceChange: (deviceId: string) => Promise<boolean> | boolean;
     onOpenGlobalLyricOffsetSettings: () => void;
     onOpenLyricFilterSettings: () => void;
+    onOpenWhisperSettings: () => void;
+    onOpenWhisperLyricOverview: () => void;
     replayGainMode: ReplayGainMode;
     onReplayGainModeChange: (mode: ReplayGainMode) => void;
     settingsCardClass: string;
@@ -37,6 +38,8 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
     onAudioOutputDeviceChange,
     onOpenGlobalLyricOffsetSettings,
     onOpenLyricFilterSettings,
+    onOpenWhisperSettings,
+    onOpenWhisperLyricOverview,
     replayGainMode,
     onReplayGainModeChange,
     settingsCardClass,
@@ -52,13 +55,10 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
         queueAddBehavior,
         globalLyricTimelineOffsetMs,
         whisperAlignEnabled,
-        whisperAlignModel,
         onToggleAutoUseBestLyric,
         onPreferredAlternativeLyricSourceChange,
         onLocalLyricsPriorityChange,
         onQueueAddBehaviorChange,
-        onToggleWhisperAlign,
-        onSetWhisperAlignModel,
     } = useSettingsUiStore(useShallow(state => ({
         audioOutputDeviceId: state.audioOutputDeviceId,
         autoUseBestLyric: state.autoUseBestLyric,
@@ -67,13 +67,10 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
         queueAddBehavior: state.queueAddBehavior,
         globalLyricTimelineOffsetMs: state.globalLyricTimelineOffsetMs,
         whisperAlignEnabled: state.whisperAlignEnabled,
-        whisperAlignModel: state.whisperAlignModel,
         onToggleAutoUseBestLyric: state.handleToggleAutoUseBestLyric,
         onPreferredAlternativeLyricSourceChange: state.handleSetPreferredAlternativeLyricSource,
         onLocalLyricsPriorityChange: state.handleSetLocalLyricsPriority,
         onQueueAddBehaviorChange: state.handleSetQueueAddBehavior,
-        onToggleWhisperAlign: state.handleToggleWhisperAlign,
-        onSetWhisperAlignModel: state.handleSetWhisperAlignModel,
     })));
     const {
         devices: audioOutputDevices,
@@ -344,55 +341,44 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
                             </div>
                         </div>
                     </button>
-                    <div className="p-4 flex items-center justify-between gap-4 border-t" style={{ borderColor: 'var(--border-primary, rgba(255,255,255,0.06))' }}>
-                        <div className="space-y-1">
-                            <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                <Sparkles size={14} />
-                                {t('options.whisperAlign')}
+                    <button
+                        type="button"
+                        onClick={onOpenWhisperSettings}
+                        className="w-full p-4 border-t text-left transition-colors hover:bg-white/8"
+                        style={{ borderColor: 'var(--border-primary, rgba(255,255,255,0.06))' }}
+                    >
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                    <Sparkles size={14} />
+                                    {t('options.whisperAlign')}
+                                </div>
+                                <div className="text-[11px] opacity-50 max-w-[420px]" style={{ color: 'var(--text-secondary)' }}>
+                                    {t('options.whisperAlignDesc')}
+                                </div>
                             </div>
-                            <div className="text-[11px] opacity-50 max-w-[420px]" style={{ color: 'var(--text-secondary)' }}>
-                                {t('options.whisperAlignDesc')}
-                            </div>
+                            <ChevronRight size={18} className="shrink-0 opacity-60" style={{ color: 'var(--text-primary)' }} />
                         </div>
-                        {renderToggle(whisperAlignEnabled, () => onToggleWhisperAlign(!whisperAlignEnabled))}
-                    </div>
-                    {whisperAlignEnabled && (
-                        <WhisperEnvCheck>
-                            <div className="p-4 space-y-3 border-t" style={{ borderColor: 'var(--border-primary, rgba(255,255,255,0.06))' }}>
-                                <div className="space-y-1">
-                                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                        {t('options.whisperAlignModel')}
-                                    </div>
-                                    <div className="text-[11px] opacity-50 max-w-[420px]" style={{ color: 'var(--text-secondary)' }}>
-                                        {t('options.whisperAlignModelDesc')}
-                                    </div>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onOpenWhisperLyricOverview}
+                        className="w-full p-4 border-t text-left transition-colors hover:bg-white/8"
+                        style={{ borderColor: 'var(--border-primary, rgba(255,255,255,0.06))' }}
+                    >
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                    <BarChart3 size={14} />
+                                    {t('whisperOverview.entryTitle')}
                                 </div>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                    {([
-                                        { value: 'tiny', label: t('options.whisperAlignModelTiny') },
-                                        { value: 'base', label: t('options.whisperAlignModelBase') },
-                                        { value: 'small', label: t('options.whisperAlignModelSmall') },
-                                        { value: 'medium', label: t('options.whisperAlignModelMedium') },
-                                    ] as Array<{ value: string; label: string }>).map((option) => {
-                                        const selected = whisperAlignModel === option.value;
-                                        return (
-                                            <button
-                                                key={option.value}
-                                                type="button"
-                                                onClick={() => onSetWhisperAlignModel(option.value)}
-                                                className="rounded-xl border px-3 py-2 text-center transition-colors"
-                                                style={getAccentOptionStyle(selected)}
-                                            >
-                                                <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-                                                    {option.label}
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
+                                <div className="text-[11px] opacity-50 max-w-[420px]" style={{ color: 'var(--text-secondary)' }}>
+                                    {t('whisperOverview.entryDesc')}
                                 </div>
                             </div>
-                        </WhisperEnvCheck>
-                    )}
+                            <ChevronRight size={18} className="shrink-0 opacity-60" style={{ color: 'var(--text-primary)' }} />
+                        </div>
+                    </button>
                     <button
                         type="button"
                         onClick={onOpenLyricFilterSettings}

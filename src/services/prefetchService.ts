@@ -284,6 +284,7 @@ const prefetchSong = async (
                             preferredSource: settings.preferredAlternativeLyricSource,
                             song,
                             whisperAlignEnabled: settings.whisperAlignEnabled,
+                            whisperAlignModel: settings.whisperAlignModel,
                             ...(sourceRef.providerId === 'netease' || sourceRef.providerId === 'kugou' || sourceRef.providerId === 'qq'
                                 ? { providerCandidate: {
                                     providerId: sourceRef.providerId as 'netease' | 'kugou' | 'qq',

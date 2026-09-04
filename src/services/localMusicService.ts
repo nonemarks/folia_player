@@ -1270,6 +1270,7 @@ export async function matchLyrics(song: LocalSong): Promise<LyricData | null> {
                         exactMatchOnly: Boolean(matchContext.metadataCandidate && !shouldUseBestLyric),
                         song,
                         whisperAlignEnabled: settings.whisperAlignEnabled,
+                        whisperAlignModel: settings.whisperAlignModel,
                     },
                 );
 

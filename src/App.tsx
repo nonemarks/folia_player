@@ -573,14 +573,20 @@ export default function App() {
 
     // Force regenerate word-level lyrics using Whisper alignment
     const whisperAlignEnabled = useSettingsUiStore(state => state.whisperAlignEnabled);
+    // Use the user's selected model here too; without it this path fell back to 'base' and
+    // under-detected on instrumental-heavy tracks — the same defect the auto-align hook had.
+    const whisperAlignModel = useSettingsUiStore(state => state.whisperAlignModel);
     const handleForceRegenerateLyrics = useCallback(async () => {
         if (!whisperAlignEnabled || !currentSong || !lyrics) return;
         const { alignLyricsWithWhisper } = await import('./services/whisperAlignService');
-        const alignedLyrics = await alignLyricsWithWhisper(currentSong, lyrics);
+        // force: re-transcribe even when the lyrics are already flagged isWordByWord and ignore
+        // the cached result. Otherwise this "regenerate" action silently returned null on any
+        // song a previous pass had aligned, so an inaccurate timeline could never be redone.
+        const alignedLyrics = await alignLyricsWithWhisper(currentSong, lyrics, { model: whisperAlignModel, force: true });
         if (alignedLyrics) {
             setLyrics(alignedLyrics);
         }
-    }, [whisperAlignEnabled, currentSong, lyrics, setLyrics]);
+    }, [whisperAlignEnabled, whisperAlignModel, currentSong, lyrics, setLyrics]);
 
     // On song change, restore that song's remembered manual offset (0 when never adjusted, so a
     // fresh song behaves exactly like the old reset). currentSongFullRef.current holds the live song

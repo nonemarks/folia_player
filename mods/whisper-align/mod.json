@@ -1,0 +1,11 @@
+{
+  "id": "whisper-align",
+  "name": "Whisper 歌词对齐",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "author": "Folia",
+  "description": "基于 Whisper.cpp 的逐字歌词对齐。自动检测环境、管理模型下载、转录音频并生成逐字时间轴。需在模组面板中启用后生效。",
+  "entry": "index.cjs",
+  "depends": [],
+  "permissions": ["filesystem.data", "runtime.playback"]
+}

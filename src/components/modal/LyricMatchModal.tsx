@@ -23,6 +23,7 @@ import { LyricPreviewPanel } from './LyricPreviewPanel';
 import { DurationMatchBadge } from './DurationMatchBadge';
 import WhisperSettingsPanel from '../shared/WhisperSettingsPanel';
 import ErrorBoundary from '../shared/ErrorBoundary';
+import { isWhisperFeaturePresent } from '../../services/whisperModService';
 
 interface LyricMatchModalProps {
     song: LocalSong;
@@ -59,10 +60,17 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
 
     const [source, setSource] = useState<LyricMatchSource>('netease');
 
-    // Debug: log source changes
+    // Whether the Whisper feature surface is present (mod enabled or direct IPC bridge).
+    const [whisperAvailable, setWhisperAvailable] = useState(true); // default true to avoid flicker
     useEffect(() => {
-        console.log('[LyricMatchModal] source changed to:', source);
-    }, [source]);
+        isWhisperFeaturePresent().then(setWhisperAvailable);
+    }, []);
+
+    // Filter sources based on Whisper availability
+    const availableSources = useMemo(() =>
+        LYRIC_MATCH_SOURCES.filter(src => src !== 'whisper' || whisperAvailable),
+        [whisperAvailable]
+    );
 
     // Online data toggle state (dots)
     const [lyricsSource, setLyricsSource] = useState<'local' | 'embedded' | 'online' | undefined>(song.lyricsSource || 'online');
@@ -276,7 +284,7 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                     {/* Tab bar: always visible */}
                     <div className={`flex border-b ${borderColor} px-6 pt-3 gap-4`}>
-                        {LYRIC_MATCH_SOURCES
+                        {availableSources
                             .map(id => ({ id, label: getLyricMatchSourceLabel(id) }))
                             .map(t => {
                                 const isSelected = source === t.id;
@@ -299,12 +307,10 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
                     </div>
 
                     {/* Content area: changes based on selected tab */}
-                    <ErrorBoundary onError={(err, info) => { console.error('[LyricMatchModal] ErrorBoundary caught:', err, info); }}>
+                    <ErrorBoundary>
                     {source === 'whisper' ? (
                         /* WHISPER TAB: Full-width settings + monitoring panel */
-                        <div className="flex-1 min-h-0 overflow-y-auto" data-debug-whisper="true">
-                            {/* DEBUG: visible marker to confirm Whisper tab renders */}
-                            <div style={{ padding: '4px 8px', background: 'rgba(99,102,241,0.1)', fontSize: '10px', color: '#818cf8' }}>[DEBUG: Whisper tab rendered]</div>
+                        <div className="flex-1 min-h-0 overflow-y-auto">
                             <WhisperSettingsPanel
                                 song={song}
                                 lyrics={song.matchedLyrics ?? null}

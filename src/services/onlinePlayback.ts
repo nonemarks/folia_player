@@ -186,6 +186,7 @@ export async function loadOnlineSongLyrics(
                 preferredSource: settings.preferredAlternativeLyricSource,
                 song,
                 whisperAlignEnabled: settings.whisperAlignEnabled,
+                whisperAlignModel: settings.whisperAlignModel,
                 providerCandidate: song.sourceRef?.kind === 'online'
                     && (song.sourceRef.providerId === 'netease' || song.sourceRef.providerId === 'kugou' || song.sourceRef.providerId === 'qq')
                     ? {

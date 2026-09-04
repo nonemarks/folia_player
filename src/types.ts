@@ -69,11 +69,36 @@ export interface Line {
   chorusEffect?: 'bars' | 'circles' | 'beams';
 }
 
+/**
+ * Quality report for one Whisper word-level alignment pass. Attached to LyricData so the
+ * overview UI can show why a timeline is accurate or "line-averaged" without reading logs.
+ */
+export interface WhisperAlignDiagnostics {
+  // Alignment quality (computed inside alignWhisperToLyrics).
+  matchRate: number;             // % of lyric tokens that matched a real Whisper token
+  userTokens: number;            // total lyric tokens
+  aiTokens: number;              // total Whisper tokens
+  matchedTokens: number;         // tokens that got a real Whisper timestamp
+  deletedTokens: number;         // lyric tokens Whisper never transcribed (interpolated)
+  insertedTokens: number;        // Whisper tokens absent from the lyrics (misheard/hallucinated)
+  noAnchorLines: number;         // lines with zero matches -> even distribution (line-averaged)
+  shiftCalibratedLines: number;  // lines snapped back to their original start time
+  boundaryRespacedLines: number; // lines re-spaced to avoid overlapping the next line
+  globalOffsetMs?: number;       // constant whole-timeline shift applied to land the LRC on the audio (0/absent = none)
+  // Run info (filled in by whisperAlignService after transcription).
+  model?: string;
+  language?: string;
+  segments?: number;             // Whisper transcription segment count
+  vocalSeparated?: boolean;      // htdemucs actually isolated the vocals for this pass (not just requested)
+  alignedAt?: number;            // epoch ms of the alignment pass
+}
+
 export interface LyricData {
   lines: Line[];
   title?: string;
   artist?: string;
   isWordByWord?: boolean;
+  alignDiagnostics?: WhisperAlignDiagnostics;
   ttml?: {
     timingMode?: 'Word' | 'Line';
     agents?: Record<string, LyricAgent>;

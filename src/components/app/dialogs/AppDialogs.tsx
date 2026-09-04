@@ -58,7 +58,7 @@ const AppDialogs: React.FC<AppDialogsProps> = ({ model }) => {
             </AnimatePresence>
 
             {lyricMatchDialog && (
-                <ErrorBoundary onError={(err, info) => { console.error('[AppDialogs] LyricMatchModal ErrorBoundary caught:', err, info); }}>
+                <ErrorBoundary>
                     <LyricMatchModal {...lyricMatchDialog} />
                 </ErrorBoundary>
             )}

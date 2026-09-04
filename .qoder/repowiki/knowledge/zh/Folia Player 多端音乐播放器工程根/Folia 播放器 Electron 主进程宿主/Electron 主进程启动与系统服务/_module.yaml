@@ -1,0 +1,17 @@
+schema_version: 1
+module_path: electron_host/startup_and_services
+title: Electron 主进程启动与系统服务
+scope:
+    - electron/neteaseApiStartup.cjs
+    - electron/qqApiStartup.cjs
+    - electron/qqAuthSessionRepository.cjs
+    - electron/updateChannels.cjs
+    - electron/localCoverAssets.cjs
+    - electron/audioCachePrune.cjs
+    - electron/voiceInputPause.cjs
+    - electron/whisperAlign.cjs
+    - electron/windowPlaybackHandoff.cjs
+    - electron/displaySleepBlocker.cjs
+source_files: []
+depends_on: []
+related_to: []

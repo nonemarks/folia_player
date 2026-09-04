@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: electron_host/api_bridges
+title: Electron 外部 API 桥接层（酷狗、歌词、Stage）
+scope:
+    - electron/kugouApiBridge.cjs
+    - electron/lyricApi.cjs
+    - electron/stageApi.cjs
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend_app

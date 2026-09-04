@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: electron_host/platform_integrations
+title: Electron 平台集成（Discord Rich Presence、Linux 密码存储、Windows/Wayland 壁纸模式）
+scope:
+    - electron/discordPresence.cjs
+    - electron/linuxPasswordStore.cjs
+    - electron/windowsWallpaperController.cjs
+    - electron/wallpaperWatchdog.cjs
+source_files: []
+depends_on: []
+related_to: []

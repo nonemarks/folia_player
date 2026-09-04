@@ -1,0 +1,37 @@
+schema_version: 1
+module_path: ""
+title: Folia Player 多端音乐播放器工程根
+scope:
+    - README.md
+    - .gitignore
+    - package.json
+    - tsconfig.json
+    - vite.config.ts
+    - playwright.config.ts
+    - vitest.config.ts
+    - vercel.json
+    - wrangler.jsonc
+    - metadata.json
+    - .all-contributorsrc
+    - .editorconfig
+    - .env.example
+    - .gitattributes
+    - .npmrc
+    - .nvmrc
+    - AGENTS.md
+    - CONTRIBUTORS.md
+    - LICENSE
+    - benchmark_chorus.js
+    - build-electron.cjs
+    - dev-probe.html
+    - index.html
+    - mod-export.html
+    - package-lock.json
+    - postcss.config.js
+    - realeco-release
+    - stage-client.html
+    - tailwind.config.js
+    - tsc_output.txt
+source_files: []
+depends_on: []
+related_to: []

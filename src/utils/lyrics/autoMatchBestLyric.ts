@@ -55,6 +55,8 @@ export interface AutoMatchBestLyricOptions {
     song?: LocalSong | SongResult | { id: string | number; title?: string; name?: string; filePath?: string };
     /** Whether Whisper alignment is enabled in settings. */
     whisperAlignEnabled?: boolean;
+    /** Which Whisper model to align with; the service falls back to 'base' if omitted. */
+    whisperAlignModel?: string;
 }
 
 export type AutoMatchBestLyricMatch = {
@@ -557,7 +559,7 @@ export async function autoMatchBestLyric(
             }
             try {
                 console.log(`[autoMatchBestLyric] Attempting Whisper alignment on ${bestLineLevelLyrics.source} lyrics...`);
-                const alignedLyrics = await alignLyricsWithWhisper(options.song, bestLineLevelLyrics.lyrics);
+                const alignedLyrics = await alignLyricsWithWhisper(options.song, bestLineLevelLyrics.lyrics, { model: options.whisperAlignModel });
                 if (alignedLyrics && alignedLyrics.isWordByWord) {
                     console.log('[autoMatchBestLyric] Whisper alignment succeeded! Returning word-by-word lyrics.');
                     return {
