@@ -1,7 +1,7 @@
 import React, { useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle } from 'lucide-react';
-import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
+import { useWhisperSettingsStore } from '../../stores/useWhisperSettingsStore';
 import { modelsPresent, subscribeModelAvailability } from '../../services/automix/modelAvailability';
 
 // src/components/shared/WhisperVocalSeparationToggle.tsx
@@ -36,10 +36,10 @@ const ToggleSwitch: React.FC<{ on: boolean; onClick: () => void }> = ({ on, onCl
 
 const WhisperVocalSeparationToggle: React.FC = () => {
     const { t } = useTranslation();
-    const vocalSeparation = useSettingsUiStore(state => state.whisperAlignVocalSeparation);
-    const vocalSeparationGpu = useSettingsUiStore(state => state.whisperAlignVocalSeparationGpu);
-    const onSetVocalSeparation = useSettingsUiStore(state => state.handleSetWhisperAlignVocalSeparation);
-    const onSetVocalSeparationGpu = useSettingsUiStore(state => state.handleSetWhisperAlignVocalSeparationGpu);
+    const vocalSeparation = useWhisperSettingsStore(state => state.whisperAlignVocalSeparation);
+    const vocalSeparationGpu = useWhisperSettingsStore(state => state.whisperAlignVocalSeparationGpu);
+    const onSetVocalSeparation = useWhisperSettingsStore(state => state.handleSetWhisperAlignVocalSeparation);
+    const onSetVocalSeparationGpu = useWhisperSettingsStore(state => state.handleSetWhisperAlignVocalSeparationGpu);
 
     // htdemucs 就绪 === 权重 AND Python runtime 都在磁盘（见 modelPaths.modelsPresent 的口径）。
     // 实时快照：下载落地后无需重启即翻转，与 Automix 引擎徽章同源。

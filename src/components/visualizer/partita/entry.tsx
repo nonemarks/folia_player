@@ -1,7 +1,8 @@
 import React from 'react';
 import { defineVisualizer } from '../definition';
 import { PartitaSettingsPanel } from '../settingsPanels';
-import VisualizerPartita from './VisualizerPartita';
+
+const VisualizerPartita = React.lazy(() => import('./VisualizerPartita'));
 
 // src/components/visualizer/partita/entry.tsx
 // Registers Partita and its preview tuning panel.
@@ -13,6 +14,7 @@ export default defineVisualizer({
     previewSeed: 'partita',
     previewStartOffset: 0,
     tuningKind: 'partita',
+    usesWordSegmentation: true,
     render: props => <VisualizerPartita {...props} />,
     renderSettingsPanel: props => <PartitaSettingsPanel {...props} />,
     resetSettings: ({ resetPartitaTuning }) => {

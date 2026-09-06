@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
 import { COMMAND_PALETTE_COMMANDS } from '../command-palette/commandRegistry';
 import type { Theme } from '../../types';
 import { UserGuidePageContent } from './UserGuidePageContent';
 import { UserGuideFooter } from './UserGuideFooter';
 import { USER_GUIDE_PAGE_COUNT, type GuidePage } from './userGuideContent';
+import { useThemeSettingsStore } from '../../stores/useThemeSettingsStore';
+import { useSettingsModalStore } from '../../stores/useSettingsModalStore';
+
+// The guide's command list depends on nothing but the registry, which is a module constant.
+// Rebuilding it on every page turn was pure waste.
+const GUIDE_COMMANDS = COMMAND_PALETTE_COMMANDS.filter(
+    command => !command.hidden && command.id !== 'queue' && !command.id.startsWith('navigate'),
+);
 
 export const UserGuideModal: React.FC<{ theme?: Theme | null }> = ({ theme }) => {
     const { t } = useTranslation();
-    const isUserGuideModalOpen = useSettingsUiStore(state => state.isUserGuideModalOpen);
-    const setIsUserGuideModalOpen = useSettingsUiStore(state => state.setIsUserGuideModalOpen);
-    const isDaylight = useSettingsUiStore(state => state.isDaylight);
+    const isUserGuideModalOpen = useSettingsModalStore(state => state.isUserGuideModalOpen);
+    const setIsUserGuideModalOpen = useSettingsModalStore(state => state.setIsUserGuideModalOpen);
+    const isDaylight = useThemeSettingsStore(state => state.isDaylight);
     const [page, setPage] = useState<GuidePage>(1);
 
     // Reset to page 1 whenever the modal is reopened
@@ -37,7 +44,6 @@ export const UserGuideModal: React.FC<{ theme?: Theme | null }> = ({ theme }) =>
     const keyBg = isDaylight ? 'bg-white border border-zinc-200' : 'bg-white/10';
     const tipCardBg = isDaylight ? 'bg-zinc-50/90 border-zinc-100' : 'bg-white/[0.04] border-white/10';
     const iconTileBg = isDaylight ? 'bg-white shadow-sm' : 'bg-white/10';
-    const guideCommands = COMMAND_PALETTE_COMMANDS.filter(c => !c.hidden && c.id !== 'queue' && !c.id.startsWith('navigate'));
 
     const goToPage = (nextPage: GuidePage) => {
         setPage(nextPage);
@@ -109,7 +115,7 @@ export const UserGuideModal: React.FC<{ theme?: Theme | null }> = ({ theme }) =>
                                         tipCardBg,
                                         iconTileBg,
                                     }}
-                                    guideCommands={guideCommands}
+                                    guideCommands={GUIDE_COMMANDS}
                                 />
                             </motion.div>
                         </div>

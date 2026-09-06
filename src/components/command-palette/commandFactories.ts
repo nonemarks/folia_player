@@ -100,7 +100,8 @@ export const createSoundPresetCommand = (
     group: 'playback',
     title,
     description,
-    keywords: [...keywords, 'sound preset', 'audio preset', '音效预设', 'yinxiaoyushe', 'yxys'],
+    // 拼音由构建期从 '音效预设' 生成，不再手写。
+    keywords: [...keywords, 'sound preset', 'audio preset', '音效预设'],
     execute: (_input, context) => {
         context.playback.applyAudioSoundPreset(presetId);
         return true;
@@ -139,6 +140,8 @@ export const createPanelCommand = (
     description,
     keywords,
     icon,
+    // The panel is part of the player surface; on home there is nothing for these to open.
+    scope: 'player-surface',
     ...options,
     execute: (_input, context) => {
         context.panel.setPanelTab(tab);

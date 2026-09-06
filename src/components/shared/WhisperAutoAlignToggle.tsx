@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
+import { useWhisperSettingsStore } from '../../stores/useWhisperSettingsStore';
 
 // src/components/shared/WhisperAutoAlignToggle.tsx
 // Whisper 自动对齐开关行，供 Whisper 独立设置页与歌词匹配 Whisper 标签复用。
@@ -12,8 +12,8 @@ type WhisperAutoAlignToggleProps = {
 
 const WhisperAutoAlignToggle: React.FC<WhisperAutoAlignToggleProps> = ({ isDaylight }) => {
     const { t } = useTranslation();
-    const whisperAlignEnabled = useSettingsUiStore(state => state.whisperAlignEnabled);
-    const onToggleWhisperAlign = useSettingsUiStore(state => state.handleToggleWhisperAlign);
+    const whisperAlignEnabled = useWhisperSettingsStore(state => state.whisperAlignEnabled);
+    const onToggleWhisperAlign = useWhisperSettingsStore(state => state.handleToggleWhisperAlign);
 
     return (
         <div className="flex items-center justify-between gap-4">

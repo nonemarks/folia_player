@@ -170,9 +170,23 @@ export interface VisualizerRegistryEntry {
     previewSeed: string;
     previewStartOffset: number;
     tuningKind: VisualizerTuningKind;
+    /*
+     * 各模式的 entry.tsx 把真正的 renderer 包成 React.lazy —— registry 用 eager glob 发现
+     * entry，如果 entry 静态 import renderer，任何碰 visualizer 设置的模块都会连带拉进 13 个
+     * renderer（183 个模块，含 three.js，而 three 只有 diorama 用）。契约不变：这里仍然是
+     * props => ReactElement，lazy 组件照样满足。代价是调用方必须提供 Suspense 边界。
+     */
     render: (props: VisualizerSharedProps) => React.ReactElement;
     renderSettingsPanel?: (props: VisualizerSettingsPanelProps) => React.ReactNode;
     resetSettings?: (props: VisualizerSettingsResetProps) => void;
+    /*
+     * True when this mode's layout atoms come from whole-line word segmentation
+     * (utils/lyrics/wordSegmentation), so the user's saved split for a song changes what it draws.
+     * Declared here rather than as a list in the panel: the panel and the command both ask the
+     * registry, so adding a mode does not mean remembering to edit a hardcoded set.
+     * Grapheme-level modes leave it unset — a word split would not affect them.
+     */
+    usesWordSegmentation?: boolean;
 }
 
 export interface VisualizerEntryModule {

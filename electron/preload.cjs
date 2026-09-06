@@ -82,6 +82,11 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.on('wallpaper-transparent-refused', listener);
         return () => ipcRenderer.removeListener('wallpaper-transparent-refused', listener);
     },
+    onWallpaperInputMonitorRequested: (callback) => {
+        const listener = () => callback();
+        ipcRenderer.on('wallpaper-input-monitor-requested', listener);
+        return () => ipcRenderer.removeListener('wallpaper-input-monitor-requested', listener);
+    },
     setPlaybackDisplaySleepBlockingActive: (active) => ipcRenderer.invoke('playback-display-sleep-set-active', active),
     setAppLocale: (localeKey) => ipcRenderer.invoke('set-app-locale', localeKey),
     getCacheDirectory: () => ipcRenderer.invoke('get-cache-directory'),
@@ -115,9 +120,11 @@ contextBridge.exposeInMainWorld('electron', {
     removeLocalCoverAsset: (assetId) => ipcRenderer.invoke('remove-local-cover-asset', assetId),
     clearLocalCoverAssets: () => ipcRenderer.invoke('clear-local-cover-assets'),
     generateTheme: (lyricsText, options) => ipcRenderer.invoke('generate-theme', lyricsText, options),
+    segmentLyrics: (lines) => ipcRenderer.invoke('segment-lyrics', lines),
     fetchLyricProxy: (url, init) => ipcRenderer.invoke('lyric-proxy-fetch', url, init),
     getNeteasePort: () => ipcRenderer.invoke('get-netease-port'),
     getNeteaseApiStatus: () => ipcRenderer.invoke('get-netease-api-status'),
+    restartNeteaseApi: () => ipcRenderer.invoke('restart-netease-api'),
     onNeteaseApiStatusChanged: (callback) => {
         const listener = (_event, status) => callback(status);
         ipcRenderer.on('netease-api-status-changed', listener);

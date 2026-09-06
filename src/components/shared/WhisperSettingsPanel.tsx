@@ -6,7 +6,7 @@ import React, { useState, useCallback } from 'react';
 import { Sparkles, Loader2, Check, AlertCircle, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { LocalSong, SongResult, LyricData } from '../../types';
-import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
+import { useWhisperSettingsStore } from '../../stores/useWhisperSettingsStore';
 import { alignLyricsWithWhisper, cancelAlignment, shouldAlignLyrics, type WhisperAlignJob } from '../../services/whisperAlignService';
 import WhisperEnvCheck from './WhisperEnvCheck';
 import WhisperAutoAlignToggle from './WhisperAutoAlignToggle';
@@ -32,7 +32,7 @@ const WhisperSettingsPanel: React.FC<WhisperSettingsPanelProps> = ({
     const { t } = useTranslation();
     // Only the active model is needed here (for manual alignment); the toggle and
     // model-selector UI read the store themselves via the shared components.
-    const whisperAlignModel = useSettingsUiStore(state => state.whisperAlignModel);
+    const whisperAlignModel = useWhisperSettingsStore(state => state.whisperAlignModel);
 
     // Manual alignment state
     const [alignStatus, setAlignStatus] = useState<AlignStatus>('idle');

@@ -728,6 +728,7 @@ declare global {
       saveSettings: (key: string, value: any) => Promise<any>;
       onWallpaperModeChanged?: (callback: (settings: Record<string, unknown>) => void) => () => void;
       onWallpaperTransparentRefused?: (callback: (settings: Record<string, unknown>) => void) => () => void;
+      onWallpaperInputMonitorRequested?: (callback: () => void) => () => void;
       setPlaybackDisplaySleepBlockingActive: (active: boolean) => Promise<boolean>;
       setAppLocale: (localeKey: 'en' | 'zh-CN' | 'in') => Promise<string>;
       getCacheDirectory: () => Promise<ElectronCacheDirectoryResult>;
@@ -758,6 +759,8 @@ declare global {
       removeLocalCoverAsset: (assetId: string) => Promise<boolean>;
       clearLocalCoverAssets: () => Promise<boolean>;
       generateTheme: (lyricsText: string, options?: { isPureMusic?: boolean; songTitle?: string }) => Promise<any>;
+      /** Word-segments lyric lines with the user's configured model. Resolves to one boundary array per line. */
+      segmentLyrics: (lines: string[]) => Promise<string[][]>;
       fetchLyricProxy: (
         url: string,
         init?: {
@@ -768,6 +771,7 @@ declare global {
       ) => Promise<ElectronLyricProxyResponse>;
       getNeteasePort: () => Promise<number>;
       getNeteaseApiStatus: () => Promise<ElectronNeteaseApiStatus>;
+      restartNeteaseApi: () => Promise<ElectronNeteaseApiStatus>;
       onNeteaseApiStatusChanged: (callback: (status: ElectronNeteaseApiStatus) => void) => () => void;
       getKugouApiStatus: () => Promise<ElectronKugouApiStatus>;
       kugouRequest: (

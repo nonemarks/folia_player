@@ -3,7 +3,6 @@ import { AudioLines, BarChart3, ChevronRight, ListFilter, Monitor, PlayCircle, R
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import type { LocalLyricsPriority, QueueAddBehavior, ReplayGainMode, Theme } from '../../../types';
-import { useSettingsUiStore } from '../../../stores/useSettingsUiStore';
 import { useAudioOutputDevices } from '../../../hooks/useAudioOutputDevices';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { LYRIC_MATCH_SOURCES } from '../../../utils/lyrics/lyricMatchSources';
@@ -11,6 +10,9 @@ import { getLyricProviderPreferenceLabel } from '../../../utils/lyrics/lyricSour
 import TransitionSettingsSection from './TransitionSettingsSection';
 import { SettingsAnchor } from './navigation/SettingsAnchorContext';
 import SettingsSectionHeading from './navigation/SettingsSectionHeading';
+import { useLyricSettingsStore } from '../../../stores/useLyricSettingsStore';
+import { useWhisperSettingsStore } from '../../../stores/useWhisperSettingsStore';
+import { useAudioSettingsStore } from '../../../stores/useAudioSettingsStore';
 
 // src/components/modal/settings/PlaybackSettingsSubview.tsx
 // Playback behavior and output-device settings extracted from the global settings modal.
@@ -49,29 +51,32 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
     const { t } = useTranslation();
     const {
         audioOutputDeviceId,
+        queueAddBehavior,
+        onQueueAddBehaviorChange,
+    } = useAudioSettingsStore(useShallow(state => ({
+        audioOutputDeviceId: state.audioOutputDeviceId,
+        queueAddBehavior: state.queueAddBehavior,
+        onQueueAddBehaviorChange: state.handleSetQueueAddBehavior,
+    })));
+    const {
         autoUseBestLyric,
         preferredAlternativeLyricSource,
         localLyricsPriority,
-        queueAddBehavior,
         globalLyricTimelineOffsetMs,
-        whisperAlignEnabled,
         onToggleAutoUseBestLyric,
         onPreferredAlternativeLyricSourceChange,
         onLocalLyricsPriorityChange,
-        onQueueAddBehaviorChange,
-    } = useSettingsUiStore(useShallow(state => ({
-        audioOutputDeviceId: state.audioOutputDeviceId,
+    } = useLyricSettingsStore(useShallow(state => ({
         autoUseBestLyric: state.autoUseBestLyric,
         preferredAlternativeLyricSource: state.preferredAlternativeLyricSource,
         localLyricsPriority: state.localLyricsPriority,
-        queueAddBehavior: state.queueAddBehavior,
         globalLyricTimelineOffsetMs: state.globalLyricTimelineOffsetMs,
-        whisperAlignEnabled: state.whisperAlignEnabled,
         onToggleAutoUseBestLyric: state.handleToggleAutoUseBestLyric,
         onPreferredAlternativeLyricSourceChange: state.handleSetPreferredAlternativeLyricSource,
         onLocalLyricsPriorityChange: state.handleSetLocalLyricsPriority,
-        onQueueAddBehaviorChange: state.handleSetQueueAddBehavior,
     })));
+    // fork: Whisper 开关属于独立的 whisper store，不在歌词设置里；单独订阅，决定歌词源列表是否展示 whisper 项
+    const whisperAlignEnabled = useWhisperSettingsStore(state => state.whisperAlignEnabled);
     const {
         devices: audioOutputDevices,
         ensureLoaded: ensureAudioOutputDevicesLoaded,

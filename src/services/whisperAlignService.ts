@@ -7,7 +7,7 @@ import type { LyricData, Line, LocalSong, OnlineLyricsState, SongResult } from '
 import { alignWhisperToLyrics, type WhisperResult } from '../utils/lyrics/wordAligner';
 import type { AudioQualityPreference } from '../types/onlineMusic';
 import { getCacheEntriesByPrefix, getCacheKeysByPrefix, getFromCache, removeFromCache, removeCacheEntriesByPrefix, saveToCache } from './db';
-import { useSettingsUiStore } from '../stores/useSettingsUiStore';
+import { useWhisperSettingsStore } from '../stores/useWhisperSettingsStore';
 import { detectLyricLanguage } from '../utils/lyrics/detectLyricLanguage';
 
 // ---------------------------------------------------------------------------
@@ -93,8 +93,8 @@ async function getOnlineSongAudioBlob(song: { id: string | number; name?: string
         // Try to fetch from online source directly
         try {
             const { omni } = await import('./onlineMusic/omni');
-            const { useSettingsUiStore } = await import('../stores/useSettingsUiStore');
-            const audioQuality = useSettingsUiStore.getState().audioQuality || 'standard';
+            const { useAudioSettingsStore } = await import('../stores/useAudioSettingsStore');
+            const audioQuality = useAudioSettingsStore.getState().audioQuality || 'standard';
 
             console.log(`[WhisperAlign] Attempting omni.getAudioSource for song ${song.id} (quality: ${audioQuality})`);
             const source = await omni.getAudioSource(song as SongResult, audioQuality as AudioQualityPreference);
@@ -472,7 +472,7 @@ export async function alignLyricsWithWhisper(
     // lyric, inline button). Priority: explicit caller language > user setting (when not 'auto') >
     // inference from the lyric script. Fixes CJK songs being transcribed as English because
     // Whisper's audio-head auto-detect mistakes an instrumental intro for its default language.
-    const settings = useSettingsUiStore.getState();
+    const settings = useWhisperSettingsStore.getState();
     const userLang = settings.whisperAlignLanguage;
     const effectiveLanguage = language
         || (userLang && userLang !== 'auto' ? userLang : undefined)

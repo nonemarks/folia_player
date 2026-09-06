@@ -1,24 +1,33 @@
 import { expect, test } from '@playwright/test';
-import { APP_VERSION, GUIDE_VERSION_STORAGE_KEY } from './helpers/appState';
+import { APP_VERSION, GUIDE_VERSION_STORAGE_KEY } from '../helpers/appState';
 
 // test/ui/panelControlsTab.spec.ts
 // 覆盖播放面板控制页的模式取景器：箭头步进、完整列表入口，以及步进经过商籁时不再被拦截。
 
 const readVisualizerMode = (page: import('@playwright/test').Page) => page.evaluate(async () => {
-    const storeModulePath = '/src/stores/useSettingsUiStore.ts';
-    const { useSettingsUiStore } = await import(storeModulePath);
-    return useSettingsUiStore.getState().visualizerMode as string;
+    const storeModulePath = '/src/stores/useVisualizerSettingsStore.ts';
+    const { useVisualizerSettingsStore } = await import(storeModulePath);
+    return useVisualizerSettingsStore.getState().visualizerMode as string;
 });
 
-const openPlayerPage = async (page: import('@playwright/test').Page) => {
-    await page.addInitScript(([version, guideKey]) => {
+const openPlayerPage = async (page: import('@playwright/test').Page, bottomBarOffset = 32) => {
+    await page.addInitScript(({ version, guideKey, offset }: {
+        version: string;
+        guideKey: string;
+        offset: number;
+    }) => {
         localStorage.clear();
         localStorage.setItem('i18nextLng', 'zh-CN');
         localStorage.setItem('open_player_on_launch', 'true');
         localStorage.setItem('visualizer_mode', 'classic');
         localStorage.setItem('static_mode', 'true');
+        localStorage.setItem('player_bottom_bar_offset', String(offset));
         localStorage.setItem(guideKey, version);
-    }, [APP_VERSION, GUIDE_VERSION_STORAGE_KEY]);
+    }, {
+        version: APP_VERSION,
+        guideKey: GUIDE_VERSION_STORAGE_KEY,
+        offset: bottomBarOffset,
+    });
     await page.route('**/__mock_netease__/**', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     });
@@ -29,7 +38,7 @@ const openPlayerPage = async (page: import('@playwright/test').Page) => {
 
 const openControlsTab = async (page: import('@playwright/test').Page) => {
     await openPlayerPage(page);
-    await page.locator('div.fixed.bottom-8.right-0 button').last().click();
+    await page.getByTestId('panel-toggle').locator('button').last().click();
     await page.waitForTimeout(500);
     await page.getByTitle('控制', { exact: true }).click();
     await page.waitForTimeout(600);
@@ -51,7 +60,11 @@ const openQueueWithFixture = async (page: import('@playwright/test').Page) => {
     }, queue);
     await page.reload();
     await page.waitForTimeout(1800);
-    await page.keyboard.press('Control+P');
+    // 全局键盘监听比首屏晚装上一拍，定长 sleep 只是赌它已经装好了。反复敲直到面板真的响应。
+    await expect.poll(async () => {
+        await page.keyboard.press('Control+P');
+        return page.getByTestId('command-palette-panel').count();
+    }).toBeGreaterThan(0);
 };
 
 test('steps lyric modes with the arrows and opens the full list from the name', async ({ page }) => {
@@ -82,20 +95,82 @@ test('steps lyric modes with the arrows and opens the full list from the name', 
     expect(await readVisualizerMode(page)).toBe('partita');
 });
 
+test('shows the word segmentation button only for the modes built from word splits', async ({ page }) => {
+    await openControlsTab(page);
+    expect(await readVisualizerMode(page)).toBe('classic');
+
+    const lyricRow = page.locator('div.space-y-1 > div').first();
+    const segmentationButton = lyricRow.getByRole('button', { name: '歌词分词调整' });
+
+    // classic 在注册表里标了 usesWordSegmentation。
+    await expect(segmentationButton).toBeVisible();
+
+    // 步到 cadenza —— 它是逐 grapheme 的，分词结果对它没有影响，按钮必须消失。
+    await lyricRow.getByRole('button', { name: '歌词样式 +' }).click();
+    await page.waitForTimeout(200);
+    expect(await readVisualizerMode(page)).toBe('cadenza');
+    await expect(segmentationButton).toBeHidden();
+
+    // 回到 classic 再出现，确认它跟着模式走而不是一次性渲染。
+    await lyricRow.getByRole('button', { name: '歌词样式 −' }).click();
+    await page.waitForTimeout(200);
+    await expect(segmentationButton).toBeVisible();
+
+    // 点它打开命令面板里那条命令的 surface，而不是另开一个弹窗。
+    await segmentationButton.click();
+    await expect(page.getByTestId('command-palette-panel')).toBeVisible();
+    await expect(page.getByTestId('command-palette-panel').getByText('当前没有可分词的歌词')).toBeVisible();
+});
+
+test('lifts the open right panel with the configured bottom bar baseline', async ({ page }) => {
+    const bottomBarOffset = 152;
+    await openPlayerPage(page, bottomBarOffset);
+    await page.getByTestId('panel-toggle').locator('button').last().click();
+
+    const panel = page.getByTestId('unified-panel-surface');
+    await expect(panel).toBeVisible();
+    const box = await panel.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box).not.toBeNull();
+    expect(viewport).not.toBeNull();
+
+    // 桌面端面板保留原来的 8px 下边距，但基线和底栏共用同一个实时偏移。
+    expect(viewport!.height - box!.y - box!.height).toBeCloseTo(bottomBarOffset + 8, 0);
+    // 抬高时同步收缩滚动面板，不能把顶部推出视口。
+    expect(box!.y).toBeGreaterThanOrEqual(48);
+});
+
+test('keeps the configured bottom baseline after navigating to another page', async ({ page }) => {
+    const bottomBarOffset = 152;
+    await openPlayerPage(page, bottomBarOffset);
+    await page.evaluate(async () => {
+        const storeModulePath = '/src/stores/useAppViewStore.ts';
+        const { useAppViewStore } = await import(storeModulePath);
+        useAppViewStore.setState({ view: 'home' });
+    });
+
+    await expect.poll(() => page.evaluate(async () => {
+        const signalModulePath = '/src/stores/motionSignals.ts';
+        const { playerBottomBarLiveOffset } = await import(signalModulePath);
+        return playerBottomBarLiveOffset.get();
+    })).toBe(bottomBarOffset);
+
+});
+
 test('steps straight through sonnet without an interstitial dialog', async ({ page }) => {
     await openControlsTab(page);
     // 停在商籁的相邻格。相邻是哪一个由注册表顺序决定，所以在页面里现算，
     // 不要写死模式名——重排 order 时这个用例应当继续有效。
     const stepDirection = await page.evaluate(async () => {
         const registryModulePath = '/src/components/visualizer/registry.tsx';
-        const storeModulePath = '/src/stores/useSettingsUiStore.ts';
+        const storeModulePath = '/src/stores/useVisualizerSettingsStore.ts';
         const { VISUALIZER_REGISTRY } = await import(registryModulePath);
-        const { useSettingsUiStore } = await import(storeModulePath);
+        const { useVisualizerSettingsStore } = await import(storeModulePath);
         const modes = (VISUALIZER_REGISTRY as Array<{ mode: string }>).map(entry => entry.mode);
         const sonnetIndex = modes.indexOf('sonnet');
         // 商籁排在首位时没有前一格，改成从后一格往回步进。
         const forward = sonnetIndex > 0;
-        useSettingsUiStore.getState().handleSetVisualizerMode(modes[sonnetIndex + (forward ? -1 : 1)], { notify: false });
+        useVisualizerSettingsStore.getState().handleSetVisualizerMode(modes[sonnetIndex + (forward ? -1 : 1)], { notify: false });
         return forward ? '+' : '−';
     });
     await page.waitForTimeout(300);

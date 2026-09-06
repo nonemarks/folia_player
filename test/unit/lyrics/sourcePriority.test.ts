@@ -8,10 +8,11 @@ import {
 
 describe('lyric source priority', () => {
     it('defaults to QQ and retains every fallback exactly once', () => {
-        expect(buildLyricSourceOrder()).toEqual(['qq', 'netease', 'amll', 'kugou']);
-        expect(buildLyricSourceOrder('kugou')).toEqual(['kugou', 'netease', 'amll', 'qq']);
-        expect(buildLyricSourceOrder('netease')).toEqual(['netease', 'amll', 'qq', 'kugou']);
-        expect(buildLyricSourceOrder('amll')).toEqual(['amll', 'netease', 'qq', 'kugou']);
+        // fork: 'whisper' is the local word-by-word alignment source, always tried last after every online source.
+        expect(buildLyricSourceOrder()).toEqual(['qq', 'netease', 'amll', 'kugou', 'whisper']);
+        expect(buildLyricSourceOrder('kugou')).toEqual(['kugou', 'netease', 'amll', 'qq', 'whisper']);
+        expect(buildLyricSourceOrder('netease')).toEqual(['netease', 'amll', 'qq', 'kugou', 'whisper']);
+        expect(buildLyricSourceOrder('amll')).toEqual(['amll', 'netease', 'qq', 'kugou', 'whisper']);
     });
 
     it('migrates missing, invalid, and legacy NetEase preferences to QQ', () => {

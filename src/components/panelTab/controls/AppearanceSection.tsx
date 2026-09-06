@@ -2,18 +2,24 @@ import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Theme, ThemeMode, VisualizerBackgroundMode, VisualizerMode } from '../../../types';
 import type { ThemeSourceModel } from '../../../hooks/themeControllerState';
-import { getVisualizerModeLabel, VISUALIZER_REGISTRY } from '../../visualizer/registry';
+import { getVisualizerModeLabel, getVisualizerRegistryEntry, VISUALIZER_REGISTRY } from '../../visualizer/registry';
 import {
     getVisualizerBackgroundModeLabel,
     getVisualizerBackgroundRegistryEntry,
     VISUALIZER_BACKGROUND_REGISTRY,
 } from '../../visualizer/backgrounds/registry';
-import { resolveVisualizerBackgroundMode, useSettingsUiStore } from '../../../stores/useSettingsUiStore';
+import { resolveVisualizerBackgroundMode } from '../../../stores/visualizerSettingsPersistence';
 import { useVisualizerModeStepper } from '../../../hooks/useVisualizerModeStepper';
-import { QuickControlChip } from '../../shared/QuickControlChip';
+import { QuickControlChip, QuickControlToggle } from '../../shared/QuickControlChip';
+import { WholeWord } from 'lucide-react';
+import { openCommandPaletteCommand } from '../../../stores/useAppViewStore';
+import { useLyricSegmentationStore } from '../../../stores/useLyricSegmentationStore';
+import { LYRIC_SEGMENTATION_COMMAND_ID } from '../../command-palette/commands/lyricSegmentationCommand';
 import ModeStepperRow from './ModeStepperRow';
 import ThemeSourceRow from './ThemeSourceRow';
 import { BackgroundModeGlyph, VisualizerModeGlyph } from '../../visualizer/modeGlyphs';
+import { useVisualizerSettingsStore } from '../../../stores/useVisualizerSettingsStore';
+import { useSettingsModalStore } from '../../../stores/useSettingsModalStore';
 
 // src/components/panelTab/controls/AppearanceSection.tsx
 // 外观区：歌词样式、背景、主题来源三件事放在一起。
@@ -54,15 +60,19 @@ const AppearanceSection: React.FC<AppearanceSectionProps> = ({
     onClosePanel,
 }) => {
     const { t } = useTranslation();
-    const openSettings = useSettingsUiStore(state => state.openSettings);
-    const visualizerBackgroundMode = useSettingsUiStore(state => state.visualizerBackgroundMode);
-    const setVisualizerBackgroundMode = useSettingsUiStore(state => state.handleSetVisualizerBackgroundMode);
-    const monetBackgroundTuning = useSettingsUiStore(state => state.monetBackgroundTuning);
-    const setMonetBackgroundTuning = useSettingsUiStore(state => state.handleSetMonetBackgroundTuning);
-    const nomandBackgroundTuning = useSettingsUiStore(state => state.nomandBackgroundTuning);
-    const setNomandBackgroundTuning = useSettingsUiStore(state => state.handleSetNomandBackgroundTuning);
-    const latentBackgroundTuning = useSettingsUiStore(state => state.latentBackgroundTuning);
-    const setLatentBackgroundTuning = useSettingsUiStore(state => state.handleSetLatentBackgroundTuning);
+    const openSettings = useSettingsModalStore(state => state.openSettings);
+    // Only the modes whose typography is built from word segmentation get the chip; the registry
+    // says which, so adding such a mode does not mean editing a list here.
+    const usesWordSegmentation = Boolean(getVisualizerRegistryEntry(visualizerMode).usesWordSegmentation);
+    const hasSavedSegmentation = useLyricSegmentationStore(state => Boolean(state.record));
+    const visualizerBackgroundMode = useVisualizerSettingsStore(state => state.visualizerBackgroundMode);
+    const setVisualizerBackgroundMode = useVisualizerSettingsStore(state => state.handleSetVisualizerBackgroundMode);
+    const monetBackgroundTuning = useVisualizerSettingsStore(state => state.monetBackgroundTuning);
+    const setMonetBackgroundTuning = useVisualizerSettingsStore(state => state.handleSetMonetBackgroundTuning);
+    const nomandBackgroundTuning = useVisualizerSettingsStore(state => state.nomandBackgroundTuning);
+    const setNomandBackgroundTuning = useVisualizerSettingsStore(state => state.handleSetNomandBackgroundTuning);
+    const latentBackgroundTuning = useVisualizerSettingsStore(state => state.latentBackgroundTuning);
+    const setLatentBackgroundTuning = useVisualizerSettingsStore(state => state.handleSetLatentBackgroundTuning);
 
     const visualizerOptions = useMemo(
         () => VISUALIZER_REGISTRY.map(entry => ({
@@ -143,12 +153,27 @@ const AppearanceSection: React.FC<AppearanceSectionProps> = ({
                 isDaylight={isDaylight}
                 primaryColor={theme.primaryColor}
                 trailing={(
-                    <QuickControlChip
-                        isDaylight={isDaylight}
-                        label={t(`animation.${theme.animationIntensity}`)}
-                        title={`${t('ui.animationIntensity')}: ${t(`animation.${theme.animationIntensity}`)}`}
-                        onClick={cycleAnimationIntensity}
-                    />
+                    <>
+                        <QuickControlChip
+                            isDaylight={isDaylight}
+                            label={t(`animation.${theme.animationIntensity}`)}
+                            title={`${t('ui.animationIntensity')}: ${t(`animation.${theme.animationIntensity}`)}`}
+                            onClick={cycleAnimationIntensity}
+                        />
+                        {usesWordSegmentation && (
+                            <QuickControlToggle
+                                active={hasSavedSegmentation}
+                                theme={theme}
+                                label={t('commandPalette.commands.lyric-segmentation.title')}
+                                onToggle={() => {
+                                    openCommandPaletteCommand(LYRIC_SEGMENTATION_COMMAND_ID);
+                                    onClosePanel?.();
+                                }}
+                            >
+                                <WholeWord size={14} />
+                            </QuickControlToggle>
+                        )}
+                    </>
                 )}
             />
 

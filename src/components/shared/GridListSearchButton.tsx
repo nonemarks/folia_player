@@ -1,15 +1,23 @@
 import React, { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { List, Search } from 'lucide-react';
+import { Command, List, Search } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { openCommandFilter, openCommandPalette } from '../../stores/useAppViewStore';
+import { useInteractionSettingsStore } from '../../stores/useInteractionSettingsStore';
+import { usePlayerBottomBarBottomPx } from '../../hooks/usePlayerBottomBarBottomPx';
 
 // Player-style grid action button: click for the list, or slide left to reveal search.
+//
+// Where the slide lands is a setting, so the destination is read here rather than passed in: the
+// icon at the end of the track and the tooltip have to name the same place the gesture goes, and
+// three grids each remembering to keep those three in step is three chances to get it wrong.
 interface GridListSearchButtonProps {
     isDaylight: boolean;
     accentColor: string;
     listTitle: string;
+    /** What the slide is called when it opens this surface's filter, which is the default. */
     searchTitle: string;
     onOpenList: () => void;
-    onOpenSearch: () => void;
 }
 
 export const GridListSearchButton: React.FC<GridListSearchButtonProps> = ({
@@ -18,8 +26,13 @@ export const GridListSearchButton: React.FC<GridListSearchButtonProps> = ({
     listTitle,
     searchTitle,
     onOpenList,
-    onOpenSearch,
 }) => {
+    const { t } = useTranslation();
+    const slideTarget = useInteractionSettingsStore(state => state.gridActionButtonSlideTarget);
+    const opensPalette = slideTarget === 'command-palette';
+    const slideTitle = opensPalette ? t('options.gridSlideTargetCommandPalette') : searchTitle;
+    const SlideIcon = opensPalette ? Command : Search;
+    const onSlide = opensPalette ? openCommandPalette : openCommandFilter;
     const [showGuideLine, setShowGuideLine] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const gestureRef = useRef<{ startX: number; startY: number; triggered: boolean } | null>(null);
@@ -28,6 +41,7 @@ export const GridListSearchButton: React.FC<GridListSearchButtonProps> = ({
     const trackEndIconRef = useRef<HTMLDivElement>(null);
     const trackFillRef = useRef<HTMLDivElement>(null);
     const supportsHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    const bottomBarBottomPx = usePlayerBottomBarBottomPx();
     const motionClass = showGuideLine || isDragging
         ? 'translate-x-0 opacity-100'
         : supportsHover
@@ -137,7 +151,9 @@ export const GridListSearchButton: React.FC<GridListSearchButtonProps> = ({
             animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: 20, y: 12, scale: 0.92 }}
             transition={{ duration: 0.24, ease: 'easeOut' }}
-            className="pointer-events-auto fixed bottom-8 right-0 z-[60] pr-4 md:pr-8 group w-20 flex justify-end"
+            data-testid="grid-list-search-button"
+            style={{ bottom: bottomBarBottomPx }}
+            className="pointer-events-auto fixed right-0 z-[60] pr-4 md:pr-8 group w-20 flex justify-end"
         >
             <div className={`relative w-12 h-12 transition-all duration-300 transform ${motionClass}`}>
                 <div
@@ -149,8 +165,8 @@ export const GridListSearchButton: React.FC<GridListSearchButtonProps> = ({
                         animate={showGuideLine ? { x: [0, -4, 0], opacity: [0.45, 0.85, 0.45] } : { x: 0, opacity: 0.45 }}
                         transition={showGuideLine ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' } : undefined}
                     >
-                        <div ref={trackEndIconRef} style={{ color: isDaylight ? '#000000' : '#ffffff' }} className="w-full h-full flex items-center justify-center" title={searchTitle}>
-                            <Search size={14} />
+                        <div ref={trackEndIconRef} style={{ color: isDaylight ? '#000000' : '#ffffff' }} className="w-full h-full flex items-center justify-center" title={slideTitle}>
+                            <SlideIcon size={14} />
                         </div>
                     </motion.div>
                     <div ref={trackFillRef} style={{ width: '48px' }} className={`absolute right-0 top-0 bottom-0 rounded-full pointer-events-none ${isDaylight ? 'bg-black/10' : 'bg-white/10'}`} />
@@ -177,7 +193,7 @@ export const GridListSearchButton: React.FC<GridListSearchButtonProps> = ({
                             suppressClickRef.current = true;
                             event.preventDefault();
                             resetDragFeedback('trigger', deltaX);
-                            onOpenSearch();
+                            onSlide();
                         }
                     }}
                     onPointerUp={clearGesture}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
+import { useWhisperSettingsStore } from '../../stores/useWhisperSettingsStore';
 
 // src/components/shared/WhisperLanguageSelector.tsx
 // Whisper 转录语言选择器（标题 + 说明 + auto/zh/en/ja/ko 网格），供 Whisper 独立设置页与
@@ -15,8 +15,8 @@ const languageLabelKey = (value: string) =>
 
 const WhisperLanguageSelector: React.FC = () => {
     const { t } = useTranslation();
-    const whisperAlignLanguage = useSettingsUiStore(state => state.whisperAlignLanguage);
-    const onSetWhisperAlignLanguage = useSettingsUiStore(state => state.handleSetWhisperAlignLanguage);
+    const whisperAlignLanguage = useWhisperSettingsStore(state => state.whisperAlignLanguage);
+    const onSetWhisperAlignLanguage = useWhisperSettingsStore(state => state.handleSetWhisperAlignLanguage);
 
     // Selected option gets the accent highlight; others keep the neutral border. No download
     // state here (unlike the model selector) — languages are just Whisper -l flags, nothing to fetch.

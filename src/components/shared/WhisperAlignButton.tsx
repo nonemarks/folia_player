@@ -6,7 +6,7 @@ import { Sparkles, Loader2, Check, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { LyricData, LocalSong, SongResult } from '../../types';
 import { alignLyricsWithWhisper, cancelAlignment, shouldAlignLyrics, type WhisperAlignJob } from '../../services/whisperAlignService';
-import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
+import { useWhisperSettingsStore } from '../../stores/useWhisperSettingsStore';
 
 interface WhisperAlignButtonProps {
     song: LocalSong | SongResult;
@@ -27,7 +27,7 @@ const WhisperAlignButton: React.FC<WhisperAlignButtonProps> = ({
     // Respect the user's chosen model on this inline button too. It previously passed no model, so
     // alignLyricsWithWhisper fell back to 'base' regardless of the setting — the same miss already
     // fixed on the other four align entry points (settings panel / auto-align / force-regenerate / auto-match).
-    const whisperAlignModel = useSettingsUiStore(state => state.whisperAlignModel);
+    const whisperAlignModel = useWhisperSettingsStore(state => state.whisperAlignModel);
     const [status, setStatus] = useState<AlignStatus>('idle');
     const [progressLabel, setProgressLabel] = useState('');
     const [progressPercent, setProgressPercent] = useState(0);

@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Theme, ThemeMode, VisualizerMode } from '../../types';
 import type { ThemeSourceModel } from '../../hooks/themeControllerState';
 import { useThemeQuickEditorStore } from '../../stores/useThemeQuickEditorStore';
-import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
+import { useSettingsModalStore } from '../../stores/useSettingsModalStore';
 import { useThemeSyncAction } from '../../hooks/useThemeSyncAction';
 import AudioEqualizerDialog from './AudioEqualizerDialog';
 import AppearanceSection from './controls/AppearanceSection';
@@ -83,7 +83,7 @@ const ControlsTab: React.FC<ControlsTabProps> = ({
     const openThemeQuickEditor = useThemeQuickEditorStore(state => state.openEditor);
     const { themeSyncState, runThemeSync } = useThemeSyncAction();
     // 从播放控制面板一键打开「歌词总览」二级面板（设置中心 → 播放 → 歌词总览）
-    const openSettings = useSettingsUiStore(state => state.openSettings);
+    const openSettings = useSettingsModalStore(state => state.openSettings);
 
     const formatThemeDisplayName = (name: string) => {
         if (themeSourceModel.activeSource !== 'default') {

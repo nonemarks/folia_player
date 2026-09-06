@@ -7,8 +7,7 @@ import { Theme } from '../types';
 import { useFoliaHexViewport } from './folia-grid/useFoliaHexViewport';
 import { SidePanelList, CollectionListItem } from './shared/SidePanelList';
 import { GridListSearchButton } from './shared/GridListSearchButton';
-import { gridSearchPanelMotion } from './shared/gridSearchPanelMotion';
-import GridMapSearchPanel from './folia-grid/GridMapSearchPanel';
+import { useGridCommandFilter } from '../hooks/useGridCommandFilter';
 import { matchesGridMapSearch } from './folia-grid/gridMapSearch';
 import GridMapBatchPanel from './folia-grid/GridMapBatchPanel';
 import { resolveGridMapBatchContext, type GridMapBatchConfig } from './folia-grid/gridMapBatch';
@@ -20,6 +19,7 @@ import {
 import { formatGridMapFolderTitle } from '../utils/gridMapFolderPath';
 import { getSizedCoverUrl } from '../utils/coverUrl';
 import { isHideableGridItem } from './folia-grid/gridItemVisibility';
+import { useSidePanelBottomPx } from '../hooks/usePlayerBottomBarBottomPx';
 
 // src/components/GridMap.tsx
 // Hexagonal honeycomb layout showing all collections (playlists, albums, radios).
@@ -241,6 +241,7 @@ export const GridMap: React.FC<GridMapProps> = ({
     batchConfig,
 }) => {
     const { t } = useTranslation();
+    const bottomBarPanelBottomPx = useSidePanelBottomPx();
     const containerRef = useRef<HTMLDivElement>(null);
     const dragControls = useDragControls();
     const [focusedIndex, setFocusedIndex] = useState(0);
@@ -251,10 +252,17 @@ export const GridMap: React.FC<GridMapProps> = ({
     const suppressSelectionRef = useRef(false);
     const wheelTargetRef = useRef({ x: 0, y: 0 });
 
-    const [showSearchPanel, setShowSearchPanel] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    // The filter box is the command palette now; this grid only says who owns typing and where the
+    // box belongs. See useGridCommandFilter for why all three grids stopped carrying their own.
+    const isFiltering = useGridCommandFilter({
+        isInteractive,
+        query: searchQuery,
+        setQuery: setSearchQuery,
+        // The box was an absolutely positioned child of the canvas; it still is.
+        anchorRef: containerRef,
+    });
     const deferredSearchQuery = useDeferredValue(searchQuery);
-    const searchInputRef = useRef<HTMLInputElement | null>(null);
 
     const [showSidePanel, setShowSidePanel] = useState(false);
     const [showCutInPanel, setShowCutInPanel] = useState(false);
@@ -272,48 +280,6 @@ export const GridMap: React.FC<GridMapProps> = ({
         const sourceIndex = resolveGridMapSourceIndex(items, item, displayIndex);
         (onActivateCollection || onSelectCollection)(item.rawCollection || item, sourceIndex);
     }, [items, onActivateCollection, onSelectCollection]);
-
-    useEffect(() => {
-        if (!showSearchPanel) return;
-        const id = requestAnimationFrame(() => {
-            searchInputRef.current?.focus();
-            searchInputRef.current?.setSelectionRange(searchQuery.length, searchQuery.length);
-        });
-        return () => cancelAnimationFrame(id);
-    }, [searchQuery.length, showSearchPanel]);
-
-    useEffect(() => {
-        if (!isInteractive) return;
-
-        const handleSearchTyping = (event: KeyboardEvent) => {
-            if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-                if (event.key === 'Escape' && showSearchPanel) {
-                    setShowSearchPanel(false);
-                }
-                return;
-            }
-
-            if (event.key === '/') {
-                event.preventDefault();
-                setShowSearchPanel(true);
-                return;
-            }
-
-            if ((event.ctrlKey && event.key === 'f') || (event.metaKey && event.key === 'f')) {
-                event.preventDefault();
-                setShowSearchPanel(true);
-                return;
-            }
-
-            if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-                event.preventDefault();
-                setShowSearchPanel(true);
-            }
-        };
-
-        window.addEventListener('keydown', handleSearchTyping);
-        return () => window.removeEventListener('keydown', handleSearchTyping);
-    }, [isInteractive, showSearchPanel]);
 
     const visibleItems = useMemo(() => {
         if (isPlaylistEditMode && showHiddenPlaylistsOnly) {
@@ -789,7 +755,7 @@ export const GridMap: React.FC<GridMapProps> = ({
             if (e.key === 'Enter') {
                 if (
                     e.repeat
-                    || showSearchPanel
+                    || isFiltering
                     || showSidePanel
                     || showCutInPanel
                     || isPlaylistEditMode
@@ -844,10 +810,10 @@ export const GridMap: React.FC<GridMapProps> = ({
         activateDisplayedItem,
         displayItems,
         focusedIndex,
+        isFiltering,
         isInteractive,
         isPlaylistEditMode,
         showCutInPanel,
-        showSearchPanel,
         showSidePanel,
     ]);
 
@@ -927,23 +893,6 @@ export const GridMap: React.FC<GridMapProps> = ({
                 className="absolute inset-0 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden"
                 style={{ touchAction: 'none' }}
             >
-                <AnimatePresence>
-                    {showSearchPanel && (
-                        <motion.div
-                            {...gridSearchPanelMotion}
-                            className="absolute top-24 left-1/2 z-[85] w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 pointer-events-auto"
-                        >
-                            <div className="relative">
-                                <GridMapSearchPanel
-                                    query={searchQuery}
-                                    inputRef={searchInputRef}
-                                    onChange={setSearchQuery}
-                                    onDismiss={() => setShowSearchPanel(false)}
-                                />
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
 
                 {displayItems.length === 0 ? (
                     <div className="opacity-40 text-sm font-sans">
@@ -988,7 +937,8 @@ export const GridMap: React.FC<GridMapProps> = ({
                         animate={{ opacity: 1, x: 0, scale: 1 }}
                         exit={{ opacity: 0, x: -60, scale: 0.95 }}
                         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                        className="absolute left-6 top-24 bottom-28 sm:bottom-6 w-80 rounded-3xl z-[80] flex flex-col p-6 shadow-2xl border backdrop-blur-2xl pointer-events-auto theme-glass-panel"
+                        className="absolute left-6 top-24 w-80 rounded-3xl z-[80] flex flex-col p-6 shadow-2xl border backdrop-blur-2xl pointer-events-auto theme-glass-panel"
+                        style={{ bottom: bottomBarPanelBottomPx }}
                     >
                         {batchConfig ? (
                             <GridMapBatchPanel
@@ -1078,7 +1028,6 @@ export const GridMap: React.FC<GridMapProps> = ({
                     listTitle={t('playlist.viewCollections') || 'View Collections'}
                     searchTitle={t('home.gridSearchPlaceholder')}
                     onOpenList={() => setShowSidePanel(true)}
-                    onOpenSearch={() => setShowSearchPanel(true)}
                 />
             )}
 

@@ -22,7 +22,7 @@ description: Use when implementing, refactoring, or reviewing code in this repos
 
 - 歌词解析、时序、render end：`src/utils/lyrics/*`
 - visualizer 运行时、背景、颜色：`src/components/visualizer/*`
-- 设置 UI、导入导出、命令面板：`src/components/modal/settings/*`、`src/stores/useSettingsUiStore.ts`、`src/components/command-palette/*`
+- 设置 UI、导入导出、命令面板：`src/components/modal/settings/*`、`src/stores/useSettingsModalStore.ts`（弹窗 UI 状态）、按领域拆分的 `src/stores/use*SettingsStore.ts`（设置值）、`src/components/command-palette/*`
 - 同步配置、主题同步和本地导出：`src/services/sync/*`、`src/components/modal/settings/StorageSettingsSection.tsx`
 - 字体栈和自定义字体：`src/utils/fontStacks.ts`、`src/services/customLyricsFont.ts`
 - 播放队列、播放适配：`src/services/playbackAdapters.ts`、`src/utils/appPlaybackHelpers.ts`
@@ -148,6 +148,22 @@ CJK 语义分组、sticky 标点、英文 contraction 已有布局工具：
 
 新增按词/按块 visualizer 时，优先使用 layout units。不要在组件里临时拼接标点、撇号、CJK 字符。
 
+### Word Segmentation
+
+歌词按词分词只有一个入口：`src/utils/lyrics/wordSegmentation.ts`
+
+- `segmentLyricWords(line)` —— 有用户保存的精细分词就用它，否则 `Intl.Segmenter`
+- `segmentTextWords(text)` —— 没有 `Line` 时的无覆盖版本
+- `segmentsFromBoundaries(boundaries)`、`isValidWordSegmentation(text, boundaries)`
+
+**不要再写 `new Intl.Segmenter(..., { granularity: 'word' })`。** 这里原本有三份各自为政的实现
+（`cjkSemanticLayout`、`sonnetSemantic`、`temperaProgram`，后两份逐字重复），用户的精细分词
+（命令 `lyric-segmentation`）就没法一次覆盖到所有模式。`granularity: 'grapheme'` 是另一回事，
+走 `graphemeTiming.ts`，与这里无关。
+
+新增按词排版的 visualizer 时，在它的 `entry.tsx` 上标 `usesWordSegmentation: true`，
+面板快捷按钮和命令的可用性都从注册表读这个字段。
+
 ### Grapheme Timing
 
 逐字或逐 grapheme 动画优先复用 `src/utils/lyrics/graphemeTiming.ts`：
@@ -220,7 +236,7 @@ const { t } = useTranslation();
 
 - 视觉相关设置必须进入 `AppearanceSettingsSubview.tsx` 的导入导出链路。
 - 功能性设置或可执行动作必须注册到 `src/components/command-palette/commandRegistry.ts`。
-- 设置状态优先复用 `src/stores/useSettingsUiStore.ts`，不要在组件里另起一套 localStorage 读写。
+- 设置状态优先复用已有 store：弹窗 UI 状态在 `src/stores/useSettingsModalStore.ts`，设置值在对应领域的 `use*SettingsStore`（`useAudioSettingsStore`、`useLyricSettingsStore`、`useThemeSettingsStore`、`useTypographySettingsStore` 等）。不要在组件里另起一套 localStorage 读写。
 
 ### Long Lists
 

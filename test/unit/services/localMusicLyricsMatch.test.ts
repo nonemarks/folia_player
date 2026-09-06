@@ -14,6 +14,12 @@ const lyricSettings = vi.hoisted(() => ({
     localLyricsPriority: 'local' as 'local' | 'online',
 }));
 
+// fork: Whisper alignment settings live in their own store; pin the defaults the assertions below expect.
+const whisperSettings = vi.hoisted(() => ({
+    whisperAlignEnabled: false,
+    whisperAlignModel: 'base',
+}));
+
 vi.mock('@/utils/lyrics/autoMatchBestLyric', () => ({ autoMatchBestLyric: vi.fn() }));
 vi.mock('@/services/localLibraryCatalogService', () => ({ applyMatchedMetadata: vi.fn() }));
 vi.mock('@/services/localLibraryEntityRepository', () => ({
@@ -26,9 +32,15 @@ vi.mock('@/services/netease', () => ({
         getSongDetail: vi.fn(),
     },
 }));
-vi.mock('@/stores/useSettingsUiStore', () => ({
-    useSettingsUiStore: {
+// Lyric sourcing moved to its own store; this suite drives it through the same fixture.
+vi.mock('@/stores/useLyricSettingsStore', () => ({
+    useLyricSettingsStore: {
         getState: () => lyricSettings,
+    },
+}));
+vi.mock('@/stores/useWhisperSettingsStore', () => ({
+    useWhisperSettingsStore: {
+        getState: () => whisperSettings,
     },
 }));
 
@@ -80,6 +92,10 @@ describe('localMusicService lyric matching', () => {
             preferredSource: 'amll',
             metadataCandidate: { source: 'netease', songId: 987 },
             exactMatchOnly: false,
+            // fork: the whole song plus the Whisper alignment prefs ride along for local word-by-word alignment.
+            song: localSong,
+            whisperAlignEnabled: false,
+            whisperAlignModel: 'base',
         });
         expect(neteaseApi.cloudSearch).not.toHaveBeenCalled();
         expect(applyMatchedMetadata).toHaveBeenCalledWith('local-song', {}, expect.objectContaining({

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Download, Loader2 } from 'lucide-react';
-import { useSettingsUiStore } from '../../stores/useSettingsUiStore';
+import { useWhisperSettingsStore } from '../../stores/useWhisperSettingsStore';
 import { getWhisperAvailabilityUnified } from '../../services/whisperModService';
 import { downloadWhisperModel, type WhisperAvailabilityDetail } from '../../services/whisperAlignService';
 
@@ -17,8 +17,8 @@ const modelLabelKey = (value: string) =>
 
 const WhisperModelSelector: React.FC = () => {
     const { t } = useTranslation();
-    const whisperAlignModel = useSettingsUiStore(state => state.whisperAlignModel);
-    const onSetWhisperAlignModel = useSettingsUiStore(state => state.handleSetWhisperAlignModel);
+    const whisperAlignModel = useWhisperSettingsStore(state => state.whisperAlignModel);
+    const onSetWhisperAlignModel = useWhisperSettingsStore(state => state.handleSetWhisperAlignModel);
 
     // Model download is owned here (not by WhisperEnvCheck's old grid) so this stays a persistent
     // "select + download + status" entry. The previous grid was gated behind "no model downloaded
