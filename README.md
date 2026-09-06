@@ -36,6 +36,19 @@ Lyrics Reimagined // 辞曲新境
 
 相对于上游 [chthollyphile/folia-major](https://github.com/chthollyphile/folia-major)，本 Fork 包含以下独有修改：
 
+### Whisper AI 逐字歌词对齐（旗舰功能）
+
+基于 whisper.cpp 的词级语音转录，为本地与在线歌曲生成逐字（word-by-word）歌词时间轴，让全屏歌词真正逐字点亮。
+
+- **可选 mod 集成**：对齐能力以模组形式提供（`mods/whisper-align/`），经 `whisperModService` 统一调度，采用 fail-closed 信任机制（新模组需确认内容指纹后才启用），可随时开关而不影响上游主流程。
+- **两级时间轴校正**：行级硬锁（Tier 1）叠加全局偏移校正（Tier 2），兼顾逐字精度与整体对齐。
+- **模型与语言管理**：支持选择并下载 whisper.cpp 模型、指定转录语言，提供自动对齐开关与「强制重新生成逐字歌词」。
+- **逐字歌词概览**：查看当前歌曲的逐行时间轴、逐字时间戳，以及对齐匹配置信度（matchRate，反映真实转录与插值猜测的比例）。
+- **GPU 加速人声分离**：对齐前可用 htdemucs 分离人声以提升质量，支持 CUDA / 独显加速（GPU 版 whisper-cli 需按环境自行编译，RTX 50 系 / Blackwell 需 CUDA 12.8 及以上）。
+- **智能语言检测**：自动识别歌曲语言，避免中日韩歌曲被误判为英语而导致对齐失败。
+
+> 运行时依赖 FFmpeg 与 onnxruntime-node 等原生组件；人声分离需要额外的 Python 运行时，桌面构建通过 `build/buildPythonRuntime.mjs` 打包。
+
 ### Sonnet 可视化增强
 
 - **镜头过渡方向联动**：镜头退出方向跟随相机平移方向，使过渡更自然
@@ -45,17 +58,16 @@ Lyrics Reimagined // 辞曲新境
 - **增强过渡动画**：扩展 `sonnetTransitions`，支持更多过渡效果
 - **排版角色与布局增强**：扩展 `sonnetTypographyRoles` 和 `sonnetTypographyLayout`
 
+### 歌词匹配集成
+
+- 歌词来源优先级新增 `whisper` 源（`sourcePriority`），并把 Whisper 对齐接入本地与在线歌曲的自动匹配和播放流程
+- 歌词匹配弹窗、播放 / 本地 / 导航面板统一接入 Whisper 对齐入口与开关
+
 ### Windows 构建配置
 
 - 新增 **Portable** 构建目标（x64），与 NSIS 安装包并存
-- 图标格式从 `icon.png` 改为 `icon.ico`
 - 新增 `build-electron.cjs`：绕过 SSL 证书验证的构建脚本（适用于企业代理环境）
-
-### 其他
-
-- **歌词代理白名单**：移除 `kgimg.com` 域名
-- **开发快捷键**：调试叠加层快捷键从 `Alt+Shift+D` 改为 `Ctrl+Shift+D`
-- **Fork 版本号**：`v0.6.21a`
+- 新增 `build/buildPythonRuntime.mjs`：为人声分离打包所需的 Python 运行时
 
 ---
 
