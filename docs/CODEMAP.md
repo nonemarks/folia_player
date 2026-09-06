@@ -9,14 +9,14 @@
 
 | 区域 | 文件数 |
 | --- | --- |
-| components | 524 |
-| test/dev | 405 |
-| services | 121 |
-| utils | 121 |
-| hooks | 65 |
-| backend/electron | 62 |
-| stores | 31 |
-| 其他 | 20 |
+| components | 537 |
+| test/dev | 406 |
+| services | 123 |
+| utils | 123 |
+| hooks | 66 |
+| backend/electron | 63 |
+| stores | 32 |
+| 其他 | 23 |
 | types | 15 |
 | src (其他) | 13 |
 | i18n | 5 |
@@ -28,21 +28,21 @@
 
 | 被依赖数 | 模块 |
 | --- | --- |
-| 507 | `src/types.ts` |
+| 516 | `src/types.ts` |
 | 63 | `src/utils/appPlaybackGuards.ts` |
-| 61 | `src/types/onlineMusic.ts` |
+| 62 | `src/types/onlineMusic.ts` |
 | 56 | `src/components/command-palette/types.ts` |
 | 46 | `src/components/visualizer/colorMix.ts` |
-| 45 | `src/stores/useStatusMessageStore.ts` |
-| 42 | `src/services/db.ts` |
+| 46 | `src/stores/useStatusMessageStore.ts` |
+| 43 | `src/services/db.ts` |
 | 36 | `src/components/visualizer/definition.ts` |
 | 36 | `src/services/onlineMusic/songMetadata.ts` |
 | 33 | `src/stores/usePlaybackStore.ts` |
+| 31 | `src/utils/lyrics/renderHints.ts` |
 | 30 | `src/utils/lyrics/parserCore.ts` |
-| 30 | `src/utils/lyrics/renderHints.ts` |
 | 28 | `src/components/visualizer/tempera/types.ts` |
 | 28 | `src/types/localLibrary.ts` |
-| 26 | `src/services/onlineMusic/omni.ts` |
+| 27 | `src/services/onlineMusic/omni.ts` |
 
 ## 动态注册点
 
