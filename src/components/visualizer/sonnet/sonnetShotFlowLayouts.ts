@@ -53,8 +53,12 @@ export const placeWithGlobalFit = <T extends SonnetFlowLayoutBox>(
         measuredWidth: box.measuredWidth,
         measuredHeight: box.measuredHeight,
     }));
-    const safeHalfW = ctx.width * 0.44;
-    const safeHalfH = ctx.height * 0.42;
+    // The fit bounds must match the wrap safe-area used by layoutQuietTableau /
+    // layoutEditorialColumn (height * 0.46). A tighter bound here would make every
+    // wrapped column fail the fit check and force a global shrink, defeating the
+    // "wrap into side columns instead of shrinking" design.
+    const safeHalfW = ctx.width * 0.48;
+    const safeHalfH = ctx.height * 0.46;
     const minGap = Math.max(8, ctx.flowGap * 0.5);
     const boxesOverlap = (a: T, b: T) => {
         const dx = Math.abs(a.x - b.x);
@@ -400,8 +404,13 @@ export const layoutFragmentCollage = <T extends SonnetFlowLayoutBox>(
     // retries snapshot the boxes, so every rung packs the horizontal footprint and
     // the frame decor never wraps a vertical box around horizontal text.
     boxes.forEach((box, index) => {
-        if (index === heroIndex) return;
-        if (Math.abs(Math.round(box.rotation / (Math.PI / 2)) % 2) === 1) {
+        const isRotatedBlock = Math.abs(Math.round(box.rotation / (Math.PI / 2)) % 2) === 1;
+        // The hero is normally left untouched so a vertical CJK column keeps its stack and
+        // tilt. But the foreign-language hero priority can promote a non-CJK word that was
+        // measured as a rotated block; flatten that one too, or the collage orbits a lone
+        // rotated hero whose frame decor wraps a tall box around horizontal text.
+        if (index === heroIndex && !isRotatedBlock) return;
+        if (isRotatedBlock) {
             const rotatedWidth = box.measuredHeight;
             box.measuredHeight = box.measuredWidth;
             box.measuredWidth = rotatedWidth;

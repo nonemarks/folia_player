@@ -264,7 +264,9 @@ describe('Sonnet typography layout', () => {
         const word = layout.find(item => item.segmentIndex === 1)!;
 
         expect(word.vertical).toBe(false);
-        expect(word.rotation).toBeCloseTo(Math.PI / 2);
+        // A deterministic ±5° tilt is layered on top of the quarter turn for visual
+        // dynamism, so assert the block is still essentially a 90° rotation.
+        expect(Math.abs(word.rotation - Math.PI / 2)).toBeLessThanOrEqual(5 * Math.PI / 180 + 1e-6);
         expect(Math.abs(layout[0].y - word.y)).toBeLessThan(300);
     });
 
@@ -630,9 +632,12 @@ describe('Sonnet shot-kind flow layouts', () => {
     // tall vertical box around the horizontal text (the "encode/this" screenshot bug).
     // The word list is long enough to force global-fit retries, which used to
     // restore the tall pre-swap dimensions from the snapshot on the second rung.
+    // 'absolutely' is the longest foreign word here, so the foreign-language hero
+    // priority picks it (index 7) as hero and leaves 'encode'/'this' as the rotated
+    // non-CJK supports the collage must flatten.
     it('un-swaps measured bounds when the collage flattens rotated non-CJK words', () => {
         const layout = layoutOf([
-            'encode', 'あ', 'い', 'う', 'this', 'え', 'お', '英雄核心词汇句',
+            'encode', 'あ', 'い', 'う', 'this', 'え', 'お', 'absolutely',
             'か', 'き', 'く', 'け', 'こ', 'さ', 'し',
         ], 'fragment-collage');
         const items = byIndex(layout);
@@ -643,6 +648,23 @@ describe('Sonnet shot-kind flow layouts', () => {
             expect(flattened.rotation).toBe(0);
             expect(flattened.measuredWidth).toBeGreaterThan(flattened.measuredHeight);
         });
+    });
+
+    // The foreign-language hero priority can promote a non-CJK word ('encode', index 0)
+    // to hero, and index 0 % 4 === 0 makes the collage measure it as a rotated block.
+    // The flatten must un-swap the hero too, or the collage orbits a lone rotated hero
+    // whose frame decor wraps a tall box around horizontal text.
+    it('flattens a rotated non-CJK hero in the collage', () => {
+        const layout = layoutOf([
+            'encode', 'あ', 'い', 'う', 'this', 'え', 'お', '英雄核心词汇句',
+            'か', 'き', 'く', 'け', 'こ', 'さ', 'し',
+        ], 'fragment-collage');
+        const items = byIndex(layout);
+        const hero = items.get(0)!;
+
+        expect(hero.role).toBe('hero');
+        expect(hero.rotation).toBe(0);
+        expect(hero.measuredWidth).toBeGreaterThan(hero.measuredHeight);
     });
 
     // Regression: short cross columns used to stack tiny support words against the
