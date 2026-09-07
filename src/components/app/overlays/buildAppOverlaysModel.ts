@@ -11,6 +11,7 @@ import { resolvePlaybackNeighbors } from '../../../utils/playbackNeighbors';
 import { getPlaybackSongKey } from '../../../utils/appPlaybackGuards';
 import { getSongArtistLabel } from '../../../services/onlineMusic/songMetadata';
 import { setPlayerState } from '../../../stores/usePlaybackStore';
+import { focusLatticeCurrentSong } from '../../../stores/useLatticeControlsStore';
 import { setIsDevDebugOverlayVisible, setIsMemoryMonitorVisible } from '../../../stores/useAppChromeStore';
 import type { SlotContextFromApp } from '../../FloatingPlayerControls';
 import type { PlayerControlSlotActionId } from '../../../types/playerControlSlots';
@@ -69,6 +70,7 @@ type AppOverlaysAmbient = {
     /** 卡片上的两种动作各自的无障碍名字 */
     stageTrackPillOpenPlayerLabel: string;
     stageTrackPillOpenSongCardLabel: string;
+    stageTrackPillFocusLatticeLabel: string;
     playerControlSlotPrimary: PlayerControlSlotActionId;
     playerControlSlotSecondary: PlayerControlSlotActionId;
     playerControlSlotContext: SlotContextFromApp;
@@ -178,6 +180,7 @@ export const buildAppOverlaysModel = ({
     openSongCardPanel,
     stageTrackPillOpenPlayerLabel,
     stageTrackPillOpenSongCardLabel,
+    stageTrackPillFocusLatticeLabel,
     playerControlSlotPrimary,
     playerControlSlotSecondary,
     playerControlSlotContext,
@@ -200,10 +203,16 @@ export const buildAppOverlaysModel = ({
             nextUp: stageNextUp,
             isNextUp: stageIsNextUp,
             theme,
-            onActivate: currentView === 'home' ? navigateToPlayer : openSongCardPanel,
+            onActivate: currentView === 'home'
+                ? navigateToPlayer
+                : currentView === 'lattice'
+                    ? () => { focusLatticeCurrentSong(); }
+                    : openSongCardPanel,
             activateLabel: currentView === 'home'
                 ? stageTrackPillOpenPlayerLabel
-                : stageTrackPillOpenSongCardLabel,
+                : currentView === 'lattice'
+                    ? stageTrackPillFocusLatticeLabel
+                    : stageTrackPillOpenSongCardLabel,
         }
         : null,
     searchOverlay: currentView === 'home'
@@ -274,6 +283,7 @@ export const buildAppOverlaysModel = ({
             onTogglePlay: togglePlay,
             onToggleLoop: toggleLoop,
             onNavigateToPlayer: navigateToPlayer,
+            onFocusLatticeCurrentSong: () => { focusLatticeCurrentSong(); },
             noTrackText,
             primaryColor: 'var(--text-primary)',
             secondaryColor: 'var(--text-secondary)',

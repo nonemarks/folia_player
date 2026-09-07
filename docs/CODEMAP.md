@@ -9,15 +9,15 @@
 
 | 区域 | 文件数 |
 | --- | --- |
-| components | 537 |
-| test/dev | 406 |
-| services | 123 |
-| utils | 123 |
-| hooks | 66 |
-| backend/electron | 63 |
-| stores | 32 |
-| 其他 | 23 |
-| types | 15 |
+| components | 579 |
+| test/dev | 426 |
+| services | 128 |
+| utils | 124 |
+| hooks | 68 |
+| backend/electron | 67 |
+| stores | 35 |
+| 其他 | 25 |
+| types | 17 |
 | src (其他) | 13 |
 | i18n | 5 |
 | workers | 3 |
@@ -28,28 +28,28 @@
 
 | 被依赖数 | 模块 |
 | --- | --- |
-| 516 | `src/types.ts` |
-| 63 | `src/utils/appPlaybackGuards.ts` |
+| 543 | `src/types.ts` |
+| 72 | `src/utils/appPlaybackGuards.ts` |
 | 62 | `src/types/onlineMusic.ts` |
-| 56 | `src/components/command-palette/types.ts` |
-| 46 | `src/components/visualizer/colorMix.ts` |
-| 46 | `src/stores/useStatusMessageStore.ts` |
-| 43 | `src/services/db.ts` |
-| 36 | `src/components/visualizer/definition.ts` |
-| 36 | `src/services/onlineMusic/songMetadata.ts` |
-| 33 | `src/stores/usePlaybackStore.ts` |
-| 31 | `src/utils/lyrics/renderHints.ts` |
+| 58 | `src/components/command-palette/types.ts` |
+| 49 | `src/stores/useStatusMessageStore.ts` |
+| 47 | `src/components/visualizer/colorMix.ts` |
+| 44 | `src/services/db.ts` |
+| 37 | `src/components/visualizer/definition.ts` |
+| 37 | `src/services/onlineMusic/songMetadata.ts` |
+| 36 | `src/stores/usePlaybackStore.ts` |
+| 33 | `src/utils/lyrics/renderHints.ts` |
 | 30 | `src/utils/lyrics/parserCore.ts` |
+| 29 | `src/stores/useAppViewStore.ts` |
 | 28 | `src/components/visualizer/tempera/types.ts` |
-| 28 | `src/types/localLibrary.ts` |
-| 27 | `src/services/onlineMusic/omni.ts` |
+| 28 | `src/i18n/config.ts` |
 
 ## 动态注册点
 
 这些地方用 `import.meta.glob` 自动发现成员，**清单随目录变化，不要手写**。
 以下是当前的完整展开：
 
-### `dev/probes/registry.ts` (18)
+### `dev/probes/registry.ts` (19)
 
 - `dev/probes/audioEffectGrid.probe.tsx`
 - `dev/probes/automixModelReminder.probe.tsx`
@@ -58,6 +58,7 @@
 - `dev/probes/fmTab.probe.tsx`
 - `dev/probes/globalLyricOffsetRuler.probe.tsx`
 - `dev/probes/gridPanelToggle.probe.tsx`
+- `dev/probes/lattice.probe.tsx`
 - `dev/probes/lyricFilterModal.probe.tsx`
 - `dev/probes/lyricSegmentationSurface.probe.tsx`
 - `dev/probes/lyricStaffSection.probe.tsx`

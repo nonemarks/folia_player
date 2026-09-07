@@ -916,6 +916,7 @@ export interface LatentBackgroundTuning {
 export interface MonetTuning {
   keywordColoringEnabled: boolean;
   showDescription: boolean;
+  showAudioVisualization: boolean;
   audioStyle: MonetAudioStyle;
   fontScale: number;
   portraitSource: MonetPortraitSource;
@@ -986,6 +987,7 @@ export const DEFAULT_LATENT_BACKGROUND_TUNING: LatentBackgroundTuning = {
 export const DEFAULT_MONET_TUNING: MonetTuning = {
   keywordColoringEnabled: true,
   showDescription: true,
+  showAudioVisualization: true,
   audioStyle: 'bar',
   fontScale: 1.2,
   portraitSource: 'cover',
@@ -1145,6 +1147,8 @@ export interface SongResult {
   t?: 0 | 1 | 2;
   sourceType?: 'netease' | 'cloud';
   sourceRef?: PlaybackSourceRef;
+  /** Identity of the concrete bytes selected for playback; used to reject stale derived media. */
+  playbackSourceRevision?: string;
   fee?: number;
   noCopyrightRcmd?: NoCopyrightRecommendation | null;
   resourceState?: boolean;

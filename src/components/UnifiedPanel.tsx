@@ -104,6 +104,7 @@ type UnifiedPanelQueueProps = {
     onRemoveSong: (index: number) => void;
     onMoveSongToEnd: (index: number) => void;
     onMoveSongToNext: (index: number) => void;
+    onOpenLattice?: () => void;
 };
 
 type UnifiedPanelAccountProps = {
@@ -860,6 +861,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                                                 onRemoveSong={onRemoveSong}
                                                 onMoveSongToEnd={onMoveSongToEnd}
                                                 onMoveSongToNext={onMoveSongToNext}
+                                                onOpenLattice={queue.onOpenLattice}
                                                 // TODO: Define cross-source playlist export before enabling playlist creation for mixed queues.
                                                 canSaveLocalPlaylist={Boolean(
                                                     isLocal

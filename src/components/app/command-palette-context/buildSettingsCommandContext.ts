@@ -4,7 +4,10 @@ import type { ThemeGenerationSource } from '../../../services/themePreferences';
 import { useAudioSettingsStore } from '../../../stores/useAudioSettingsStore';
 import { useAutomixSettingsStore } from '../../../stores/useAutomixSettingsStore';
 import { useDesktopSettingsStore } from '../../../stores/useDesktopSettingsStore';
+import { useLocalLibrarySettingsStore } from '../../../stores/useLocalLibrarySettingsStore';
+import { isLocalLibraryAutoScanSupported } from '../../../services/localLibraryAutoScan';
 import { useLyricSettingsStore } from '../../../stores/useLyricSettingsStore';
+import { useLatticeSettingsStore } from '../../../stores/useLatticeSettingsStore';
 import { usePlayerChromeSettingsStore } from '../../../stores/usePlayerChromeSettingsStore';
 import { useSettingsModalStore } from '../../../stores/useSettingsModalStore';
 import { useSleepTimerStore } from '../../../stores/useSleepTimerStore';
@@ -50,6 +53,7 @@ export const buildSettingsCommandContext = (
     const sleepTimer = useSleepTimerStore.getState();
     const modal = useSettingsModalStore.getState();
     const themeQuickEditor = useThemeQuickEditorStore.getState();
+    const lattice = useLatticeSettingsStore.getState();
 
     return {
         openSettings: modal.openSettings,
@@ -72,6 +76,20 @@ export const buildSettingsCommandContext = (
         toggleAlwaysShowPlayerBackButton: () => chrome.handleToggleAlwaysShowPlayerBackButton(
             !usePlayerChromeSettingsStore.getState().alwaysShowPlayerBackButton,
         ),
+        toggleLatticeVignette: () => useLatticeSettingsStore.getState().handleToggleLatticeVignette(
+            !useLatticeSettingsStore.getState().latticeVignette,
+        ),
+        toggleLatticeAutoFocusOnSongChange: () => useLatticeSettingsStore.getState().handleToggleAutoFocusOnSongChange(
+            !useLatticeSettingsStore.getState().autoFocusOnSongChange,
+        ),
+        latticePosterTintEnabled: lattice.latticePosterTintEnabled,
+        latticePosterTintUseCustomColor: lattice.latticePosterTintUseCustomColor,
+        latticePosterTintColor: lattice.latticePosterTintColor,
+        latticePosterTintIntensity: lattice.latticePosterTintIntensity,
+        setLatticePosterTintEnabled: lattice.handleToggleLatticePosterTint,
+        setLatticePosterTintUseCustomColor: lattice.handleToggleLatticePosterTintCustomColor,
+        setLatticePosterTintColor: lattice.handleSetLatticePosterTintColor,
+        setLatticePosterTintIntensity: lattice.handleSetLatticePosterTintIntensity,
         toggleAlwaysShowTrackSwitchButtons: () => chrome.handleToggleAlwaysShowTrackSwitchButtons(
             !usePlayerChromeSettingsStore.getState().alwaysShowTrackSwitchButtons,
         ),
@@ -81,6 +99,11 @@ export const buildSettingsCommandContext = (
         toggleAutoPlayOnLaunch: () => audio.handleToggleAutoPlayOnLaunch(
             !useAudioSettingsStore.getState().autoPlayOnLaunch,
         ),
+        toggleTranscodeFallback: () => audio.handleToggleTranscodeFallback(
+            !useAudioSettingsStore.getState().enableTranscodeFallback,
+        ),
+        canAutoScanLocalLibrary: isLocalLibraryAutoScanSupported,
+        toggleLocalLibraryAutoScan: () => useLocalLibrarySettingsStore.getState().toggleAutoScan(),
         voiceInputPauseSupported: deps.voiceInputPauseSupported,
         modSystemEnabled: desktop.modSystemEnabled,
         toggleVoiceInputPause: () => desktop.handleToggleVoiceInputPause(
