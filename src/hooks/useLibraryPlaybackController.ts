@@ -88,7 +88,7 @@ type UseLibraryPlaybackControllerParams = {
     setLyrics: (nextLyrics: LyricData | null) => void;
     setIsLyricsLoading: SetState<boolean>;
     setLikedSongIds: Dispatch<SetStateAction<Set<MediaId>>>;
-    navigateToPlayer: () => void;
+    navigateToPlaybackView: () => void;
     persistLastPlaybackCache: (song: SongResult | null, queue: SongResult[]) => Promise<void>;
     restoreCachedThemeForSong: (songOrId: ThemeCacheSongKey | SongResult, options?: {
         allowLastUsedFallback?: boolean;
@@ -108,7 +108,7 @@ export function useLibraryPlaybackController({
     setLyrics,
     setIsLyricsLoading,
     setLikedSongIds,
-    navigateToPlayer,
+    navigateToPlaybackView,
     persistLastPlaybackCache,
     restoreCachedThemeForSong,
     interruptStagePlaybackForMainTransition,
@@ -617,7 +617,7 @@ export function useLibraryPlaybackController({
         void persistLastPlaybackCache(initialMeta.unifiedSong, finalQueue);
 
         if (options.shouldNavigateToPlayer ?? true) {
-            navigateToPlayer();
+            navigateToPlaybackView();
         }
         setPlayerState(PlayerState.IDLE);
         setStatusMsg({ type: 'success', text: t('status.localMusicLoaded')});
@@ -668,7 +668,7 @@ export function useLibraryPlaybackController({
         currentTime,
         handleLocalSongMatch,
         interruptStagePlaybackForMainTransition,
-        navigateToPlayer,
+        navigateToPlaybackView,
         persistLastPlaybackCache,
         prewarmNearbyLocalSongs,
         restoreCachedThemeForSong,
@@ -892,7 +892,7 @@ export function useLibraryPlaybackController({
             void persistLastPlaybackCache(unifiedSong, finalQueue);
 
             if (shouldNavigateToPlayer) {
-                navigateToPlayer();
+                navigateToPlaybackView();
             }
             setPlayerState(PlayerState.IDLE);
             setStatusMsg({ type: 'success', text: t('status.navidromeSongLoaded')});
@@ -908,7 +908,7 @@ export function useLibraryPlaybackController({
         currentSongRef,
         currentTime,
         interruptStagePlaybackForMainTransition,
-        navigateToPlayer,
+        navigateToPlaybackView,
         persistLastPlaybackCache,
         restoreCachedThemeForSong,
         setAudioSrc,

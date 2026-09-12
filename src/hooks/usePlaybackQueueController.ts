@@ -36,6 +36,7 @@ import { currentTime } from '../stores/motionSignals';
 import { setIsPanelOpen, setPanelTab } from '../stores/useAppViewStore';
 import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
 import { useSearchNavigationStore } from '../stores/useSearchNavigationStore';
+import { showLatticeFmNotice, usePlaybackEntryViewStore } from '../stores/usePlaybackEntryViewStore';
 import { useStableActionSurface } from './useStableCallbacks';
 
 // src/hooks/usePlaybackQueueController.ts
@@ -71,7 +72,7 @@ type UsePlaybackQueueControllerParams = {
     userId?: MediaId;
     setLyrics: (nextLyrics: any) => void;
     setIsLyricsLoading: SetState<boolean>;
-    navigateToPlayer: () => void;
+    navigateToPlaybackView: () => void;
     navigateToSearch: (args: {
         query: string;
         sourceTab: SearchSource;
@@ -147,7 +148,7 @@ export function usePlaybackQueueController({
     userId,
     setLyrics,
     setIsLyricsLoading,
-    navigateToPlayer,
+    navigateToPlaybackView,
     navigateToSearch,
     persistLastPlaybackCache,
     restoreCachedThemeForSong,
@@ -446,10 +447,14 @@ export function usePlaybackQueueController({
         clearPendingUnavailableSkip();
         setStatusMsg(prev => prev?.persistent ? null : prev);
         const shouldNavigateToPlayer = options.shouldNavigateToPlayer ?? true;
+        const wasFmMode = usePlaybackStore.getState().isFmMode;
         setIsFmMode(isFmCall);
-        if (isFmCall && !isFmMode) {
+        if (isFmCall && !wasFmMode) {
             setPanelTab('queue');
             setIsPanelOpen(true);
+            if (usePlaybackEntryViewStore.getState().playbackEntryView === 'lattice') {
+                showLatticeFmNotice();
+            }
         }
 
         const playbackRequestId = ++playbackRequestIdRef.current;
@@ -594,7 +599,7 @@ export function usePlaybackQueueController({
         void persistLastPlaybackCache({ ...resolvedSong, onlineLyricsState: onlineLyricsState ?? undefined }, resolvedQueue);
 
         if (shouldNavigateToPlayer) {
-            navigateToPlayer();
+            navigateToPlaybackView();
         }
         setPlayerState(PlayerState.IDLE);
 
@@ -678,7 +683,7 @@ export function usePlaybackQueueController({
         isFmMode,
         lastAudioRecoverySourceRef,
         localSongs,
-        navigateToPlayer,
+        navigateToPlaybackView,
         onPlayLocalSong,
         onPlayNavidromeSong,
         pendingResumeTimeRef,

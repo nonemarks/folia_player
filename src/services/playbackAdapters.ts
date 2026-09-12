@@ -163,7 +163,9 @@ export function buildUnifiedLocalSong({
         id: getLocalSongId(localSong),
         name: displayTitle,
         artists: displayArtists,
-        album: displayAlbum ? { id: 0, name: displayAlbum, coverUrl: coverUrl || undefined } : { id: 0, name: '' },
+        // The cover has to survive an empty album tag: a file with artwork but no album name still
+        // needs `album.coverUrl`, which is the only cover channel queue-derived surfaces read.
+        album: { id: 0, name: displayAlbum || '', ...(coverUrl ? { coverUrl } : {}) },
         durationMs: localSong.duration,
         isPureMusic: useMatchedLyrics ? localSong.matchedIsPureMusic : false,
         isLocal: true,
@@ -185,16 +187,23 @@ export function buildUnifiedLocalSong({
     return unifiedSong;
 }
 
+// Local covers are served in two thumbnail buckets. Player surfaces render the artwork full-bleed
+// and take the large one; list rows ask for the small one so a long list does not decode four times
+// the pixels it shows, and so both callers land in the same bucket the preloader warmed.
+export const QUEUE_COVER_SIZE = 1024;
+export const LIST_ROW_COVER_SIZE = 512;
+
 export function buildLocalQueue(
     queue: LocalSong[],
     currentSong?: UnifiedSong,
     catalog?: LocalLibraryDisplayCatalog,
+    coverSize: number = QUEUE_COVER_SIZE,
 ): UnifiedSong[] {
     const catalogIndex = catalog
         ? buildLocalLibraryIndex(catalog.entities, catalog.assignments)
         : undefined;
     const convertedQueue = queue.map(song => {
-        const localCoverUrl = getLocalCoverAssetUrl(song.localCoverAssetId, 1024);
+        const localCoverUrl = getLocalCoverAssetUrl(song.localCoverAssetId, coverSize);
         return applyLocalLibraryEntityDisplay(buildUnifiedLocalSong({
             localSong: song,
             matchedSong: null,

@@ -1,6 +1,5 @@
-import { useReducedMotion, type MotionValue } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PlayerState, type SongResult } from '../../../types';
+import type { SongResult } from '../../../types';
 import {
     getLatticeGeometry,
     layoutExpandedBlock,
@@ -23,16 +22,16 @@ import {
 } from './useLatticePlaybackFocus';
 import { setLatticeCurrentSongPosterVisible } from '../../../stores/useLatticeControlsStore';
 import { getPlaybackSongKey } from '../../../utils/appPlaybackGuards';
+import { useDevicePixelRatio } from '../../../hooks/useMediaQuery';
+import { useReducedMotionFor } from '../../../hooks/useReducedMotionFor';
+import { EXPANSION_SPAN } from './blockTemplates';
 
 // Draggable poster field: one greedily packed block template repeats over the queue.
 
 type PosterWallProps = {
     tiles: LatticeTile[];
+    /** Only for playback focus and visibility tracking; the chrome reads transport state from context. */
     currentSong: SongResult | null;
-    playerState: PlayerState;
-    currentTime: MotionValue<number>;
-    playbackDuration: number;
-    canTogglePlayback: boolean;
     onPlay: (tile: LatticeTile) => void;
     onTogglePlayback: () => void;
     onSeek: (time: number) => void;
@@ -51,6 +50,8 @@ const ENTRANCE_STAGGER = 0.03;
 const ENTRANCE_MAX_DELAY = 0.34;
 const ENTRANCE_WINDOW = 1100;
 const METRICS: WallMetrics = { cellSize: CELL_SIZE, gap: GAP };
+// Longest edge a card can reach, which is the gear expansion hands it.
+const EXPANDED_SIZE = EXPANSION_SPAN.cols * (CELL_SIZE + GAP) - GAP;
 
 
 const getScale = (width: number) => width < 640 ? 0.52 : width < 1100 ? 0.64 : 0.76;
@@ -65,10 +66,6 @@ const getWorldBounds = (camera: LatticeCamera, viewport: { width: number; height
 export default function PosterWall({
     tiles,
     currentSong,
-    playerState,
-    currentTime,
-    playbackDuration,
-    canTogglePlayback,
     onPlay,
     onTogglePlayback,
     onSeek,
@@ -91,7 +88,12 @@ export default function PosterWall({
     // viewport would otherwise place the entering wave, and the playing song, off centre.
     const [measured, setMeasured] = useState(false);
     const [entranceDone, setEntranceDone] = useState(false);
-    const reducedMotion = useReducedMotion();
+    // Camera scale, mirrored into state only so posters can size their artwork. It follows the
+    // width breakpoints, so this settles after the first measure and then only moves on a resize.
+    const [cameraScale, setCameraScale] = useState(() => cameraRef.current.scale);
+    const reducedMotion = useReducedMotionFor('lattice');
+    const devicePixelRatio = useDevicePixelRatio();
+    const pixelScale = cameraScale * devicePixelRatio;
 
     const geometry = useMemo(() => getLatticeGeometry(tiles.length, METRICS), [tiles.length]);
     const [activePoster, setActivePoster] = useLatticePosterSelection(tiles, geometry, METRICS);
@@ -124,7 +126,9 @@ export default function PosterWall({
         if (!container) return;
         const observer = new ResizeObserver(([entry]) => {
             viewportRef.current = { width: entry.contentRect.width, height: entry.contentRect.height };
-            applyCamera({ ...cameraRef.current, scale: getScale(entry.contentRect.width) }, true);
+            const scale = getScale(entry.contentRect.width);
+            applyCamera({ ...cameraRef.current, scale }, true);
+            setCameraScale(previous => previous === scale ? previous : scale);
             setMeasured(true);
         });
         observer.observe(container);
@@ -318,16 +322,13 @@ export default function PosterWall({
                             tile={tile}
                             rect={rect}
                             gap={METRICS.gap}
+                            pixelScale={pixelScale}
+                            expandedSize={EXPANDED_SIZE}
                             entranceDelay={getEntranceDelay(rect)}
                             exitDelay={getExitDelay(rect)}
                             expanded={expanded}
                             reducedMotion={reducedMotion}
                             didDragRef={didDragRef}
-                            currentSong={currentSong}
-                            playerState={playerState}
-                            currentTime={currentTime}
-                            playbackDuration={playbackDuration}
-                            canTogglePlayback={canTogglePlayback}
                             onExpand={expandPoster}
                             onPlay={onPlay}
                             onTogglePlayback={onTogglePlayback}

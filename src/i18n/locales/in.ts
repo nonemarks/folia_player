@@ -177,7 +177,8 @@ export default {
     "confirm": "Konfirmasi",
     "stageWaiting": "Menunggu input Stage eksternal",
     "stageActionUnavailable": "Aksi ini tidak tersedia di mode Stage",
-    "latticeUnavailableInFm": "Kolase antrean tidak tersedia dalam mode Personal FM",
+    "latticeUnavailableInFm": "Lattice tidak mendukung mode Personal FM",
+    "latticeFmOpenedInPlayer": "Lattice tidak mendukung mode Personal FM. Pemutar standar dibuka sebagai gantinya",
     "noPlayableSongs": "Tidak ada lagu yang bisa diputar di daftar ini",
     "songUnavailableTag": "Tidak Tersedia",
     "queueShuffled": "Antrean diacak",
@@ -304,6 +305,8 @@ export default {
     "sleepTimerMinutesLabel": "Menit",
     "sleepTimerInputPlaceholder": "Masukkan menit, --on, atau --off",
     "latticePosterTintPlaceholder": "Sesuaikan kontrol di bawah",
+    "gridViewCardsPlaceholder": "Sesuaikan kontrol di bawah",
+    "reduceMotionPlaceholder": "Sesuaikan kontrol di bawah",
     "sleepTimerSetPreview": "Mulai timer {{minutes}} menit",
     "sleepTimerOffPreview": "Tekan Enter untuk membatalkan timer tidur",
     "sleepTimerUnknownOption": "Opsi tidak dikenal --{{option}}",
@@ -325,6 +328,7 @@ export default {
     "groupPanel": "Panel",
     "groupPlayback": "Pemutaran",
     "groupVisualizer": "Visualizer",
+    "groupGrid": "Kisi",
     "groupOther": "Perintah",
     "syntax": {
       "hint": "Opsi",
@@ -336,6 +340,10 @@ export default {
       "sleepTimer": {
         "on": "Mulai timer tidur",
         "off": "Batalkan timer tidur"
+      },
+      "gridFilter": {
+        "play": "Putar lagu hasil filter sekarang",
+        "add": "Tambahkan lagu hasil filter ke antrean"
       },
       "lyricSegmentation": {
         "ai": "Segmentasi lagu ini dengan model yang dikonfigurasi",
@@ -412,6 +420,37 @@ export default {
       "home-albums": { "title": "Buka album", "description": "Buka tab album" },
       "home-navidrome": { "title": "Buka Navidrome", "description": "Buka tab Navidrome" },
       "home-radio": { "title": "Buka radio", "description": "Buka tab radio" },
+      "grid-sort-file-name": { "title": "Urutkan berdasarkan nama berkas", "description": "Urutkan lagu lokal berdasarkan nama berkasnya" },
+      "grid-sort-modified-date": { "title": "Urutkan berdasarkan tanggal ubah", "description": "Urutkan lagu lokal berdasarkan waktu berkas terakhir diubah" },
+      "grid-sort-album-track": { "title": "Urutkan berdasarkan nomor trek", "description": "Urutkan lagu lokal berdasarkan nomor cakram dan trek" },
+      "grid-sort-direction": { "title": "Balik arah urutan", "description": "Beralih antara urutan naik dan turun pada daftar lagu lokal" },
+      "grid-toggle-info-panel": { "title": "Alihkan panel koleksi", "description": "Tampilkan atau sembunyikan panel info dan aksi koleksi" },
+      "grid-toggle-track-list": { "title": "Alihkan daftar lagu", "description": "Tampilkan atau sembunyikan daftar lagu di samping kisi" },
+      "grid-resync-folder": { "title": "Impor ulang folder ini", "description": "Pindai ulang folder lokal ini dan segarkan lagunya" },
+      "grid-resync-all-folders": { "title": "Impor ulang semua folder", "description": "Pindai ulang semua folder lokal dan segarkan pustaka" },
+      "grid-organize-song-info": { "title": "Rapikan info lagu", "description": "Rapikan judul, artis, dan album pada folder ini" },
+      "grid-export-playlist": { "title": "Ekspor daftar putar ini", "description": "Simpan daftar putar lokal ini sebagai berkas m3u8" },
+      "grid-edit-entity": { "title": "Sunting album atau artis ini", "description": "Buka penyunting entitas pustaka lokal untuk koleksi ini" },
+      "grid-toggle-edit-mode": { "title": "Alihkan mode sunting", "description": "Masuk atau keluar dari mode yang memungkinkan menghapus lagu dari koleksi ini" },
+      "settings-interaction": { "title": "Pengaturan interaksi", "description": "Buka pengaturan papan ketik, pintasan, dan interaksi kisi" },
+      "settings-custom-shortcut": { "title": "Pintasan khusus", "description": "Langsung ke pengaturan pintasan papan ketik khusus" },
+      "settings-grid-action-button": { "title": "Tombol aksi kisi", "description": "Langsung ke pengaturan target geser tombol aksi kisi" },
+      "settings-pinned-commands": { "title": "Slot perintah tersemat", "description": "Pilih tiga perintah yang disematkan di panel perintah" },
+      "settings-home-tabs": { "title": "Tampilan tab beranda", "description": "Pilih tab mana yang ditampilkan di layar beranda" },
+      "settings-playback-entry-view": { "title": "Tampilan saat diputar", "description": "Langsung ke pengaturan tampilan yang dibuka saat menekan putar" },
+      "playback-entry-view-player": { "title": "Saat diputar: Visualizer", "description": "Menekan putar membuka pemutar dan visualizer-nya" },
+      "playback-entry-view-lattice": { "title": "Saat diputar: Lattice", "description": "Menekan putar membuka kolase antrean" },
+      "settings-theme-presets": { "title": "Prasetel tema", "description": "Langsung ke prasetel tema bawaan dan tersimpan" },
+      "settings-lyrics-renderer": { "title": "Perender lirik", "description": "Langsung ke pengaturan cara lirik digambar di pemutar" },
+      "settings-grid-card-style": { "title": "Gaya kartu kisi", "description": "Langsung ke pengaturan gaya kartu pada kisi beranda" },
+      "settings-queue-behavior": { "title": "Perilaku antrean", "description": "Langsung ke pengaturan cara antrean putar dibentuk dan disimpan" },
+      "settings-netease-scrobble": { "title": "Laporan dengar NetEase", "description": "Langsung ke pengaturan pelaporan pemutaran ke NetEase Cloud Music" },
+      "netease-scrobble-toggle": { "title": "Laporan dengar NetEase", "description": "Aktifkan atau matikan pelaporan pemutaran ke NetEase Cloud Music" },
+      "settings-audio-output": { "title": "Keluaran audio", "description": "Langsung ke pengaturan perangkat dan format keluaran audio" },
+      "settings-transition": { "title": "Transisi cerdas", "description": "Langsung ke pengaturan transisi FOLIA" },
+      "settings-navidrome": { "title": "Server Navidrome", "description": "Langsung ke pengaturan koneksi server Navidrome" },
+      "settings-stage-mode": { "title": "Mode Stage", "description": "Langsung ke pengaturan pemutar eksternal Stage" },
+      "settings-media-cache": { "title": "Cache media", "description": "Langsung ke cache audio yang telah diunduh" },
       "filter-view": { "title": "Saring tampilan ini", "description": "Persempit kartu di layar berdasarkan nama" },
       "panel-cover": { "title": "Panel: sampul", "description": "Buka tab panel sampul" },
       "panel-controls": { "title": "Panel: kontrol", "description": "Buka tab panel kontrol" },
@@ -467,9 +506,15 @@ export default {
       "settings-toggle-transparent": { "title": "Alihkan transparansi", "description": "Alihkan latar belakang pemutar transparan" },
       "settings-toggle-daylight": { "title": "Alihkan terang/gelap", "description": "Alihkan mode siang/malam tema" },
       "settings-toggle-player-back-button": { "title": "Selalu tampilkan tombol kembali pemutar", "description": "Alihkan apakah tombol kembali tetap terlihat" },
+      "settings-gridview-cards": { "title": "Tampilan kartu grid", "description": "Sesuaikan sampul penuh serta seberapa jauh kartu grid menyusut dan memudar" },
+      "settings-toggle-gridview-full-bleed-cover": { "title": "Sampul grid penuh", "description": "Aktifkan atau matikan sampul yang memenuhi seluruh kartu grid" },
+      "settings-toggle-gridview-square-cards": { "title": "Kartu grid persegi", "description": "Aktifkan atau matikan bentuk persegi untuk kartu grid sampul penuh" },
       "settings-toggle-lattice-vignette": { "title": "Lattice vignette", "description": "Aktifkan atau matikan vignette tepi pada kolase antrean" },
       "settings-toggle-lattice-auto-focus": { "title": "Lattice fokus otomatis", "description": "Alihkan apakah kolase antrean mengikuti lagu yang diputar saat lagu berganti" },
       "lattice-poster-tint": { "title": "Lattice warna poster", "description": "Sesuaikan lapisan warna pada poster di luar fokus kolase antrean saat ini" },
+      "settings-reduce-motion": { "title": "Kurangi gerakan", "description": "Turunkan animasi pada tiap permukaan yang memilikinya, atau ikuti pengaturan sistem" },
+      "settings-toggle-reduce-lattice-motion": { "title": "Kurangi gerakan kolase antrean", "description": "Ubah ekspansi, penerbangan kamera dan gelombang masuk kolase antrean menjadi seketika" },
+      "settings-toggle-follow-system-reduced-motion": { "title": "Ikuti pengurangan gerakan sistem", "description": "Alihkan apakah pengaturan animasi sistem boleh mengurangi gerakan di aplikasi" },
       "settings-toggle-track-switch-buttons": { "title": "Selalu tampilkan panah pengganti trek", "description": "Alihkan apakah panah pengganti trek tetap terlihat di samping judul" },
       "settings-toggle-main-window-titlebar": { "title": "Selalu tampilkan tombol kontrol jendela", "description": "Alihkan apakah tombol kontrol jendela tetap terlihat" },
       "settings-toggle-auto-play-on-launch": { "title": "Putar otomatis saat dibuka", "description": "Alihkan apakah membuka aplikasi langsung melanjutkan sesi terakhir" },
@@ -740,7 +785,9 @@ export default {
     "loadMore": "Muat Lebih Banyak",
     "headerTitle": "Judul",
     "headerTime": "Waktu",
-    "loading": "Memuat"
+    "loading": "Memuat",
+    "loadFailed": "Gagal memuat: {{error}}",
+    "loadNotPublic": "Daftar putar ini tidak publik, sehingga sumber musik saat ini tidak dapat membaca isinya"
   },
   "search": {
     "placeholder": "Cari lagu...",
@@ -1239,6 +1286,8 @@ export default {
     "appLanguageEnUS": "Inggris",
     "appLanguageInID": "Indonesia",
     "appLanguageSystemHint": "Ikuti bahasa browser atau sistem. Saat ini: {{language}}",
+    "playbackEntryView": "Tampilan yang dibuka Putar",
+    "playbackEntryViewDesc": "Tampilan mana yang dibuka secara default setelah Anda menekan putar.",
     "homeTabsVisibility": "Entri Top Capsule",
     "homeTabsVisibilityDesc": "Sesuaikan entri capsule yang ditampilkan di bagian atas halaman beranda",
     "bottomUiSettings": "Kontrol Bawah",
@@ -1310,6 +1359,8 @@ export default {
     "enableUpdateCheckDesc": "Periksa rilis GitHub melalui proxy sistem saat aplikasi desktop dimulai.",
     "enableAutoUpdate": "Aktifkan Pembaruan Otomatis",
     "enableAutoUpdateDesc": "Unduh pembaruan secara otomatis setelah versi baru ditemukan.",
+    "autoUpdateUnavailable": "Pembaruan otomatis tidak tersedia",
+    "manualUpdateOnlyDesc": "Versi baru tetap diperiksa, tetapi pembaruan memerlukan installer lengkap atau pengelola paket yang didukung.",
     "updateChannel": "Saluran Pembaruan",
     "updateChannelDesc": "Pilih jalur rilis yang diikuti aplikasi desktop ini.",
     "updateChannelRealeco": "Realeco · Stabil",
@@ -1319,12 +1370,15 @@ export default {
     "updateUnsupportedSystem": "Pembaruan otomatis tidak tersedia di sistem saat ini.",
     "updateUnsupportedChannel": "Pembaruan otomatis tidak tersedia untuk build internal ini.",
     "autoUpdateGithubNotice": "Pembaruan otomatis membutuhkan akses ke GitHub; jika jaringan tidak stabil, pastikan proxy sistem tetap aktif.",
+    "updateCheckGithubNotice": "Pemeriksaan versi memerlukan akses ke GitHub. Saat pembaruan ditemukan, aplikasi akan menautkan installer lengkap.",
     "openReleasePage": "Buka Halaman Rilis",
     "downloadChina": "Unduh CN",
     "downloadSources": "Unduh dari",
     "quarkDrive": "Quark Drive",
     "baiduDrive": "Baidu Drive",
     "githubRelease": "GitHub",
+    "fullInstallerGithub": "Installer lengkap (GitHub)",
+    "aurPackage": "Perbarui melalui AUR",
     "downloadUpdate": "Unduh Pembaruan",
     "restartToInstallUpdate": "Restart untuk Menginstal",
     "staticMode": "Mode Statis",
@@ -1358,6 +1412,21 @@ export default {
     "clearWhisperCacheDone": "Membersihkan {{count}} item cache.",
     "clearWhisperCacheEmpty": "Tidak ada cache penjajaran untuk dihapus.",
     "clearWhisperCacheError": "Gagal menghapus cache.",
+    "reduceMotionSection": "Kurangi gerakan",
+    "reduceMotionSectionDesc": "Folia memutar animasi penuh secara bawaan dan tidak lagi mengikuti pengaturan animasi sistem dengan sendirinya. Turunkan permukaan mana pun yang ingin Anda buat lebih tenang.",
+    "reduceMotionFollowSystem": "Ikuti pengaturan sistem",
+    "reduceMotionFollowSystemDesc": "Biarkan pengaturan animasi sistem operasi mengurangi gerakan di mana saja, seperti perilaku versi sebelumnya.",
+    "reduceMotionForcedBySystem": "Saat ini dikurangi oleh pengaturan sistem di atas.",
+    "reduceMotionLattice": "Kolase antrean",
+    "reduceMotionLatticeDesc": "Ekspansi poster, penerbangan kamera, gelombang pembuka, inersia seret dan pudar lirik pada kolase antrean.",
+    "reduceMotionTransitionOverlay": "Transisi mix",
+    "reduceMotionTransitionOverlayDesc": "Cincin progres automix dan garis progres di sekeliling kartu yang sedang diputar.",
+    "reduceMotionMonetBackground": "Hanyutan latar Monet",
+    "reduceMotionMonetBackgroundDesc": "Hanyutan lambat pada gambar latar yang berasal dari sampul.",
+    "reduceMotionUiMicroMotion": "Mikro-gerakan antarmuka",
+    "reduceMotionUiMicroMotionDesc": "Animasi umpan balik kecil: penukar mode, kilau progres jarak jauh dan petunjuk panel grid.",
+    "reduceMotionSettingsScroll": "Gulir mulus pengaturan",
+    "reduceMotionSettingsScrollDesc": "Apakah melompat ke sebuah bagian pengaturan meluncur ke sana atau langsung mendarat.",
     "labPerformanceSection": "Performa & Latar Belakang",
     "labPlayerUiSection": "Antarmuka Halaman Pemutar",
     "labWindowAndToolsSection": "Jendela & Alat",
@@ -1438,6 +1507,16 @@ export default {
     "latticePosterTintCustomColorDesc": "Ganti gradien dari tema dengan satu warna lapisan tetap.",
     "latticePosterTintColor": "Warna lapisan",
     "latticePosterTintIntensity": "Intensitas lapisan",
+    "gridViewCardSettings": "Kartu grid",
+    "gridViewFullBleedCover": "Sampul penuh",
+    "gridViewFullBleedCoverDesc": "Biarkan sampul memenuhi seluruh kartu grid. Judul dan artis pindah ke gradien di atas sampul, seperti pada kolase antrean.",
+    "gridViewSquareCard": "Kartu persegi",
+    "gridViewSquareCardDesc": "Samakan tinggi kartu dengan lebarnya agar sampul persegi tampil utuh, tidak terpotong atas-bawah. Luas kartu dipertahankan sehingga kartu melebar saat memendek, dan jarak grid ikut menyesuaikan.",
+    "gridViewMinCardScale": "Ukuran kartu minimum",
+    "gridViewMinCardScaleDesc": "Seberapa kecil kartu yang jauh dari pusat boleh menyusut. Lebih tinggi membuat tepi grid tetap terbaca, lebih rendah memperdalam kesan ruang.",
+    "gridViewMinCardOpacity": "Opasitas kartu minimum",
+    "gridViewMinCardOpacityDesc": "Seberapa pudar kartu yang jauh dari pusat boleh menjadi. Lebih tinggi membuat tepi grid tetap terlihat, lebih rendah memusatkan perhatian ke tengah.",
+    "gridViewCardFalloffReset": "Pulihkan peredupan bawaan",
     "disableVisualizerGeometricBackground": "Sembunyikan latar belakang geometris umum",
     "disableVisualizerGeometricBackgroundDesc": "Sembunyikan bentuk latar belakang geometris bersama di halaman pemutar.",
     "desktopTrayBehavior": "Perilaku tray desktop",
@@ -1554,6 +1633,7 @@ export default {
     "subtitleOverlayOpacity": "Opasitas Subtitle",
     "subtitleOverlayBackground": "Latar Belakang Subtitle",
     "subtitleOverlayBackgroundDesc": "Tambahkan halo lembut yang peka tema untuk meningkatkan keterbacaan di atas visual yang ramai.",
+    "subtitleUpcomingLyricsBlur": "Buramkan lirik non-terjemahan",
     "showHarmonySubtitle": "Tampilkan Subtitle Harmoni",
     "showHarmonySubtitleDesc": "Tampilkan atau sembunyikan overlay lirik harmoni atas.",
     "harmonySubtitleBackground": "Latar Belakang Subtitle Harmoni",
@@ -1827,6 +1907,8 @@ export default {
     "themeGenerationSourceAi": "Inferensi AI",
     "themeGenerationSourceCover": "Warna Sampul",
     "themeGenerationSourceAiDesc": "Membaca lirik dengan model AI dan menyimpulkan palet suasana. Membutuhkan kunci API dan mengonsumsi token.",
+    "themeGenerationSourceAiUnavailable": "Belum ada kunci API untuk penyedia AI yang dipilih, sehingga inferensi AI dinonaktifkan.",
+    "configureAiApiKey": "Buka pengaturan tema AI",
     "themeGenerationSourceCoverDesc": "Membangun palet langsung dari warna sampul. Tidak membutuhkan kunci API, tetapi hasilnya kurang ekspresif dan membawa lebih sedikit atribut.",
     "autoGenerateSongThemeCoverDesc": "Saat lagu yang diputar tidak memiliki tema yang di-cache, buat dari sampulnya dan terapkan.",
     "autoGenerateSongThemeDesc": "Saat lagu yang diputar tidak memiliki tema AI yang di-cache, buat dan terapkan secara otomatis.",
@@ -1840,6 +1922,7 @@ export default {
     "confirmClearAll": "Yakin ingin membersihkan semua cache?",
     "electronSettings": "Pengaturan Tema AI",
     "aiProvider": "Penyedia AI",
+    "otherCompatibleApi": "API Kompatibel Lainnya",
     "useSystemProxyAI": "Gunakan Proxy Sistem untuk AI",
     "useSystemProxyAIDesc": "Rutekan permintaan AI secara ketat melalui proxy sistem.",
     "geminiApiKey": "Kunci API Gemini",
@@ -1850,7 +1933,7 @@ export default {
     "openaiApiTemperature": "Temperatur",
     "openaiApiTemperatureDesc": "Rentang: 0–2. Default ke 0.7 bila dibiarkan kosong.",
     "geminiApiKeyDesc": "Backend API Netease berjalan lokal.",
-    "openaiApiUrlDesc": "Gunakan API LLM lain yang kompatibel dengan format OpenAI.",
+    "openaiApiUrlDesc": "API yang kompatibel dengan OpenAI tidak selalu merupakan API resmi OpenAI. Anda dapat memakai penyedia dan model kompatibel seperti DeepSeek.",
     "save": "Simpan",
     "grid3dCardStyle": "Gaya Kartu Grid 3D",
     "grid3dCardStyleDesc": "Pilih tampilan setiap kartu di grid 3D: hanya gambar sampul atau kartu teks Polaroid klasik.",
@@ -2040,6 +2123,10 @@ export default {
     "scanningFolder": "Memindai {{folderName}}",
     "lyricFilterUpdated": "Aturan filter lirik diperbarui",
     "queueSettings": "Antrean Putar",
+    "scrobbleSettings": "Laporan Dengar",
+    "neteaseScrobble": "Laporkan pemutaran (khusus NetEase)",
+    "neteaseScrobbleDesc": "Melaporkan satu pemutaran ke akun NetEase Anda setelah lagu NetEase daring benar-benar diputar minimal 30 detik. Berkas lokal, unggahan cloud, dan penyedia lain tidak pernah dilaporkan. Fitur ini memiliki risiko tertentu - gunakan dengan hati-hati.",
+    "neteaseScrobbleSignInHint": "Masuk ke NetEase Cloud Music untuk memakai ini.",
     "queueDefaultBehavior": "Posisi default saat menambahkan ke antrean",
     "queueDefaultBehaviorDesc": "Perilaku default saat menambahkan lagu ke antrean.",
     "queueAppendLabel": "Tambahkan ke akhir",
@@ -2052,7 +2139,7 @@ export default {
     "goToGithubRelease": "Buka halaman rilis GitHub",
     "chinaDownloadHint": "Catatan: Unduhan GitHub mungkin lambat di Tiongkok. Gunakan Quark Drive atau Baidu Drive sebagai gantinya.",
     "macManualUpdateNotice": "Catatan: macOS memerlukan pengunduhan installer lengkap secara manual untuk memperbarui.",
-    "linuxManualUpdateNotice": "Catatan: Linux tidak mendukung pembaruan otomatis. Silakan unduh paket (AppImage/deb/rpm) untuk memperbarui secara manual.",
+    "linuxManualUpdateNotice": "Linux tidak mendukung pembaruan otomatis. Unduh paket deb, rpm, atau tar.gz lengkap untuk memperbarui secara manual; hanya instalasi AUR stabil yang boleh memperbarui folia-major-bin melalui pengelola paket.",
     "manualUpdateNotice": "Catatan: Pembaruan otomatis tidak didukung di platform ini. Silakan unduh paket secara manual.",
     "versionCopiedHint": "Klik untuk menyalin info versi",
     "versionCopiedToast": "Disalin",
@@ -2211,6 +2298,52 @@ export default {
       "monetAudioVisibility": {
         "title": "Sembunyikan Spektrum Monet",
         "description": "Visualizer Monet kini dapat menyembunyikan spektrum audionya, menyisakan lirik dan sampul saja."
+      }
+    },
+    "v0_7_5": {
+      "intro": "Versi 0.7.5 memberi Anda kendali lebih besar atas tampilan tujuan pemutaran, menghadirkan tindakan kisi dan pengaturan ke panel perintah, serta meningkatkan keandalan desktop.",
+      "playbackEntryChoice": {
+        "title": "Pilih Tampilan Tujuan Pemutaran",
+        "description": "Pilih apakah tombol Putar membuka pemutar visualizer atau kolase antrean Lattice. Folia menanyakannya sekali setelah catatan rilis, dan pilihan tetap dapat diubah di pengaturan Antarmuka. Personal FM tetap membuka pemutar standar karena tidak dapat berjalan di Lattice."
+      },
+      "commandPaletteGridActions": {
+        "title": "Tindakan Kisi di Panel Perintah",
+        "description": "Jalankan tindakan yang tersedia pada kisi saat ini—pengurutan, panel, pemindaian ulang, perapian metadata, ekspor playlist, dan pengeditan—dengan papan ketik. Perintah pengaturan kini langsung menuju bagian tertentu, sedangkan --play atau --add dapat menjalankan tindakan pada lagu hasil filter."
+      },
+      "localFolderRecovery": {
+        "title": "Abaikan dan Pulihkan Subfolder Lokal",
+        "description": "Menghapus subfolder dari pustaka lokal yang diimpor kini membuatnya tetap diabaikan pada pemindaian berikutnya tanpa menghapus seluruh folder induk. Pohon folder menyimpan entri yang dapat dipulihkan agar subfolder bisa dikembalikan dan dipindai ulang."
+      },
+      "neteaseScrobble": {
+        "title": "Laporan Pemutaran NetEase Opsional",
+        "description": "Pengguna NetEase yang sudah masuk dapat memilih untuk melaporkan lagu NetEase online setelah benar-benar diputar setidaknya 30 detik. Berkas lokal, lagu cloud drive, dan penyedia lain tidak pernah dilaporkan; fitur yang menulis ke akun ini tetap mati sampai Anda mengaktifkannya."
+      },
+      "desktopReliability": {
+        "title": "Pembaruan dan Laporan Crash yang Lebih Jelas",
+        "description": "Versi macOS dan Linux kini dapat memeriksa rilis baru lalu membuka installer lengkap atau AUR, sedangkan Windows tetap mendukung pembaruan otomatis. Saat Folia crash, log diagnostik disimpan dan foldernya dapat dibuka; uninstaller Windows juga dapat menghapus data pengguna jika diminta."
+      },
+      "visualizerRefinements": {
+        "title": "Visualizer yang Lebih Ringan dan Jelas",
+        "description": "Tempera dan Sonnet kini menyesuaikan resolusi render di sekitar batas tekstur GPU untuk mengurangi penggunaan memori yang tidak perlu. Judul Monet dan Lattice tidak mudah terpotong, dan subtitle bawah dapat menampilkan lirik non-terjemahan berikutnya tanpa efek buram."
+      }
+    },
+    "v0_7_7": {
+      "intro": "Versi 0.7.7 memulihkan pemutaran QQ Music yang andal, menyempurnakan lirik dan sampul lokal tertanam, serta meringankan pemuatan gambar Lattice.",
+      "qqPlaybackReliability": {
+        "title": "Pemutaran QQ Music Lebih Andal",
+        "description": "Pemutaran QQ Music kini memakai pemilihan CDN tambahan dan jalur cadangan yang lebih cepat untuk mengurangi kegagalan akibat pembatasan upstream saat ini."
+      },
+      "localLibraryCovers": {
+        "title": "Sampul Lokal Tetap Ada Tanpa Tag Album",
+        "description": "Gambar sampul tertanam kini tetap tersedia di pemutar dan antrean meski berkas lokal tidak memiliki nama album. Daftar lokal juga meminta thumbnail yang lebih kecil dan sesuai."
+      },
+      "embeddedLyricTracks": {
+        "title": "Terjemahan dan Romanisasi Tertanam Lebih Rapi",
+        "description": "Lirik dwibahasa dan tribahasa tertanam kini mempertahankan trek terjemahan dan romanisasi yang sejajar, tanpa mencampurnya ke lirik utama atau menghilangkan romanisasi."
+      },
+      "latticeArtworkEfficiency": {
+        "title": "Pemuatan Sampul Lattice Lebih Ringan",
+        "description": "Lattice kini memuat ukuran sampul sesuai tiap poster dan menyiapkan gambar yang lebih besar saat lagu dibuka, sehingga dekode gambar berlebih berkurang tanpa mengorbankan kejernihan transisi."
       }
     }
   },
@@ -2547,6 +2680,20 @@ export default {
   "timeline": {
     "title": "Timeline",
     "noLyrics": "Tidak ada lirik"
+  },
+  "playbackEntryView": {
+    "title": "Ke mana Putar harus membawa Anda?",
+    "description": "Kedua tampilan sama-sama memutar dan menampilkan lirik, hanya penekanannya berbeda. Pilih salah satu sebagai tujuan default saat menekan putar.",
+    "settingsHint": "Anda bisa mengubahnya kapan saja di Opsi \u2192 Antarmuka \u2192 Tampilan yang dibuka Putar.",
+    "confirm": "Pakai ini",
+    "player": {
+      "title": "Visualizer",
+      "description": "Tampilan lirik satu lagu yang dapat disesuaikan dengan beragam animasi lirik dan kombinasi latar belakang."
+    },
+    "lattice": {
+      "title": "Lattice (kolase antrean)",
+      "description": "Seluruh antrean putar sebagai dinding poster, dengan lagu yang sedang diputar ditonjolkan."
+    }
   },
   "userGuide": {
     "title": "Selamat datang di Folia",

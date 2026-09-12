@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Monitor, Palette, Settings2, LayoutGrid, PanelsTopLeft, Download, Copy, Check, ChevronRight, AlertTriangle, Music2 } from 'lucide-react';
+import { Monitor, Palette, Settings2, LayoutGrid, PanelsTopLeft, Images, Download, Copy, Check, ChevronRight, AlertTriangle, KeyRound, Music2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -21,6 +21,7 @@ import { ObsCopyUrlButton } from '../../shared/ObsCopyUrlButton';
 import { resolveWebObsTarget, selectWebObsSource } from '../../../services/obs/webObsTarget';
 import { buildVisualSettingsConfig, resolveObsCopyHintKey } from '../../../services/obs/visualSettingsConfig';
 import LatticeSettingsSection from './LatticeSettingsSection';
+import GridViewSettingsSection from './GridViewSettingsSection';
 import NowPlayingCardSettingsSection from './NowPlayingCardSettingsSection';
 import { isThemeGenerationSource, type ThemeGenerationSource } from '../../../services/themePreferences';
 import { SettingsAnchor } from './navigation/SettingsAnchorContext';
@@ -53,6 +54,8 @@ type AppearanceSettingsSubviewProps = {
     onToggleSongThemeAutoSwitch: (enabled: boolean) => void;
     themeGenerationSource: ThemeGenerationSource;
     onChangeThemeGenerationSource: (source: ThemeGenerationSource) => void;
+    aiApiKeyStatus: 'loading' | 'configured' | 'missing';
+    onOpenAiSettings: () => void;
     onToggleTransparentPlayerBackground: (enabled: boolean) => void;
     onToggleAutoHidePlayerChrome: (enabled: boolean) => void;
     onSaveCustomTheme: (dualTheme: DualTheme) => void;
@@ -98,6 +101,8 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
     onToggleSongThemeAutoSwitch,
     themeGenerationSource,
     onChangeThemeGenerationSource,
+    aiApiKeyStatus,
+    onOpenAiSettings,
     onToggleTransparentPlayerBackground,
     onToggleAutoHidePlayerChrome,
     onSaveCustomTheme,
@@ -167,6 +172,7 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
         showSubtitleTranslation: state.showSubtitleTranslation,
         subtitleContentMode: state.subtitleContentMode,
         subtitleOverlayBackground: state.subtitleOverlayBackground,
+        subtitleUpcomingLyricsBlur: state.subtitleUpcomingLyricsBlur,
         showHarmonySubtitle: state.showHarmonySubtitle,
         harmonySubtitleBackground: state.harmonySubtitleBackground,
         lyricsFontStyle: state.lyricsFontStyle,
@@ -183,6 +189,7 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
         handleToggleShowSubtitleTranslation: state.handleToggleShowSubtitleTranslation,
         handleSetSubtitleContentMode: state.handleSetSubtitleContentMode,
         handleToggleSubtitleOverlayBackground: state.handleToggleSubtitleOverlayBackground,
+        handleToggleSubtitleUpcomingLyricsBlur: state.handleToggleSubtitleUpcomingLyricsBlur,
         handleSetSubtitleOverlayOpacity: state.handleSetSubtitleOverlayOpacity,
         handleToggleShowHarmonySubtitle: state.handleToggleShowHarmonySubtitle,
         handleToggleHarmonySubtitleBackground: state.handleToggleHarmonySubtitleBackground,
@@ -413,6 +420,9 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
             if (has('subtitleOverlayBackground')) {
                 storeTypographySettings.handleToggleSubtitleOverlayBackground(Boolean(config.subtitleOverlayBackground));
             }
+            if (has('subtitleUpcomingLyricsBlur')) {
+                storeTypographySettings.handleToggleSubtitleUpcomingLyricsBlur(Boolean(config.subtitleUpcomingLyricsBlur));
+            }
             if (has('subtitleOverlayOpacity')) {
                 storeTypographySettings.handleSetSubtitleOverlayOpacity(config.subtitleOverlayOpacity);
             }
@@ -576,165 +586,7 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
 
     return (
         <div className="space-y-6">
-            {/* Section 1: Theme presets and edit options */}
-            <SettingsAnchor anchorId="themePresets" label={t('options.themePresets')}>
-                <SettingsSectionHeading icon={Palette} label={t('options.themePresets')} />
-                <div className={`p-4 rounded-xl border space-y-4 ${settingsCardClass}`}>
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                            {t('options.themePresets')}
-                        </div>
-                        <button
-                            type="button"
-                            onClick={onOpenThemePark}
-                            className={`shrink-0 w-9 h-9 rounded-full border transition-colors flex items-center justify-center ${utilityGhostButtonClass}`}
-                            style={{ color: 'var(--text-primary)' }}
-                            title={t('options.openThemePark')}
-                            aria-label={t('options.openThemePark')}
-                        >
-                            <Palette size={16} />
-                        </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <button
-                            onClick={onApplyDefaultTheme}
-                            className="flex flex-col items-center gap-2 p-3 rounded-lg border transition-all"
-                            style={{
-                                ...getAccentOptionStyle(bgMode === 'default'),
-                                backgroundColor: bgMode === 'default'
-                                    ? (isDaylight ? `${accentOutlineColor}12` : `${accentOutlineColor}18`)
-                                    : (isDaylight ? 'rgba(24, 24, 27, 0.035)' : 'rgba(9, 9, 11, 0.5)'),
-                            }}
-                        >
-                            <div className="w-6 h-6 rounded-full shadow-sm" style={{ background: `linear-gradient(135deg, ${themeParkInitialTheme.light.backgroundColor}, ${themeParkInitialTheme.dark.backgroundColor})`, borderColor: isDaylight ? 'rgba(24,24,27,0.08)' : 'rgba(255,255,255,0.15)' }} />
-                            <span className="text-xs font-semibold" style={{ color: isDaylight ? '#27272a' : '#e4e4e7' }}>{t('options.themePresetsDefault') || 'Default'}</span>
-                        </button>
-                        <button
-                            onClick={onApplyCustomTheme}
-                            disabled={!hasCustomTheme}
-                            className="flex flex-col items-center gap-2 p-3 rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                            style={{
-                                ...getAccentOptionStyle(bgMode === 'custom'),
-                                backgroundColor: bgMode === 'custom'
-                                    ? (isDaylight ? `${accentOutlineColor}12` : `${accentOutlineColor}18`)
-                                    : (isDaylight ? 'rgba(255, 255, 255, 0.72)' : 'rgba(255, 255, 255, 0.08)'),
-                            }}
-                        >
-                            <div className="w-6 h-6 rounded-full" style={{ background: hasCustomTheme ? `linear-gradient(135deg, ${themeParkInitialTheme.light.accentColor}, ${themeParkInitialTheme.dark.accentColor})` : 'rgba(114,119,134,0.4)' }} />
-                            <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{t('options.customTheme') || 'Custom'}</span>
-                        </button>
-                    </div>
-                    <div className={`p-3 rounded-xl border space-y-3 ${settingsCardClass}`}>
-                        <div className="space-y-1">
-                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {t('options.themeGenerationSource')}
-                            </div>
-                            <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
-                                {t(themeGenerationSource === 'cover'
-                                    ? 'options.themeGenerationSourceCoverDesc'
-                                    : 'options.themeGenerationSourceAiDesc')}
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            {(['ai', 'cover'] as ThemeGenerationSource[]).map(source => (
-                                <button
-                                    key={source}
-                                    type="button"
-                                    onClick={() => onChangeThemeGenerationSource(source)}
-                                    aria-pressed={themeGenerationSource === source}
-                                    className="px-3 py-2 rounded-lg border text-xs font-semibold transition-all"
-                                    style={{
-                                        ...getAccentOptionStyle(themeGenerationSource === source),
-                                        color: 'var(--text-primary)',
-                                        backgroundColor: themeGenerationSource === source
-                                            ? (isDaylight ? `${accentOutlineColor}12` : `${accentOutlineColor}18`)
-                                            : (isDaylight ? 'rgba(24, 24, 27, 0.035)' : 'rgba(9, 9, 11, 0.5)'),
-                                    }}
-                                >
-                                    {t(source === 'cover' ? 'options.themeGenerationSourceCover' : 'options.themeGenerationSourceAi')}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${settingsCardClass}`}>
-                        <div className="space-y-1">
-                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {t('options.followSystemTheme')}
-                            </div>
-                            <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
-                                {t('options.followSystemThemeDesc')}
-                            </div>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => onToggleFollowSystemTheme(!followSystemTheme)}
-                            aria-pressed={followSystemTheme}
-                            className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!followSystemTheme ? toggleOffBackgroundClass : ''}`}
-                            style={{ backgroundColor: followSystemTheme ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
-                        >
-                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${followSystemTheme ? 'translate-x-6' : 'translate-x-0'}`} />
-                        </button>
-                    </div>
-                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${settingsCardClass}`}>
-                        <div className="space-y-1">
-                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {t('options.preferCustomTheme')}
-                            </div>
-                            <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
-                                {t('options.preferCustomThemeDesc')}
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => hasCustomTheme && onToggleCustomThemePreferred(!isCustomThemePreferred)}
-                            disabled={!hasCustomTheme}
-                            className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!isCustomThemePreferred ? toggleOffBackgroundClass : ''} disabled:opacity-40 disabled:cursor-not-allowed`}
-                            style={{ backgroundColor: isCustomThemePreferred ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
-                        >
-                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isCustomThemePreferred ? 'translate-x-6' : 'translate-x-0'}`} />
-                        </button>
-                    </div>
-                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${settingsCardClass}`}>
-                        <div className="space-y-1">
-                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {t('options.autoSwitchSongTheme')}
-                            </div>
-                            <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
-                                {t('options.autoSwitchSongThemeDesc')}
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => onToggleSongThemeAutoSwitch(!songThemeAutoSwitchEnabled)}
-                            className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!songThemeAutoSwitchEnabled ? toggleOffBackgroundClass : ''}`}
-                            style={{ backgroundColor: songThemeAutoSwitchEnabled ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
-                        >
-                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${songThemeAutoSwitchEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-                        </button>
-                    </div>
-                    {songThemeAutoSwitchEnabled && (
-                        <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${settingsCardClass}`}>
-                            <div className="space-y-1">
-                                <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                    {t('options.autoGenerateSongTheme')}
-                                </div>
-                                <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
-                                    {t(themeGenerationSource === 'cover'
-                                        ? 'options.autoGenerateSongThemeCoverDesc'
-                                        : 'options.autoGenerateSongThemeDesc')}
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => onToggleSongThemeAutoGenerate(!songThemeAutoGenerateEnabled)}
-                                className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!songThemeAutoGenerateEnabled ? toggleOffBackgroundClass : ''}`}
-                                style={{ backgroundColor: songThemeAutoGenerateEnabled ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
-                            >
-                                <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${songThemeAutoGenerateEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </SettingsAnchor>
-
-            {/* Section 2: Lyrics Animation & Player View */}
+            {/* Section 1: Lyrics Animation & Player View */}
             <SettingsAnchor anchorId="lyricsRenderer" label={t('options.lyricsRenderer')}>
                 <SettingsSectionHeading icon={Monitor} label={t('options.lyricsRenderer')} />
                 <div className="space-y-3">
@@ -815,6 +667,185 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
                 </div>
             </SettingsAnchor>
 
+            {/* Section 2: Theme presets and edit options */}
+            <SettingsAnchor anchorId="themePresets" label={t('options.themePresets')}>
+                <SettingsSectionHeading icon={Palette} label={t('options.themePresets')} />
+                <div className={`p-4 rounded-xl border space-y-4 ${settingsCardClass}`}>
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                            {t('options.themePresets')}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onOpenThemePark}
+                            className={`shrink-0 w-9 h-9 rounded-full border transition-colors flex items-center justify-center ${utilityGhostButtonClass}`}
+                            style={{ color: 'var(--text-primary)' }}
+                            title={t('options.openThemePark')}
+                            aria-label={t('options.openThemePark')}
+                        >
+                            <Palette size={16} />
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button
+                            onClick={onApplyDefaultTheme}
+                            className="flex flex-col items-center gap-2 p-3 rounded-lg border transition-all"
+                            style={{
+                                ...getAccentOptionStyle(bgMode === 'default'),
+                                backgroundColor: bgMode === 'default'
+                                    ? (isDaylight ? `${accentOutlineColor}12` : `${accentOutlineColor}18`)
+                                    : (isDaylight ? 'rgba(24, 24, 27, 0.035)' : 'rgba(9, 9, 11, 0.5)'),
+                            }}
+                        >
+                            <div className="w-6 h-6 rounded-full shadow-sm" style={{ background: `linear-gradient(135deg, ${themeParkInitialTheme.light.backgroundColor}, ${themeParkInitialTheme.dark.backgroundColor})`, borderColor: isDaylight ? 'rgba(24,24,27,0.08)' : 'rgba(255,255,255,0.15)' }} />
+                            <span className="text-xs font-semibold" style={{ color: isDaylight ? '#27272a' : '#e4e4e7' }}>{t('options.themePresetsDefault') || 'Default'}</span>
+                        </button>
+                        <button
+                            onClick={onApplyCustomTheme}
+                            disabled={!hasCustomTheme}
+                            className="flex flex-col items-center gap-2 p-3 rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{
+                                ...getAccentOptionStyle(bgMode === 'custom'),
+                                backgroundColor: bgMode === 'custom'
+                                    ? (isDaylight ? `${accentOutlineColor}12` : `${accentOutlineColor}18`)
+                                    : (isDaylight ? 'rgba(255, 255, 255, 0.72)' : 'rgba(255, 255, 255, 0.08)'),
+                            }}
+                        >
+                            <div className="w-6 h-6 rounded-full" style={{ background: hasCustomTheme ? `linear-gradient(135deg, ${themeParkInitialTheme.light.accentColor}, ${themeParkInitialTheme.dark.accentColor})` : 'rgba(114,119,134,0.4)' }} />
+                            <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{t('options.customTheme') || 'Custom'}</span>
+                        </button>
+                    </div>
+                    <div className={`p-3 rounded-xl border space-y-3 ${settingsCardClass}`}>
+                        <div className="space-y-1">
+                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {t('options.themeGenerationSource')}
+                            </div>
+                            <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                                {t(themeGenerationSource === 'cover'
+                                    ? 'options.themeGenerationSourceCoverDesc'
+                                    : 'options.themeGenerationSourceAiDesc')}
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            {(['ai', 'cover'] as ThemeGenerationSource[]).map(source => {
+                                const isAiDisabled = source === 'ai' && aiApiKeyStatus !== 'configured';
+                                return (
+                                    <button
+                                        key={source}
+                                        type="button"
+                                        onClick={() => onChangeThemeGenerationSource(source)}
+                                        aria-pressed={themeGenerationSource === source}
+                                        disabled={isAiDisabled}
+                                        className="px-3 py-2 rounded-lg border text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40"
+                                        style={{
+                                            ...getAccentOptionStyle(themeGenerationSource === source),
+                                            color: 'var(--text-primary)',
+                                            backgroundColor: themeGenerationSource === source
+                                                ? (isDaylight ? `${accentOutlineColor}12` : `${accentOutlineColor}18`)
+                                                : (isDaylight ? 'rgba(24, 24, 27, 0.035)' : 'rgba(9, 9, 11, 0.5)'),
+                                        }}
+                                    >
+                                        {t(source === 'cover' ? 'options.themeGenerationSourceCover' : 'options.themeGenerationSourceAi')}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {aiApiKeyStatus === 'missing' && (
+                            <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 text-xs">
+                                <KeyRound size={15} className="mt-0.5 shrink-0 text-amber-500" />
+                                <div className="space-y-1.5">
+                                    <p className="leading-relaxed text-amber-600 dark:text-amber-400">
+                                        {t('options.themeGenerationSourceAiUnavailable')}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={onOpenAiSettings}
+                                        className="font-semibold underline underline-offset-2 transition-opacity hover:opacity-75"
+                                        style={{ color: 'var(--text-primary)' }}
+                                    >
+                                        {t('options.configureAiApiKey')}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${settingsCardClass}`}>
+                        <div className="space-y-1">
+                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {t('options.followSystemTheme')}
+                            </div>
+                            <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                                {t('options.followSystemThemeDesc')}
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => onToggleFollowSystemTheme(!followSystemTheme)}
+                            aria-pressed={followSystemTheme}
+                            className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!followSystemTheme ? toggleOffBackgroundClass : ''}`}
+                            style={{ backgroundColor: followSystemTheme ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
+                        >
+                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${followSystemTheme ? 'translate-x-6' : 'translate-x-0'}`} />
+                        </button>
+                    </div>
+                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${settingsCardClass}`}>
+                        <div className="space-y-1">
+                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {t('options.preferCustomTheme')}
+                            </div>
+                            <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                                {t('options.preferCustomThemeDesc')}
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => hasCustomTheme && onToggleCustomThemePreferred(!isCustomThemePreferred)}
+                            disabled={!hasCustomTheme}
+                            className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!isCustomThemePreferred ? toggleOffBackgroundClass : ''} disabled:opacity-40 disabled:cursor-not-allowed`}
+                            style={{ backgroundColor: isCustomThemePreferred ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
+                        >
+                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isCustomThemePreferred ? 'translate-x-6' : 'translate-x-0'}`} />
+                        </button>
+                    </div>
+                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${settingsCardClass}`}>
+                        <div className="space-y-1">
+                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {t('options.autoSwitchSongTheme')}
+                            </div>
+                            <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                                {t('options.autoSwitchSongThemeDesc')}
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => onToggleSongThemeAutoSwitch(!songThemeAutoSwitchEnabled)}
+                            className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!songThemeAutoSwitchEnabled ? toggleOffBackgroundClass : ''}`}
+                            style={{ backgroundColor: songThemeAutoSwitchEnabled ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
+                        >
+                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${songThemeAutoSwitchEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                        </button>
+                    </div>
+                    {songThemeAutoSwitchEnabled && (
+                        <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${settingsCardClass}`}>
+                            <div className="space-y-1">
+                                <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                    {t('options.autoGenerateSongTheme')}
+                                </div>
+                                <div className="text-xs opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                                    {t(themeGenerationSource === 'cover'
+                                        ? 'options.autoGenerateSongThemeCoverDesc'
+                                        : 'options.autoGenerateSongThemeDesc')}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => onToggleSongThemeAutoGenerate(!songThemeAutoGenerateEnabled)}
+                                className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!songThemeAutoGenerateEnabled ? toggleOffBackgroundClass : ''}`}
+                                style={{ backgroundColor: songThemeAutoGenerateEnabled ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
+                            >
+                                <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${songThemeAutoGenerateEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </SettingsAnchor>
             {/* Section 3: Now playing card */}
             <SettingsAnchor anchorId="stageTrackPill" label={t('options.stageTrackPill')}>
                 <SettingsSectionHeading icon={Music2} label={t('options.stageTrackPill')} />
@@ -879,7 +910,17 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
                 />
             </SettingsAnchor>
 
-            {/* Section 6: Configurations Import/Export (New feature) */}
+            {/* Section 6: Folia card grid, sitting with the poster wall it shares its look with. */}
+            <SettingsAnchor anchorId="gridViewCardSettings" label={t('options.gridViewCardSettings')}>
+                <SettingsSectionHeading icon={Images} label={t('options.gridViewCardSettings')} />
+                <GridViewSettingsSection
+                    settingsCardClass={settingsCardClass}
+                    toggleOffBackgroundClass={toggleOffBackgroundClass}
+                    theme={theme}
+                />
+            </SettingsAnchor>
+
+            {/* Section 7: Configurations Import/Export (New feature) */}
             <SettingsAnchor anchorId="importExportTitle" label={t('options.importExportTitle')}>
                 <SettingsSectionHeading icon={Settings2} label={t('options.importExportTitle')} />
                 <div className={`p-4 rounded-xl border space-y-4 ${settingsCardClass}`}>

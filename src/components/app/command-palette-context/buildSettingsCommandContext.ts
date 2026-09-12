@@ -6,8 +6,12 @@ import { useAutomixSettingsStore } from '../../../stores/useAutomixSettingsStore
 import { useDesktopSettingsStore } from '../../../stores/useDesktopSettingsStore';
 import { useLocalLibrarySettingsStore } from '../../../stores/useLocalLibrarySettingsStore';
 import { isLocalLibraryAutoScanSupported } from '../../../services/localLibraryAutoScan';
+import { isNeteaseScrobbleReady } from '../../../services/onlineMusic/playbackReportGate';
 import { useLyricSettingsStore } from '../../../stores/useLyricSettingsStore';
+import { useGridViewSettingsStore } from '../../../stores/useGridViewSettingsStore';
 import { useLatticeSettingsStore } from '../../../stores/useLatticeSettingsStore';
+import { useMotionSettingsStore } from '../../../stores/useMotionSettingsStore';
+import { usePlaybackEntryViewStore } from '../../../stores/usePlaybackEntryViewStore';
 import { usePlayerChromeSettingsStore } from '../../../stores/usePlayerChromeSettingsStore';
 import { useSettingsModalStore } from '../../../stores/useSettingsModalStore';
 import { useSleepTimerStore } from '../../../stores/useSleepTimerStore';
@@ -54,6 +58,7 @@ export const buildSettingsCommandContext = (
     const modal = useSettingsModalStore.getState();
     const themeQuickEditor = useThemeQuickEditorStore.getState();
     const lattice = useLatticeSettingsStore.getState();
+    const entryView = usePlaybackEntryViewStore.getState();
 
     return {
         openSettings: modal.openSettings,
@@ -71,14 +76,31 @@ export const buildSettingsCommandContext = (
         toggleSubtitleOverlayBackground: () => typography.handleToggleSubtitleOverlayBackground(
             !useTypographySettingsStore.getState().subtitleOverlayBackground,
         ),
+        playbackEntryView: entryView.playbackEntryView,
+        setPlaybackEntryView: entryView.setPlaybackEntryView,
         startPlayerBottomBarPositioning: usePlayerBottomBarLayoutStore.getState().requestPositioning,
         canStartPlayerBottomBarPositioning: Boolean(deps.currentSong) && !chrome.hidePlayerProgressBar,
         toggleAlwaysShowPlayerBackButton: () => chrome.handleToggleAlwaysShowPlayerBackButton(
             !usePlayerChromeSettingsStore.getState().alwaysShowPlayerBackButton,
         ),
+        toggleGridViewFullBleedCover: () => useGridViewSettingsStore.getState().handleToggleGridViewFullBleedCover(
+            !useGridViewSettingsStore.getState().gridViewFullBleedCover,
+        ),
+        toggleGridViewSquareCards: () => useGridViewSettingsStore.getState().handleToggleGridViewSquareCards(
+            !useGridViewSettingsStore.getState().gridViewSquareCards,
+        ),
+        canUseGridViewSquareCards: () => useGridViewSettingsStore.getState().gridViewFullBleedCover,
         toggleLatticeVignette: () => useLatticeSettingsStore.getState().handleToggleLatticeVignette(
             !useLatticeSettingsStore.getState().latticeVignette,
         ),
+        toggleReduceLatticeMotion: () => {
+            const motion = useMotionSettingsStore.getState();
+            motion.handleToggleReducedMotionSurface('lattice', !motion.reducedMotionSurfaces.lattice);
+        },
+        toggleFollowSystemReducedMotion: () => {
+            const motion = useMotionSettingsStore.getState();
+            motion.handleToggleFollowSystemReducedMotion(!motion.followSystemReducedMotion);
+        },
         toggleLatticeAutoFocusOnSongChange: () => useLatticeSettingsStore.getState().handleToggleAutoFocusOnSongChange(
             !useLatticeSettingsStore.getState().autoFocusOnSongChange,
         ),
@@ -104,6 +126,10 @@ export const buildSettingsCommandContext = (
         ),
         canAutoScanLocalLibrary: isLocalLibraryAutoScanSupported,
         toggleLocalLibraryAutoScan: () => useLocalLibrarySettingsStore.getState().toggleAutoScan(),
+        canReportNeteasePlayback: isNeteaseScrobbleReady,
+        toggleNeteaseScrobble: () => audio.handleToggleNeteaseScrobble(
+            !useAudioSettingsStore.getState().neteaseScrobbleEnabled,
+        ),
         voiceInputPauseSupported: deps.voiceInputPauseSupported,
         modSystemEnabled: desktop.modSystemEnabled,
         toggleVoiceInputPause: () => desktop.handleToggleVoiceInputPause(

@@ -306,9 +306,9 @@ const FloatingPlayerControls: React.FC<FloatingPlayerControlsProps> = ({
         if (isPositioning) {
             return;
         }
-        if (currentView === 'home') {
+        if (currentView !== 'lattice') {
             onNavigateToPlayer();
-        } else if (currentView === 'lattice') {
+        } else {
             onFocusLatticeCurrentSong?.();
         }
     };

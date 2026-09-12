@@ -180,7 +180,8 @@ export default {
     "confirm": "确定",
     "stageWaiting": "等待连接",
     "stageActionUnavailable": "Stage 模式下不支持这个操作",
-    "latticeUnavailableInFm": "队列拼贴在 FM 模式下不可用",
+    "latticeUnavailableInFm": "Lattice 不支持私人 FM 模式",
+    "latticeFmOpenedInPlayer": "Lattice 不支持私人 FM 模式，已使用普通播放器打开",
     "noPlayableSongs": "列表中没有可播放的歌曲",
     "songUnavailableTag": "已下架",
     "queueShuffled": "播放队列已打乱",
@@ -307,6 +308,8 @@ export default {
     "sleepTimerMinutesLabel": "分钟",
     "sleepTimerInputPlaceholder": "输入分钟数、--on 或 --off",
     "latticePosterTintPlaceholder": "使用下方控件调整叠层",
+    "gridViewCardsPlaceholder": "使用下方控件调整网格卡片",
+    "reduceMotionPlaceholder": "使用下方控件调整动态效果",
     "sleepTimerSetPreview": "启动 {{minutes}} 分钟睡眠定时",
     "sleepTimerOffPreview": "按回车取消睡眠定时",
     "sleepTimerUnknownOption": "未知选项 --{{option}}",
@@ -328,6 +331,7 @@ export default {
     "groupPanel": "面板",
     "groupPlayback": "播放",
     "groupVisualizer": "可视化",
+    "groupGrid": "网格",
     "groupOther": "命令",
     "syntax": {
       "hint": "可用选项",
@@ -339,6 +343,10 @@ export default {
       "sleepTimer": {
         "on": "开启睡眠定时器",
         "off": "取消睡眠定时器"
+      },
+      "gridFilter": {
+        "play": "立即播放筛选出的歌曲",
+        "add": "把筛选出的歌曲追加到队列"
       },
       "lyricSegmentation": {
         "ai": "用已配置的模型对这首歌分词",
@@ -397,7 +405,7 @@ export default {
       "settings-player-bottom-bar-position": { "title": "调整底部控制条位置", "description": "拖动底部控制条、歌曲卡片和面板按钮到新的高度" },
       "settings-player-control-slots": { "title": "进度条按钮槽位", "description": "选择进度条右侧两个按钮对应的功能" },
       "visualizer-toggle-random-per-song": { "title": "每首歌随机歌词动画", "description": "歌曲切换时随机使用一种歌词动画模式" },
-      "settings-visualizer": { "title": "可视化设置", "description": "打开歌词动画实验台" },
+      "settings-visualizer": { "title": "歌词动画样式设置", "description": "打开歌词动画实验台" },
       "settings-theme-park": { "title": "配色", "description": "打开主题编辑器" },
       "settings-global-lyric-offset": { "title": "全局时间偏移", "description": "校准蓝牙等设备造成的音画延迟" },
       "settings-lyric-filter": { "title": "歌词过滤", "description": "打开歌词过滤设置" },
@@ -415,6 +423,37 @@ export default {
       "home-albums": { "title": "打开专辑", "description": "打开专辑 tab" },
       "home-navidrome": { "title": "打开 Navidrome", "description": "打开 Navidrome tab" },
       "home-radio": { "title": "打开电台", "description": "打开电台 tab" },
+      "grid-sort-file-name": { "title": "按文件名排序", "description": "把本地曲目按文件名排列" },
+      "grid-sort-modified-date": { "title": "按修改时间排序", "description": "把本地曲目按文件最后修改时间排列" },
+      "grid-sort-album-track": { "title": "按音轨号排序", "description": "把本地曲目按碟号和音轨号排列" },
+      "grid-sort-direction": { "title": "反转排序方向", "description": "在正序和倒序之间切换本地曲目列表" },
+      "grid-toggle-info-panel": { "title": "切换合集面板", "description": "显示或隐藏合集信息与操作面板" },
+      "grid-toggle-track-list": { "title": "切换曲目列表", "description": "显示或隐藏网格旁的曲目列表" },
+      "grid-resync-folder": { "title": "重新导入此文件夹", "description": "重新扫描这个本地文件夹并刷新其中的歌曲" },
+      "grid-resync-all-folders": { "title": "重新导入全部文件夹", "description": "重新扫描所有本地文件夹并刷新曲库" },
+      "grid-organize-song-info": { "title": "整理歌曲信息", "description": "整理这个文件夹里歌曲的标题、艺人和专辑" },
+      "grid-export-playlist": { "title": "导出此歌单", "description": "把这个本地歌单保存为 m3u8 文件" },
+      "grid-edit-entity": { "title": "编辑此专辑或艺人", "description": "为这个合集打开本地曲库的实体编辑面板" },
+      "grid-toggle-edit-mode": { "title": "切换编辑模式", "description": "进入或退出可以从这个合集里移除歌曲的模式" },
+      "settings-interaction": { "title": "交互设置", "description": "打开键盘、快捷键与网格交互设置" },
+      "settings-custom-shortcut": { "title": "自定义快捷键", "description": "直接跳到自定义键盘快捷键的绑定处" },
+      "settings-grid-action-button": { "title": "海报墙操作按钮", "description": "直接跳到海报墙操作按钮的滑动目标设置" },
+      "settings-pinned-commands": { "title": "固定命令槽位", "description": "选择命令面板里固定显示的三条命令" },
+      "settings-home-tabs": { "title": "首页标签显示", "description": "选择首页要显示哪些标签" },
+      "settings-playback-entry-view": { "title": "播放后进入的视图", "description": "直接跳到「播放后进入的视图」设置" },
+      "playback-entry-view-player": { "title": "播放后进入：可视化", "description": "点击播放后进入播放器与可视化视图" },
+      "playback-entry-view-lattice": { "title": "播放后进入：Lattice", "description": "点击播放后进入队列拼贴视图" },
+      "settings-theme-presets": { "title": "预设配色", "description": "直接跳到内置和已保存的预设配色" },
+      "settings-lyrics-renderer": { "title": "歌词渲染方式", "description": "直接跳到播放器歌词的绘制方式设置" },
+      "settings-grid-card-style": { "title": "网格卡片样式", "description": "直接跳到首页网格卡片的绘制样式" },
+      "settings-queue-behavior": { "title": "队列行为", "description": "直接跳到播放队列的组建与保留方式" },
+      "settings-netease-scrobble": { "title": "网易云听歌打卡", "description": "直接跳到是否把播放记录上报给网易云音乐" },
+      "netease-scrobble-toggle": { "title": "网易云听歌打卡", "description": "开启或关闭把播放记录上报给网易云音乐" },
+      "settings-audio-output": { "title": "音频输出", "description": "直接跳到音频输出设备与格式设置" },
+      "settings-transition": { "title": "智能过渡", "description": "直接跳到 FOLIA 智能过渡设置" },
+      "settings-navidrome": { "title": "Navidrome 服务器", "description": "直接跳到 Navidrome 服务器连接设置" },
+      "settings-stage-mode": { "title": "Stage 模式", "description": "直接跳到 Stage 外部播放器设置" },
+      "settings-media-cache": { "title": "媒体缓存", "description": "直接跳到已下载音频的缓存" },
       "filter-view": { "title": "筛选当前视图", "description": "按名称缩小屏幕上的卡片范围" },
       "panel-cover": { "title": "面板：封面", "description": "打开封面面板 tab" },
       "panel-controls": { "title": "面板：控制", "description": "打开控制面板 tab" },
@@ -470,9 +509,15 @@ export default {
       "settings-toggle-transparent": { "title": "透明化", "description": "切换播放器背景透明度" },
       "settings-toggle-daylight": { "title": "切换明暗", "description": "切换主题日夜模式" },
       "settings-toggle-player-back-button": { "title": "始终显示播放页返回按钮", "description": "切换播放页左上角返回按钮的常驻显示" },
+      "settings-gridview-cards": { "title": "网格卡片外观", "description": "直接调整全画幅封面和网格卡片的远近缩放与淡出" },
+      "settings-toggle-gridview-full-bleed-cover": { "title": "全画幅封面", "description": "开关网格卡片的封面铺满整张卡片" },
+      "settings-toggle-gridview-square-cards": { "title": "正方形网格卡片", "description": "开关全画幅网格卡片使用正方形而非竖版比例" },
       "settings-toggle-lattice-vignette": { "title": "Lattice 边缘暗角", "description": "开关队列拼贴页面四周的边缘暗角" },
       "settings-toggle-lattice-auto-focus": { "title": "Lattice 自动聚焦", "description": "切换歌曲时自动将正在播放的海报拉回队列拼贴中央" },
       "lattice-poster-tint": { "title": "Lattice 海报叠色", "description": "调整队列拼贴中非当前聚焦海报上的颜色叠层" },
+      "settings-reduce-motion": { "title": "降低动态效果", "description": "逐个调低各个界面的动画，或选择跟随系统设置" },
+      "settings-toggle-reduce-lattice-motion": { "title": "降低队列拼贴动效", "description": "把队列拼贴的展开、相机飞行与入场波降为瞬时切换" },
+      "settings-toggle-follow-system-reduced-motion": { "title": "跟随系统动画设置", "description": "切换是否允许系统的动画设置降低应用内的动态效果" },
       "settings-toggle-track-switch-buttons": { "title": "始终显示切歌箭头", "description": "切换进度条标题两侧上一首/下一首箭头的常驻显示" },
       "settings-toggle-main-window-titlebar": { "title": "始终显示标题栏控制按钮", "description": "切换主窗口标题栏控制按钮的常驻显示" },
       "settings-toggle-auto-play-on-launch": { "title": "进入应用后自动播放", "description": "切换打开应用时是否自动续播上次的歌曲" },
@@ -744,7 +789,9 @@ export default {
     "loadMore": "加载更多",
     "headerTitle": "标题",
     "headerTime": "时长",
-    "loading": "加载中"
+    "loading": "加载中",
+    "loadFailed": "加载失败：{{error}}",
+    "loadNotPublic": "这个歌单不是公开歌单，当前音源接口读不到它的内容"
   },
   "search": {
     "placeholder": "搜索歌曲...",
@@ -907,13 +954,15 @@ export default {
     "gridFolderExpandTreePanel": "展开",
     "gridFolderCollapseTreePanel": "收起",
     "gridFolderRescanRoot": "重新扫描导入根目录",
+    "gridFolderIgnored": "已忽略",
+    "gridFolderClearIgnore": "恢复并重新扫描",
     "gridFolderRemoveRoot": "移除导入根目录",
     "gridFolderAddToQueue": "追加到队列",
     "gridFolderRemoveSelected": "从音乐库移除",
     "gridFolderCreatePlaylistDescription": "使用已选的 {{count}} 首本地歌曲创建歌单。",
     "gridFolderPlaylistNamePlaceholder": "歌单名称",
     "gridFolderRemoveSelectedTitle": "移除已选歌曲？",
-    "gridFolderRemoveSelectedDescription": "将从 Folia 及本地歌单中移除 {{count}} 首歌曲，但不会删除磁盘文件。",
+    "gridFolderRemoveSelectedDescription": "移除 {{count}} 首歌曲。根目录直接移除，完整选中的子文件夹忽略扫描。磁盘文件不变。",
     "gridFolderRemoveRootTitle": "移除导入根目录？",
     "gridFolderRemoveRootDescription": "从 Folia 移除 {{path}} 及其中全部歌曲？不会删除磁盘文件。",
     "login": "登录",
@@ -1243,6 +1292,8 @@ export default {
     "appLanguageEnUS": "English",
     "appLanguageInID": "Indonesian",
     "appLanguageSystemHint": "跟随浏览器或系统语言。当前生效：{{language}}",
+    "playbackEntryView": "播放后进入的视图",
+    "playbackEntryViewDesc": "点击播放后默认打开哪个视图。",
     "homeTabsVisibility": "顶部胶囊入口",
     "homeTabsVisibilityDesc": "自定义首页顶部显示的胶囊选项",
     "bottomUiSettings": "底部界面",
@@ -1315,6 +1366,8 @@ export default {
     "enableUpdateCheckDesc": "启动时检查是否有新版本发布。",
     "enableAutoUpdate": "启用自动更新",
     "enableAutoUpdateDesc": "发现新版本后自动下载更新。",
+    "autoUpdateUnavailable": "自动更新不可用",
+    "manualUpdateOnlyDesc": "仍会检查新版本，但升级需要下载完整安装包或使用受支持的包管理器。",
     "updateChannel": "更新通道",
     "updateChannelDesc": "选择此桌面端应用跟随的发布通道。",
     "updateChannelRealeco": "Realeco · 正式版",
@@ -1324,12 +1377,15 @@ export default {
     "updateUnsupportedSystem": "当前系统不支持自动更新。",
     "updateUnsupportedChannel": "此内部构建不支持自动更新。",
     "autoUpdateGithubNotice": "自动更新需要能够访问 GitHub；网络不稳定时可能无法下载更新。",
+    "updateCheckGithubNotice": "版本检查需要能够访问 GitHub；发现更新后会提供完整安装包入口。",
     "openReleasePage": "打开发布页",
     "downloadChina": "国内下载",
     "downloadSources": "下载来源",
     "quarkDrive": "夸克网盘",
     "baiduDrive": "百度网盘",
     "githubRelease": "GitHub",
+    "fullInstallerGithub": "完整安装包（GitHub）",
+    "aurPackage": "通过 AUR 升级",
     "downloadUpdate": "下载更新",
     "restartToInstallUpdate": "重启安装",
     "staticMode": "静态模式",
@@ -1363,6 +1419,21 @@ export default {
     "clearWhisperCacheDone": "已清除 {{count}} 条缓存。",
     "clearWhisperCacheEmpty": "没有可清除的缓存对齐结果。",
     "clearWhisperCacheError": "清除缓存失败。",
+    "reduceMotionSection": "降低动态效果",
+    "reduceMotionSectionDesc": "Folia 默认播放完整动画，不再自行跟随系统的动画设置。想让哪一处安静下来，就在下面关掉它。",
+    "reduceMotionFollowSystem": "跟随系统设置",
+    "reduceMotionFollowSystemDesc": "让系统的动画设置重新决定全部动效，也就是旧版本一直以来的行为。",
+    "reduceMotionForcedBySystem": "当前正被上面的系统设置压低。",
+    "reduceMotionLattice": "队列拼贴",
+    "reduceMotionLatticeDesc": "队列拼贴的海报展开、相机飞行、入场波、拖拽惯性与歌词淡入淡出。",
+    "reduceMotionTransitionOverlay": "混音过渡",
+    "reduceMotionTransitionOverlayDesc": "Automix 的进度圆环，以及画在当前播放卡片边框上的进度描边。",
+    "reduceMotionMonetBackground": "Monet 背景漂移",
+    "reduceMotionMonetBackgroundDesc": "由封面生成的背景图那层缓慢漂移。",
+    "reduceMotionUiMicroMotion": "界面微动效",
+    "reduceMotionUiMicroMotionDesc": "小幅反馈动画：模式步进器、远程进度辉光、网格面板提示。",
+    "reduceMotionSettingsScroll": "设置页平滑滚动",
+    "reduceMotionSettingsScrollDesc": "跳转到某个设置分区时是滑过去，还是直接落到位。",
     "labPerformanceSection": "性能与背景",
     "labPlayerUiSection": "播放页界面",
     "labWindowAndToolsSection": "窗口与工具",
@@ -1507,6 +1578,16 @@ export default {
     "latticePosterTintCustomColorDesc": "使用固定颜色替换由当前主题生成的渐变叠色。",
     "latticePosterTintColor": "叠层颜色",
     "latticePosterTintIntensity": "叠色强度",
+    "gridViewCardSettings": "网格卡片",
+    "gridViewFullBleedCover": "全画幅封面",
+    "gridViewFullBleedCoverDesc": "让封面图铺满整张网格卡片，歌名和歌手改为叠在封面上的渐变遮罩里显示，做法和队列拼贴一致。",
+    "gridViewSquareCard": "正方形卡片",
+    "gridViewSquareCardDesc": "让卡片高宽相等，方形封面完整显示，不再被上下裁掉。卡片面积保持不变，变矮的同时会变宽，网格间距同步调整。",
+    "gridViewMinCardScale": "卡片最小尺寸",
+    "gridViewMinCardScaleDesc": "远离中心的卡片最多缩小到多少。调高外围更好辨认，调低纵深感更强。",
+    "gridViewMinCardOpacity": "卡片最小透明度",
+    "gridViewMinCardOpacityDesc": "远离中心的卡片最多淡到多少。调高外围更清楚，调低视线更集中在中心。",
+    "gridViewCardFalloffReset": "恢复默认衰减",
     "disableVisualizerGeometricBackground": "隐藏通用几何背景",
     "disableVisualizerGeometricBackgroundDesc": "隐藏播放页的通用几何背景图形。",
     "desktopTrayBehavior": "桌面窗口行为",
@@ -1625,6 +1706,7 @@ export default {
     "subtitleOverlayOpacity": "字幕透明度",
     "subtitleOverlayBackground": "字幕背景",
     "subtitleOverlayBackgroundDesc": "为底部字幕添加主题自适应的柔和扩散光晕，提高复杂画面中的可读性。",
+    "subtitleUpcomingLyricsBlur": "非翻译歌词添加模糊效果",
     "showHarmonySubtitle": "显示和声字幕",
     "showHarmonySubtitleDesc": "显示或隐藏顶部的和声歌词层。",
     "harmonySubtitleBackground": "和声字幕背景",
@@ -1979,6 +2061,8 @@ export default {
     "themeGenerationSourceAi": "AI 推断",
     "themeGenerationSourceCover": "封面取色",
     "themeGenerationSourceAiDesc": "由 AI 读取歌词推断情绪配色。需要配置 API key，会产生 token 费用。",
+    "themeGenerationSourceAiUnavailable": "当前 AI 服务商尚未配置 API Key，AI 推断已禁用。",
+    "configureAiApiKey": "前往 AI 主题设置",
     "themeGenerationSourceCoverDesc": "直接从封面颜色生成配色。不需要 API key, 但配色表现力和属性较少",
     "autoGenerateSongThemeCoverDesc": "当播放歌曲没有缓存主题时，自动根据封面生成并应用。",
     "autoGenerateSongThemeDesc": "当播放歌曲没有缓存 AI 主题时，自动调用AI并应用（会产生较高token费用！）",
@@ -1992,6 +2076,7 @@ export default {
     "confirmClearAll": "确定要清空所有缓存吗？",
     "electronSettings": "AI主题设置",
     "aiProvider": "AI 供应商",
+    "otherCompatibleApi": "其他兼容接口",
     "useSystemProxyAI": "为AI使用系统代理",
     "useSystemProxyAIDesc": "仅将AI相关的网络请求通过系统代理路由。",
     "geminiApiKey": "Gemini 密钥",
@@ -2002,7 +2087,7 @@ export default {
     "openaiApiTemperature": "温度",
     "openaiApiTemperatureDesc": "范围为 0–2；留空时使用默认值 0.7。",
     "geminiApiKeyDesc": "网易云 API 服务本地运行中",
-    "openaiApiUrlDesc": "使用兼容 OpenAI 格式的其它大模型接口。",
+    "openaiApiUrlDesc": "OpenAI 兼容接口不等于 OpenAI 官方接口，可以使用 DeepSeek 等兼容 OpenAI 格式的模型服务。",
     "save": "保存",
     "visualizerMode": "动画模式",
     "grid3dCardStyle": "歌单卡片样式",
@@ -2193,6 +2278,10 @@ export default {
     "scanningFolder": "正在扫描 {{folderName}}",
     "lyricFilterUpdated": "歌词过滤规则已更新",
     "queueSettings": "播放队列",
+    "scrobbleSettings": "听歌打卡",
+    "neteaseScrobble": "上报播放记录(仅网易云)",
+    "neteaseScrobbleDesc": "在线网易云歌曲真实播放满 30 秒后，向你的网易云账号上报一次听歌记录。本地文件、云盘歌曲和其他音乐平台一律不上报；此功能可能有一定风险，请谨慎使用",
+    "neteaseScrobbleSignInHint": "需要先登录网易云音乐账号。",
     "queueDefaultBehavior": "加入队列的默认位置",
     "queueDefaultBehaviorDesc": "加入播放队列按钮的默认行为。",
     "queueAppendLabel": "追加到末尾",
@@ -2205,7 +2294,7 @@ export default {
     "goToGithubRelease": "前往Github下载页",
     "chinaDownloadHint": "提示：下载需直连 GitHub（可能较慢），国内环境推荐使用夸克或百度网盘。",
     "macManualUpdateNotice": "提示：macOS 版本需要下载完整安装包手动覆盖更新。",
-    "linuxManualUpdateNotice": "提示：Linux 版本暂不支持自动更新，请手动覆盖更新。",
+    "linuxManualUpdateNotice": "提示：Linux 不支持自动更新。请下载完整的 deb、rpm 或 tar.gz 包手动升级；仅正式版且通过 AUR 安装的用户可使用包管理器升级 folia-major-bin。",
     "manualUpdateNotice": "提示：当前平台暂不支持自动更新，请下载安装包手动覆盖更新。",
     "versionCopiedHint": "点击复制版本信息",
     "versionCopiedToast": "已复制",
@@ -2341,6 +2430,52 @@ export default {
         "title": "Monet 可隐藏频谱",
         "description": "Monet 视觉器新增频谱显示开关，可只保留歌词与封面画面。"
       }
+    },
+    "v0_7_5": {
+      "intro": "0.7.5 带来可自选的播放入口、更完整的命令面板操作，以及更可靠的桌面端诊断与更新体验。",
+      "playbackEntryChoice": {
+        "title": "选择播放后进入的视图",
+        "description": "点击播放时可选择进入可视化播放器或 Lattice 队列拼贴。更新说明结束后 Folia 会询问一次，此后仍可在界面设置中修改。由于 Lattice 不支持私人 FM，启动私人 FM 时仍会进入标准播放器。"
+      },
+      "commandPaletteGridActions": {
+        "title": "命令面板接管网格操作",
+        "description": "通过键盘调用当前网格支持的排序、面板开关、重新扫描、歌曲信息整理、歌单导出和编辑操作。设置命令可直达具体小节，网格筛选还支持用 --play 或 --add 播放、追加筛选结果。"
+      },
+      "localFolderRecovery": {
+        "title": "忽略并恢复本地子目录",
+        "description": "从已导入的本地音乐库移除子目录后，后续扫描会继续忽略它，同时保留根目录中的其他内容。目录树会留下可恢复入口，需要时可取消忽略并立即重新扫描。"
+      },
+      "neteaseScrobble": {
+        "title": "可选的网易云听歌打卡",
+        "description": "登录网易云后，可选择在在线网易云歌曲真实播放满 30 秒时上报一次听歌记录。本地文件、云盘歌曲和其他平台一律不上报；这是会写入真实账号的可选功能，默认不会自行开启。"
+      },
+      "desktopReliability": {
+        "title": "更清晰的桌面更新与崩溃报告",
+        "description": "macOS 和 Linux 现在也能检查新版本，并引导下载完整安装包或通过 AUR 升级；Windows 继续支持自动更新。Folia 崩溃时会保存诊断日志并可打开所在目录，Windows 卸载程序也可按需清除用户数据。"
+      },
+      "visualizerRefinements": {
+        "title": "更轻、更清晰的视觉器",
+        "description": "Tempera 与 Sonnet 会根据 GPU 纹理边界动态调整渲染分辨率，减少不必要的显存占用；Monet 与 Lattice 的标题不再容易裁切，底部字幕也可关闭非翻译后续歌词的模糊效果。"
+      }
+    },
+    "v0_7_7": {
+      "intro": "0.7.7 提升 QQ 音乐的播放稳定性，改善本地嵌入歌词与封面处理，并降低 Lattice 封面加载开销。",
+      "qqPlaybackReliability": {
+        "title": "QQ 音乐播放更加稳定",
+        "description": "QQ 音乐播放使用 CDN 选择更快的备用路径，减少当前网络环境下的卡顿和中断。"
+      },
+      "localLibraryCovers": {
+        "title": "无专辑标签也能保留本地封面",
+        "description": "本地文件即使没有专辑名称，内嵌封面也会继续显示在播放器和队列中；本地列表同时改用更合适的小尺寸缩略图。"
+      },
+      "embeddedLyricTracks": {
+        "title": "嵌入歌词译文与罗马音更准确",
+        "description": "嵌入的双语、三语歌词现在会保留对齐的译文和罗马音轨道，不再把它们混入主歌词或丢失罗马音。"
+      },
+      "latticeArtworkEfficiency": {
+        "title": "Lattice 封面加载更轻量",
+        "description": "Lattice 会按海报实际显示尺寸加载封面，并在展开歌曲前预热大图，减少不必要的图片解码，同时保持展开过程清晰流畅。"
+      }
     }
   },
   "export": {
@@ -2397,7 +2532,9 @@ export default {
     "deleteFolderTitle": "删除文件夹？",
     "deleteFolderMessage": "您即将从库中移除 \"{{folderName}}\"。",
     "deleteFolderCount": "这将从您的库中移除包含嵌套子目录在内的共 {{count}} 首歌曲。",
-    "deleteFolderNote": "注意：这只会从库中移除歌曲，不会影响您的磁盘文件。",
+    "deleteFolderNote": "磁盘文件不变。",
+    "deleteSubfolderMessage": "移除“{{folderName}}”并忽略扫描，可在全部视图恢复。磁盘文件不变。",
+    "deleteRootFolderMessage": "从曲库移除“{{folderName}}”及全部歌曲。磁盘文件不变。",
     "importNotSupported": "当前浏览器不支持文件夹导入",
     "insecureHttpDisabled": "远程 HTTP 环境已禁用本地曲库，请使用 HTTPS、localhost 或 Electron 客户端。",
     "resyncFailed": "重新同步文件夹失败，请重试。",
@@ -2676,6 +2813,20 @@ export default {
   "timeline": {
     "title": "时间线",
     "noLyrics": "无歌词"
+  },
+  "playbackEntryView": {
+    "title": "点击播放后进入哪个视图？",
+    "description": "两个视图都能正常播放和显示歌词，只是重点不同。选一个作为点击播放后的默认落点。",
+    "settingsHint": "之后可以在「设置 → 界面设置 → 播放后进入的视图」里随时更改。",
+    "confirm": "就这样",
+    "player": {
+      "title": "可视化",
+      "description": "单曲视图: 多种歌词动画和背景搭配，自由定制的单曲歌词模式"
+    },
+    "lattice": {
+      "title": "Lattice（队列拼贴）",
+      "description": "整条播放队列铺成海报墙，正在播放的那首会被放大。"
+    }
   },
   "userGuide": {
     "title": "欢迎使用 Folia",

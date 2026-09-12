@@ -1,10 +1,10 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useMotionValue, animate, AnimatePresence, useDragControls } from 'framer-motion';
-import { ChevronLeft, Disc, Download, Play, Plus, Loader2, Heart, ListPlus, Pencil, X, RefreshCw, Trash2, Star, Tags } from 'lucide-react';
+import { ChevronLeft, Disc, Download, Play, Plus, Loader2, Heart, ListPlus, Pencil, RefreshCw, Trash2, Star, Tags } from 'lucide-react';
 import GridPanelToggleIndicator from './folia-grid/GridPanelToggleIndicator';
 import { useTranslation } from 'react-i18next';
 import { SongResult, type LocalSong, type StatusMessage, Theme, type UnifiedSong } from '../types';
-import { getSongUnavailableLabel, isSongUnavailable } from '../services/onlineMusic/songAvailability';
+import { isSongUnavailable } from '../services/onlineMusic/songAvailability';
 import { getNavidromeConfig, navidromeApi } from '../services/navidromeService';
 import { formatSongName } from '../utils/songNameFormatter';
 import { getSizedCoverUrl } from '../utils/coverUrl';
@@ -15,6 +15,8 @@ import { omni } from '../services/onlineMusic/omni';
 import { getProviderCacheKey, getProviderCacheWithLegacyMigration } from '../services/onlineMusic/providerStorage';
 import { getPlaybackSongKey } from '../utils/appPlaybackGuards';
 import { useFoliaHexViewport } from './folia-grid/useFoliaHexViewport';
+import { PolaroidCard, type GridItem } from './folia-grid/PolaroidCard';
+import { squareGridCardBox } from './folia-grid/gridCardLayout';
 import {
     applyHexCardFrameStyles,
     computeHexCardFrame,
@@ -23,6 +25,7 @@ import {
 } from './folia-grid/hexCardTransform';
 import PlaylistSelectionDialog from './shared/PlaylistSelectionDialog';
 import TextInputDialog from './shared/TextInputDialog';
+import ConfirmDialog from './shared/ConfirmDialog';
 import { SidePanelList, TrackListItem } from './shared/SidePanelList';
 import { GridListSearchButton } from './shared/GridListSearchButton';
 import { LocalTrackSortDirectionButton, LocalTrackSortMenu } from './shared/LocalTrackSortMenu';
@@ -39,13 +42,11 @@ import { useProgressiveItemEntrance } from './folia-grid/useProgressiveItemEntra
 import { useLocalCoverPreloader } from '../hooks/useLocalCoverPreloader';
 import { compareLocalFolderSongs, formatLocalAlbumTrackLabel, type LocalAlbumGroupKey, type LocalSongFolderSortDirection, type LocalSongFolderSortField } from '../utils/localSongSorting';
 import { resolveGridViewContextTracks } from './folia-grid/gridViewContextActions';
-import {
-    resolveGridTrackAlbumTargetId,
-    resolveGridTrackArtistTargetId,
-} from './folia-grid/gridTrackNavigation';
-import { canResolveSongCatalogRef } from '../services/onlineMusic/catalogRefs';
-import type { MediaId, ProviderCollection } from '../types/onlineMusic';
+import { buildGridSurfaceState, runGridSurfaceAction, type GridSurfaceParams } from './folia-grid/gridSurfaceHandle';
+import { useGridSurfaceRegistration } from '../hooks/useGridSurfaceRegistration';
+import { OmniError, type MediaId, type ProviderCollection } from '../types/onlineMusic';
 import { useSidePanelBottomPx } from '../hooks/usePlayerBottomBarBottomPx';
+import { useGridViewSettingsStore } from '../stores/useGridViewSettingsStore';
 
 export interface GridViewSourceActions {
     local?: {
@@ -69,18 +70,6 @@ export interface GridViewSourceActions {
         onDeletePlaylist?: (playlistId: string) => Promise<void> | void;
         onRemovePlaylistSongs?: (playlistId: string, songIndexes: number[]) => Promise<void> | void;
     };
-}
-
-interface GridItem {
-    id: string | number;
-    name: React.ReactNode;
-    searchText?: string;
-    coverUrl?: string;
-    subtitle?: string;
-    description?: string;
-    rawTrack?: SongResult;
-    rawTrackIndex?: number;
-    rawCollection?: any;
 }
 
 interface GridViewProps {
@@ -134,352 +123,63 @@ const getStoredLocalTrackSortDirection = (): LocalSongFolderSortDirection => {
     const stored = localStorage.getItem(LOCAL_TRACK_SORT_DIRECTION_STORAGE_KEY);
     return stored === 'desc' ? stored : 'asc';
 };
+// Card box and hex spacing per container-width breakpoint. Module scope so the memo above
+// reads as "pick a breakpoint, then apply the square-card option" rather than hiding the
+// table inside it.
+const resolveGridViewCardBox = (width: number) => {
+    if (width < 768) {
+        // Mobile/Narrow
+        return {
+            cardWidth: 180,
+            cardHeight: 280,
+            spacingX: 205,
+            spacingY: 270,
+            maxDistance: 420,
+            lodStart: 280,
+            lodEnd: 320,
+        };
+    } else if (width < 1440) {
+        // Desktop
+        return {
+            cardWidth: 220,
+            cardHeight: 330,
+            spacingX: 250,
+            spacingY: 320,
+            maxDistance: 500,
+            lodStart: 340,
+            lodEnd: 385,
+        };
+    } else if (width < 2000) {
+        // Large Desktop
+        return {
+            cardWidth: 250,
+            cardHeight: 375,
+            spacingX: 285,
+            spacingY: 365,
+            maxDistance: 580,
+            lodStart: 400,
+            lodEnd: 450,
+        };
+    } else {
+        // Ultra Desktop
+        return {
+            cardWidth: 280,
+            cardHeight: 420,
+            spacingX: 320,
+            spacingY: 410,
+            maxDistance: 660,
+            lodStart: 450,
+            lodEnd: 510,
+        };
+    }
+};
+
 const GRID_VIEW_RENDER_BUFFER_FACTOR = 0.75;
 const GRID_VIEW_CARD_VISIBILITY_BUFFER = 96;
 const GRID_SEARCH_DEBOUNCE_MS = 80;
 const TRACK_REMOVAL_ANIMATION_MS = 460;
 const TRACK_REMOVAL_BEZIER = [0.22, 0.8, 0.24, 1] as const;
 
-/**
- * High-performance memoized Polaroid card — pure visual component.
- * All position/scale/opacity/zIndex/display transforms are managed
- * by a single centralized rAF loop in the parent GridView via wrapper refs.
- * Queue button opacity uses inherited CSS custom property --queue-opacity / --queue-pe.
- */
-export const PolaroidCard = React.memo<{
-    item: GridItem;
-    isDaylight: boolean;
-    theme: Theme;
-    onSelect: () => void;
-    onCenter: () => void;
-    onAddQueue?: () => void;
-    mode: 'collection' | 'tracks';
-    t: any;
-    cardWidth: number;
-    cardHeight: number;
-    isEditMode?: boolean;
-    onRemoveTrack?: () => void;
-    onSelectArtist?: (artistId: number | string, artist?: any, track?: SongResult) => void;
-    onSelectAlbum?: (albumId: number | string, album?: any, track?: SongResult) => void;
-    onBeforeNestedNavigate?: () => void;
-    onEditLocalMetadata?: () => void;
-    openWhenFocusedOnCardClick?: boolean;
-    isFocused?: boolean;
-}>(
-    ({
-        item,
-        isDaylight,
-        theme,
-        onSelect,
-        onCenter,
-        onAddQueue,
-        mode,
-        t,
-        cardWidth,
-        cardHeight,
-        isEditMode = false,
-        onRemoveTrack,
-        onSelectArtist,
-        onSelectAlbum,
-        onBeforeNestedNavigate,
-        onEditLocalMetadata,
-        openWhenFocusedOnCardClick = false,
-        isFocused = false,
-    }) => {
-        const isUnavailable = mode === 'tracks' && item.rawTrack ? isSongUnavailable(item.rawTrack) : false;
-        const unavailableTagText = (mode === 'tracks' && item.rawTrack)
-            ? getSongUnavailableLabel(item.rawTrack, t('status.songUnavailableTag'))
-            : '';
-        const trackAlbum = item.rawTrack?.album;
-        const albumTargetId = resolveGridTrackAlbumTargetId(item.rawTrack);
-        const canOpenAlbum = Boolean(
-            onSelectAlbum
-            && item.rawTrack
-            && trackAlbum
-            && albumTargetId !== undefined
-            && albumTargetId !== ''
-            && (
-                item.rawTrack.sourceRef?.kind !== 'online'
-                || canResolveSongCatalogRef(item.rawTrack as UnifiedSong, 'album', trackAlbum)
-            )
-        );
-
-        const textLength = useMemo(() => {
-            let len = 0;
-            if (typeof item.name === 'string') {
-                len += item.name.length;
-            }
-            if (item.subtitle) {
-                len += item.subtitle.length;
-            }
-            if (item.description) {
-                len += item.description.length;
-            }
-            if (mode === 'tracks' && item.rawTrack) {
-                const albumName = item.rawTrack.album?.name || '';
-                len += albumName.length;
-            }
-            return len;
-        }, [item.name, item.subtitle, item.description, item.rawTrack, mode]);
-
-        const scaleFactor = useMemo(() => {
-            if (textLength > 100) return 1.18;
-            if (textLength > 65) return 1.12;
-            if (textLength > 35) return 1.06;
-            return 1.0;
-        }, [textLength]);
-
-        const dynamicWidth = cardWidth * scaleFactor;
-        const dynamicHeight = cardHeight * scaleFactor;
-
-        return (
-            <div
-                className="rounded-xl p-3 flex flex-col items-center border transition-shadow duration-300 shadow-lg hover:shadow-2xl theme-polaroid-card"
-                style={{
-                    width: dynamicWidth,
-                    minHeight: dynamicHeight,
-                    height: 'auto',
-                }}
-                onClick={(e) => {
-                    if (isEditMode) {
-                        e.stopPropagation();
-                        return;
-                    }
-                    if (openWhenFocusedOnCardClick && isFocused) {
-                        onSelect();
-                        return;
-                    }
-                    onCenter();
-                }}
-            >
-                {/* Square Polaroid Photo Area */}
-                <div className="w-full aspect-square rounded-lg overflow-hidden bg-zinc-200/60 dark:bg-zinc-800/60 relative shadow-inner flex items-center justify-center shrink-0">
-                    {item.coverUrl ? (
-                        <>
-                            <img
-                                src={getSizedCoverUrl(item.coverUrl, 512)}
-                                alt={typeof item.name === 'string' ? item.name : ''}
-                                loading="lazy"
-                                decoding="async"
-                                ref={(el) => {
-                                    if (el && el.complete) {
-                                        el.style.opacity = isUnavailable ? '0.3' : '1';
-                                        const placeholder = el.nextElementSibling as HTMLElement;
-                                        if (placeholder) {
-                                            placeholder.style.opacity = '0';
-                                            placeholder.style.display = 'none';
-                                        }
-                                    }
-                                }}
-                                onLoad={(e) => {
-                                    const img = e.currentTarget;
-                                    img.style.opacity = isUnavailable ? '0.3' : '1';
-                                    const placeholder = img.nextElementSibling as HTMLElement;
-                                    if (placeholder) {
-                                        placeholder.style.opacity = '0';
-                                        setTimeout(() => {
-                                            placeholder.style.display = 'none';
-                                        }, 350);
-                                    }
-                                }}
-                                className="w-full h-full object-cover transition-opacity duration-350 pointer-events-none select-none opacity-0"
-                            />
-                            <div className="absolute inset-0 bg-zinc-300/40 dark:bg-zinc-700/40 transition-opacity duration-350 flex items-center justify-center">
-                                <Disc size={48} className="opacity-20 animate-spin" style={{ animationDuration: '3s', color: 'var(--text-primary)' }} />
-                            </div>
-                        </>
-                    ) : (
-                        <div className="absolute inset-0 bg-zinc-300/40 dark:bg-zinc-700/40 flex items-center justify-center">
-                            <Disc size={48} className="opacity-20" style={{ color: 'var(--text-primary)' }} />
-                        </div>
-                    )}
-
-                    {/* Unavailable Mask/Badge */}
-                    {isUnavailable && (
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center p-2 text-center z-10">
-                            <span className="text-[10px] bg-red-500/80 text-white font-bold px-2 py-1 rounded-full uppercase tracking-wider">
-                                {unavailableTagText || t('status.songUnavailableTag').toUpperCase()}
-                            </span>
-                        </div>
-                    )}
-
-                    {/* Delete button overlay for Edit Mode */}
-                    <AnimatePresence>
-                        {isEditMode && onRemoveTrack && !isUnavailable && (
-                            <motion.button
-                                key="delete-btn"
-                                initial={{ scale: 0, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                exit={{ scale: 0, opacity: 0 }}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onRemoveTrack();
-                                }}
-                                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-lg border border-white/20 z-[60] active:scale-90 transition-transform cursor-pointer"
-                            >
-                                <X size={14} className="stroke-[3]" />
-                            </motion.button>
-                        )}
-                    </AnimatePresence>
-                </div>
-
-                {/* Bottom Polaroid Frame Label Details */}
-                <div className="w-full flex-1 flex flex-col justify-between pt-3 text-left min-w-0">
-                    <div className="space-y-1 mb-2">
-                        {/* Title */}
-                        <div className="group/song-title relative max-w-full">
-                            <div className="text-s font-bold tracking-tight opacity-90 max-w-full line-clamp-4 whitespace-normal break-words">
-                                {item.name}
-                            </div>
-                            {isFocused && onEditLocalMetadata && (
-                                <button
-                                    type="button"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        onEditLocalMetadata();
-                                    }}
-                                    className="absolute -right-1 top-0 rounded-md bg-[var(--bg-color)]/85 p-1 opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-current/10 group-hover/song-title:opacity-65 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current/30"
-                                    title={t('localMusic.manualMetadataMatch')}
-                                    aria-label={t('localMusic.manualMetadataMatch')}
-                                >
-                                    <Pencil size={13} />
-                                </button>
-                            )}
-                        </div>
-                        {/* Clickable Artists */}
-                        {item.description && (
-                            <div className="text-[10px] opacity-55 max-w-full font-medium line-clamp-3 whitespace-normal break-words">
-                                {mode === 'tracks' && onSelectArtist && item.rawTrack?.artists ? (
-                                    <span className="flex gap-1 flex-wrap">
-                                        {item.rawTrack.artists.map((artist, idx, artists) => {
-                                            const artistTargetId = resolveGridTrackArtistTargetId(item.rawTrack, artist);
-                                            const canOpenArtist = Boolean(
-                                                artistTargetId !== undefined
-                                                && artistTargetId !== ''
-                                                && (
-                                                    item.rawTrack?.sourceRef?.kind !== 'online'
-                                                    || canResolveSongCatalogRef(item.rawTrack as UnifiedSong, 'artist', artist)
-                                                )
-                                            );
-                                            return (
-                                            <span
-                                                key={`${artist.id ?? 'artist'}-${idx}-${artist.name}`}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (canOpenArtist && artistTargetId !== undefined) {
-                                                        onBeforeNestedNavigate?.();
-                                                        onSelectArtist(artistTargetId, artist, item.rawTrack);
-                                                    }
-                                                }}
-                                                className={canOpenArtist
-                                                    ? 'hover:underline hover:opacity-100 cursor-pointer text-current font-semibold'
-                                                    : 'text-current font-semibold'}
-                                            >
-                                                {artist.name}{idx < artists.length - 1 ? ',' : ''}
-                                            </span>
-                                            );
-                                        })}
-                                    </span>
-                                ) : (
-                                    item.description
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="flex items-end justify-between mt-auto pt-1.5 w-full">
-                        {/* Left: Clickable Album name & Duration */}
-                        <div className="flex flex-col min-w-0 flex-1 pr-2">
-                            {mode === 'tracks' && item.rawTrack && (
-                                <>
-                                    <span
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (canOpenAlbum && albumTargetId !== undefined && onSelectAlbum) {
-                                                onBeforeNestedNavigate?.();
-                                                onSelectAlbum(
-                                                    albumTargetId,
-                                                    item.rawTrack?.album,
-                                                    item.rawTrack,
-                                                );
-                                            }
-                                        }}
-                                        className={`text-[9px] opacity-35 font-mono line-clamp-2 whitespace-normal break-words max-w-full ${
-                                            canOpenAlbum ? 'hover:underline hover:opacity-85 cursor-pointer' : ''
-                                        }`}
-                                    >
-                                        {item.rawTrack.album?.name || ''}
-                                    </span>
-                                    <span className="text-[9px] opacity-35 font-mono">
-                                        {(() => {
-                                            const dt = item.rawTrack.durationMs || 0;
-                                            const min = Math.floor(dt / 60000);
-                                            const sec = Math.floor((dt % 60000) / 1000);
-                                            return `${min}:${sec < 10 ? '0' : ''}${sec}`;
-                                        })()}
-                                    </span>
-                                </>
-                            )}
-                        </div>
-
-                        {/* Right: Buttons in bottom right corner */}
-                        <div className="flex items-center gap-1.5 shrink-0">
-                            {mode === 'tracks' && !isEditMode && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onSelect();
-                                    }}
-                                    style={{
-                                        opacity: 'var(--play-opacity, 0)',
-                                        pointerEvents: 'var(--play-pe, none)' as any,
-                                        transform: 'scale(var(--play-scale, 0.8))',
-                                        transition: 'opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, color 0.2s ease',
-                                    }}
-                                    className="w-9 h-9 rounded-full bg-zinc-800/10 dark:bg-zinc-100/10 hover:bg-zinc-900 hover:text-zinc-100 dark:hover:bg-zinc-100 dark:hover:text-zinc-900 text-current flex items-center justify-center shadow-sm pointer-events-auto z-10"
-                                    title={t('playlist.play')}
-                                >
-                                    <Play size={15} fill="currentColor" className="ml-0.5" />
-                                </button>
-                            )}
-                            {mode === 'tracks' && onAddQueue && !isUnavailable && !isEditMode && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onAddQueue();
-                                    }}
-                                    style={{ opacity: 'var(--queue-opacity, 1)' as any, pointerEvents: 'var(--queue-pe, auto)' as any }}
-                                    className="w-9 h-9 rounded-full bg-zinc-800/10 dark:bg-zinc-100/10 hover:bg-zinc-900 hover:text-zinc-100 dark:hover:bg-zinc-100 dark:hover:text-zinc-900 text-current flex items-center justify-center transition-colors shadow-sm pointer-events-auto"
-                                    title={t('navidrome.addToQueue')}
-                                >
-                                    <Plus size={15} />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    },
-    (prev, next) => {
-        return (
-            prev.item.id === next.item.id &&
-            prev.item.name === next.item.name &&
-            prev.item.coverUrl === next.item.coverUrl &&
-            prev.item.subtitle === next.item.subtitle &&
-            prev.item.description === next.item.description &&
-            prev.isDaylight === next.isDaylight &&
-            prev.theme === next.theme &&
-            prev.mode === next.mode &&
-            prev.cardWidth === next.cardWidth &&
-            prev.cardHeight === next.cardHeight &&
-            prev.isEditMode === next.isEditMode &&
-            prev.openWhenFocusedOnCardClick === next.openWhenFocusedOnCardClick &&
-            Boolean(prev.onEditLocalMetadata) === Boolean(next.onEditLocalMetadata) &&
-            prev.isFocused === next.isFocused
-        );
-    }
-);
 const getLowResCoverUrl = (url: string): string => getSizedCoverUrl(url, 150);
 
 const toHttps = (url?: string): string => {
@@ -545,6 +245,12 @@ export const GridView: React.FC<GridViewProps> = ({
 }) => {
     const { t } = useTranslation();
     const bottomBarPanelBottomPx = useSidePanelBottomPx();
+    const fullBleedCover = useGridViewSettingsStore(state => state.gridViewFullBleedCover);
+    // Only the full-bleed layout can be square: the polaroid frame needs the extra height for the
+    // printed label under its artwork.
+    const squareCards = useGridViewSettingsStore(state => state.gridViewSquareCards) && fullBleedCover;
+    const minCardScale = useGridViewSettingsStore(state => state.gridViewMinCardScale);
+    const minCardOpacity = useGridViewSettingsStore(state => state.gridViewMinCardOpacity);
     const containerRef = useRef<HTMLDivElement>(null);
     const dragControls = useDragControls();
     const [focusedIndex, setFocusedIndex] = useState(0);
@@ -598,52 +304,9 @@ export const GridView: React.FC<GridViewProps> = ({
     // Layout values for different container size breakpoints
     const layoutConfig = useMemo(() => {
         const width = containerSize.width;
-        if (width < 768) {
-            // Mobile/Narrow
-            return {
-                cardWidth: 180,
-                cardHeight: 280,
-                spacingX: 205,
-                spacingY: 270,
-                maxDistance: 420,
-                lodStart: 280,
-                lodEnd: 320,
-            };
-        } else if (width < 1440) {
-            // Desktop
-            return {
-                cardWidth: 220,
-                cardHeight: 330,
-                spacingX: 250,
-                spacingY: 320,
-                maxDistance: 500,
-                lodStart: 340,
-                lodEnd: 385,
-            };
-        } else if (width < 2000) {
-            // Large Desktop
-            return {
-                cardWidth: 250,
-                cardHeight: 375,
-                spacingX: 285,
-                spacingY: 365,
-                maxDistance: 580,
-                lodStart: 400,
-                lodEnd: 450,
-            };
-        } else {
-            // Ultra Desktop
-            return {
-                cardWidth: 280,
-                cardHeight: 420,
-                spacingX: 320,
-                spacingY: 410,
-                maxDistance: 660,
-                lodStart: 450,
-                lodEnd: 510,
-            };
-        }
-    }, [containerSize.width]);
+        const box = resolveGridViewCardBox(width);
+        return squareCards ? squareGridCardBox(box) : box;
+    }, [containerSize.width, squareCards]);
 
     // Dynamically calculate visible clipping radius centered on (0,0) viewport coordinates
     const clipRadius = useMemo(() => {
@@ -672,6 +335,8 @@ export const GridView: React.FC<GridViewProps> = ({
         cardWidth: layoutConfig.cardWidth,
         cardHeight: layoutConfig.cardHeight,
         visibilityBuffer: GRID_VIEW_CARD_VISIBILITY_BUFFER,
+        minScale: minCardScale,
+        minOpacity: minCardOpacity,
     }), [
         clipRadius,
         containerSize.height,
@@ -681,6 +346,8 @@ export const GridView: React.FC<GridViewProps> = ({
         layoutConfig.lodEnd,
         layoutConfig.lodStart,
         layoutConfig.maxDistance,
+        minCardOpacity,
+        minCardScale,
     ]);
 
     const navigationStorageKey = useMemo(() => {
@@ -700,6 +367,12 @@ export const GridView: React.FC<GridViewProps> = ({
     const [loading, setLoading] = useState(false);
     const [backgroundLoading, setBackgroundLoading] = useState(false);
     const [backgroundLoadFailed, setBackgroundLoadFailed] = useState(false);
+    // 在线集合加载失败必须和「集合确实是空的」分开显示：两者都渲染成空网格的话，
+    // provider 侧的鉴权、协议或网络故障在界面上就完全不可见。
+    // 存判别式而不是成品文案：翻译要在渲染时做，切换语言才能跟着变。
+    const [loadError, setLoadError] = useState<
+        { kind: 'not-public' } | { kind: 'generic'; message: string } | null
+    >(null);
     const [hasMore, setHasMore] = useState(true);
     const [offset, setOffset] = useState(0);
     const [dailyRecommendationHistoryDates, setDailyRecommendationHistoryDates] = useState<string[]>([]);
@@ -728,6 +401,7 @@ export const GridView: React.FC<GridViewProps> = ({
     const [isSubscribing, setIsSubscribing] = useState(false);
     const [isPlaylistPickerOpen, setIsPlaylistPickerOpen] = useState(false);
     const [isCreatePlaylistOpen, setIsCreatePlaylistOpen] = useState(false);
+    const [isDeleteFolderOpen, setIsDeleteFolderOpen] = useState(false);
     const [showCutInPanel, setShowCutInPanel] = useState(false);
     const [showSidePanel, setShowSidePanel] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -1061,6 +735,7 @@ export const GridView: React.FC<GridViewProps> = ({
     const loadTracks = async (reset = false) => {
         if (usesExternalTracks || !collection || collection.source !== 'online' || loading || (!hasMore && !reset)) return;
         setLoading(true);
+        if (reset) setLoadError(null);
 
         try {
             const currentOffset = reset ? 0 : offset;
@@ -1157,6 +832,9 @@ export const GridView: React.FC<GridViewProps> = ({
             }
         } catch (error) {
             console.error("GridView failed to load tracks:", error);
+            setLoadError(error instanceof OmniError && error.code === 'not-public'
+                ? { kind: 'not-public' }
+                : { kind: 'generic', message: error instanceof Error ? error.message : String(error) });
         } finally {
             setLoading(false);
         }
@@ -1272,6 +950,16 @@ export const GridView: React.FC<GridViewProps> = ({
         || isLocalPlaylistCollection
         || isNavidromePlaylistCollection
     );
+
+    // An owned online playlist edits in place; a local or Navidrome one commits a rename on the way
+    // out. Shared so the command palette and the panel button cannot end up meaning different things.
+    const handleEditModeToggle = useCallback(() => {
+        if (canEditOwnedPlaylist || canEditProviderPlaylist) {
+            setIsEditMode(prev => !prev);
+            return;
+        }
+        void handleSourceEditToggle();
+    }, [canEditOwnedPlaylist, canEditProviderPlaylist, handleSourceEditToggle]);
 
     const isOnlinePlaylist = collectionSource === 'online' && collection?.type === 'playlist' && !isCloudDrive;
     const isOnlineAlbum = collectionSource === 'online' && collection?.type === 'album' && !isCloudDrive;
@@ -1838,6 +1526,7 @@ export const GridView: React.FC<GridViewProps> = ({
                                 t={t}
                                 cardWidth={layoutConfig.cardWidth}
                                 cardHeight={layoutConfig.cardHeight}
+                                fullBleedCover={fullBleedCover}
                                 isEditMode={isEditMode}
                                 onRemoveTrack={isRemovingTrack ? undefined : () => {
                                     if (item.rawTrack) handleRemoveTrack(item.rawTrack, item.rawTrackIndex ?? idx, trackKey);
@@ -1899,6 +1588,7 @@ export const GridView: React.FC<GridViewProps> = ({
         layoutConfig.cardWidth,
         layoutConfig.cardHeight,
         cardFrameOptions,
+        fullBleedCover,
         isEditMode,
         focusedIndex,
         contextActionTracks,
@@ -2002,6 +1692,7 @@ export const GridView: React.FC<GridViewProps> = ({
                     || showCutInPanel
                     || isPlaylistPickerOpen
                     || isCreatePlaylistOpen
+                    || isDeleteFolderOpen
                 ) return;
 
                 const focusedItem = gridItems[focusedIndex];
@@ -2060,6 +1751,7 @@ export const GridView: React.FC<GridViewProps> = ({
         focusedIndex,
         gridItems,
         isCreatePlaylistOpen,
+        isDeleteFolderOpen,
         isEditMode,
         isInteractive,
         isPlaylistPickerOpen,
@@ -2084,6 +1776,52 @@ export const GridView: React.FC<GridViewProps> = ({
     const infoPanelCoverUrl = infoCollection?.coverUrl || '';
     // 只有 tracks 模式下的合集才有切入面板，没有面板时标题不做成可点控件
     const hasCutInPanel = mode === 'tracks' && Boolean(collection);
+
+    // Everything the palette is allowed to do to this grid, and the branch rules that decide which
+    // of it applies. Declared next to the buttons it mirrors so the two cannot disagree; the actual
+    // gating and dispatch live in ./folia-grid/gridSurfaceHandle.
+    const gridSurfaceParams: GridSurfaceParams = {
+        hasInfoPanel: hasCutInPanel,
+        hasTrackList: mode === 'tracks' && displayTracks.length > 0,
+        supportsLocalTrackSorting,
+        canResyncFolder: isLocalFolderCollection && Boolean(sourceActions?.local?.onResyncFolder),
+        canResyncAllFolders: isLocalAllSongsCollection && Boolean(sourceActions?.local?.onResyncAllFolders),
+        canOrganizeSongInfo: isLocalFolderCollection && Boolean(sourceActions?.local?.onOrganizeFolderSongInfo),
+        canExportPlaylist: isLocalCollection
+            && collection?.type === 'playlist'
+            && Boolean(collection.playlistId)
+            && Boolean(sourceActions?.local?.onExportPlaylist),
+        canEditEntity: isLocalEntityCollection && Boolean(sourceActions?.local?.onEditEntity),
+        canEditPlaylist,
+        isSourceActionPending,
+
+        filteredTrackCount: contextActionTracks.length,
+        isFilterActive: hasSearchQuery,
+        sortField: localTrackSortField,
+        sortDirection: localTrackSortDirection,
+        isInfoPanelOpen: showCutInPanel,
+        isTrackListOpen: showSidePanel,
+        isEditMode,
+
+        playFiltered: () => onPlayAll?.(contextActionTracks),
+        enqueueFiltered: () => onAddAllToQueue?.(contextActionTracks),
+        setSortField: handleLocalTrackSortFieldChange,
+        setSortDirection: handleLocalTrackSortDirectionChange,
+        toggleInfoPanel: () => setShowCutInPanel(current => !current),
+        toggleTrackList: () => setShowSidePanel(current => !current),
+        resyncFolder: () => void handleResyncLocalFolder(),
+        resyncAllFolders: () => void handleResyncAllLocalFolders(),
+        organizeSongInfo: () => { if (collection) void sourceActions?.local?.onOrganizeFolderSongInfo?.(collection); },
+        exportPlaylist: () => void handleExportLocalPlaylist(),
+        editEntity: () => { if (collection?.entityId) void sourceActions?.local?.onEditEntity?.(String(collection.entityId)); },
+        toggleEditMode: handleEditModeToggle,
+    };
+    useGridSurfaceRegistration({
+        isInteractive,
+        getState: () => buildGridSurfaceState(gridSurfaceParams),
+        run: (action) => runGridSurfaceAction(action, gridSurfaceParams),
+    });
+
     const albumArtists = Array.isArray(infoCollection?.artists) ? infoCollection.artists : [];
     const albumAlias = infoCollection?.aliases?.[0];
     const albumPublishedAt = infoCollection?.publishedAt;
@@ -2209,8 +1947,12 @@ export const GridView: React.FC<GridViewProps> = ({
                         <span className="text-sm font-semibold font-sans">{t('playlist.loading')}</span>
                     </div>
                 ) : gridItems.length === 0 ? (
-                    <div className="opacity-40 text-sm font-sans">
-                        {hasSearchQuery ? (t('home.gridSearchNoResults')) : (t('home.loadingLibrary'))}
+                    <div className="max-w-md px-6 text-center text-sm font-sans opacity-40">
+                        {loadError && !hasSearchQuery
+                            ? (loadError.kind === 'not-public'
+                                ? t('playlist.loadNotPublic')
+                                : t('playlist.loadFailed', { error: loadError.message }))
+                            : hasSearchQuery ? (t('home.gridSearchNoResults')) : (t('home.loadingLibrary'))}
                     </div>
                 ) : (
                     <motion.div
@@ -2487,13 +2229,7 @@ export const GridView: React.FC<GridViewProps> = ({
                                 )}
                                 {canEditPlaylist && (
                                     <button
-                                        onClick={() => {
-                                            if (canEditOwnedPlaylist || canEditProviderPlaylist) {
-                                                setIsEditMode(prev => !prev);
-                                                return;
-                                            }
-                                            void handleSourceEditToggle();
-                                        }}
+                                        onClick={handleEditModeToggle}
                                         disabled={isSourceActionPending}
                                         className={`w-full py-2.5 rounded-full text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${isEditMode ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 'bg-zinc-800/10 dark:bg-zinc-100/10 hover:bg-zinc-900 hover:text-zinc-100 dark:hover:bg-zinc-100 dark:hover:text-zinc-900'}`}
                                     >
@@ -2528,7 +2264,7 @@ export const GridView: React.FC<GridViewProps> = ({
                                 )}
                                 {(isLocalFolderCollection || isLocalPlaylistCollection || isNavidromePlaylistCollection) && (
                                     <button
-                                        onClick={() => void handleDeleteSourceCollection()}
+                                        onClick={() => isLocalFolderCollection ? setIsDeleteFolderOpen(true) : void handleDeleteSourceCollection()}
                                         disabled={isSourceActionPending}
                                         className="w-full py-2.5 rounded-full text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-red-500/10 text-red-500 border border-red-500/25 hover:bg-red-500/20 disabled:opacity-40"
                                     >
@@ -2565,6 +2301,20 @@ export const GridView: React.FC<GridViewProps> = ({
                 onConfirm={(name) => {
                     void handleCreateNavidromePlaylist(name);
                 }}
+                isDaylight={isDaylight}
+            />
+            <ConfirmDialog
+                isOpen={isDeleteFolderOpen}
+                title={t('localMusic.deleteFolderTitle')}
+                description={t(collection?.name?.replace(/\\/g, '/').includes('/')
+                    ? 'localMusic.deleteSubfolderMessage' : 'localMusic.deleteRootFolderMessage', { folderName: collection?.name })}
+                confirmText={t('localMusic.deleteFromLibrary')}
+                confirmVariant="danger"
+                onConfirm={() => {
+                    setIsDeleteFolderOpen(false);
+                    void handleDeleteSourceCollection();
+                }}
+                onClose={() => setIsDeleteFolderOpen(false)}
                 isDaylight={isDaylight}
             />
 

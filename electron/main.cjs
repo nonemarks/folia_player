@@ -19,10 +19,18 @@ const { createVoiceInputPauseMonitor } = require('./voiceInputPause.cjs');
 const { createDisplaySleepBlocker } = require('./displaySleepBlocker.cjs');
 const { createLyricApi } = require('./lyricApi.cjs');
 const { createLocalCoverAssetStore, getLocalCoverAssetDirectory } = require('./localCoverAssets.cjs');
-const { getReleaseUrl, getUpdateProviderConfig, resolveReleaseChannel } = require('./updateChannels.cjs');
+const {
+  compareVersions,
+  getReleaseUrl,
+  getUpdateDiscoveryConfig,
+  getUpdateProviderConfig,
+  parseUpdateMetadataVersion,
+  resolveReleaseChannel,
+} = require('./updateChannels.cjs');
 const { resolveCacheLimit, selectEvictions } = require('./audioCachePrune.cjs');
 const { createAnalysisHost } = require('./analysis/host.cjs');
-const { createDebugHost } = require('./debug/debugHost.cjs');
+const { createDebugHost, runtimeLine } = require('./debug/debugHost.cjs');
+const { createCrashLog, installCrashHandlers } = require('./debug/crashLog.cjs');
 const { createModelStore } = require('./analysis/modelStore.cjs');
 const { resolveLinuxPasswordStore } = require('./linuxPasswordStore.cjs');
 const { createTranscodeService } = require('./transcode/service.cjs');
@@ -1628,6 +1636,10 @@ const mainLocale = {
     dialogImportMessage: '不能直接导入系统目录或常用用户目录。\n请选择一个专门存放音乐的文件夹。',
     dialogChooseOther: '选择其他文件夹',
     dialogCancel: '取消',
+    crashTitle: 'Folia 遇到了问题',
+    crashMessage: '程序发生了一次崩溃，日志已保存。把它发给开发者能帮助定位问题。',
+    crashOpenFolder: '打开日志所在文件夹',
+    crashClose: '关闭',
   },
   en: {
     trayShowWindow: 'Show Window',
@@ -1645,6 +1657,10 @@ const mainLocale = {
     dialogImportMessage: 'Cannot directly import system or common user directories.\nPlease choose a dedicated music folder.',
     dialogChooseOther: 'Choose Another Folder',
     dialogCancel: 'Cancel',
+    crashTitle: 'Folia ran into a problem',
+    crashMessage: 'The app crashed and a log has been saved. Sending it to the developer helps track the problem down.',
+    crashOpenFolder: 'Open Log Folder',
+    crashClose: 'Close',
   },
   in: {
     trayShowWindow: 'Tampilkan Jendela',
@@ -1662,6 +1678,10 @@ const mainLocale = {
     dialogImportMessage: 'Folder sistem atau folder pengguna umum tidak dapat diimpor langsung.\nPilih folder khusus untuk menyimpan musik.',
     dialogChooseOther: 'Pilih Folder Lain',
     dialogCancel: 'Batal',
+    crashTitle: 'Folia mengalami masalah',
+    crashMessage: 'Aplikasi mengalami crash dan log telah disimpan. Mengirimkannya ke pengembang membantu menemukan masalahnya.',
+    crashOpenFolder: 'Buka Folder Log',
+    crashClose: 'Tutup',
   },
 };
 
@@ -1729,6 +1749,26 @@ function getMainLocaleKey() {
 function getMainLocale() {
   return mainLocale[getMainLocaleKey()];
 }
+
+// Crash reporting. Installed here rather than at the end of the file because everything below it
+// runs before `ready`, and a startup failure is exactly the crash a user cannot diagnose alone.
+// Writes to `logs` beside the executable where that is writable — see resolveCrashLogDir for the
+// platforms where it is not, and where the reports land instead.
+const crashLog = createCrashLog({
+  app,
+  dialog,
+  shell,
+  getLocale: getMainLocale,
+  onLine: runtimeLine,
+});
+installCrashHandlers({
+  app,
+  crashLog,
+  // 壁纸模式对渲染进程崩溃有自己的恢复路径：Linux 的 windowtolayer watchdog 会重启进程回到普通
+  // 窗口，Windows / macOS 就地 reload 页面。两处都只认 reason === 'crashed'，这里跟着它们走。
+  // 崩溃文件照写，只是不弹窗——桌面正在自己恢复，弹出来的框用户除了关掉别无选择。
+  isRendererCrashRecovered: (details) => details?.reason === 'crashed' && isWallpaperModeEnabled(),
+});
 
 
 let mainWindow = null;
@@ -3047,9 +3087,6 @@ function normalizeUpdateChannelSelection(value) {
 }
 
 function getUpdateCheckSupportReason() {
-  if (process.platform !== 'win32') {
-    return 'system';
-  }
   return getCurrentReleaseChannel().updateEnabled ? null : 'channel';
 }
 
@@ -3075,11 +3112,23 @@ function getDevUpdatePreviewVersion() {
 
 function isAutoUpdaterSupported() {
   return (
+    process.platform === 'win32' &&
     isUpdateCheckSupported() &&
     app.isPackaged &&
     process.env.ELECTRON_DEV !== 'true' &&
     process.env.NODE_ENV !== 'development'
   );
+}
+
+function getAutoUpdateSupportReason() {
+  if (!getCurrentReleaseChannel().updateEnabled) {
+    return 'channel';
+  }
+  return process.platform === 'win32' ? null : 'system';
+}
+
+function isPackagedUpdateRuntime() {
+  return app.isPackaged && process.env.ELECTRON_DEV !== 'true' && process.env.NODE_ENV !== 'development';
 }
 
 const updateState = {
@@ -3104,6 +3153,8 @@ function getUpdateStatus() {
     platform: process.platform,
     updateCheckEnabled: getUpdateCheckEnabled(),
     autoUpdateEnabled: getAutoUpdateEnabled(),
+    autoUpdateSupported: isDevPreview || isAutoUpdaterSupported(),
+    autoUpdateSupportReason: isDevPreview ? null : getAutoUpdateSupportReason(),
     lastSeenVersion: store.get(LAST_SEEN_UPDATE_VERSION_SETTING_KEY) || null,
     updateSeen: Boolean(
       availableVersion &&
@@ -3293,9 +3344,13 @@ async function checkForUpdates({ manual = false } = {}) {
     return getUpdateStatus();
   }
 
-  if (!isAutoUpdaterSupported()) {
+  if (!isPackagedUpdateRuntime()) {
     setUpdateState({ status: 'idle', error: null, downloadProgress: null });
     return getUpdateStatus();
+  }
+
+  if (!isAutoUpdaterSupported()) {
+    return checkForManualUpdateAvailability();
   }
 
   try {
@@ -3313,6 +3368,66 @@ async function checkForUpdates({ manual = false } = {}) {
       lastCheckedAt: Date.now(),
       downloadProgress: null,
     });
+  }
+
+  return getUpdateStatus();
+}
+
+async function checkForManualUpdateAvailability() {
+  const releaseChannel = getCurrentReleaseChannel();
+  const discovery = getUpdateDiscoveryConfig(releaseChannel, FOLIA_GITHUB_REPOSITORY);
+  if (!discovery) {
+    setUpdateState({ status: 'unsupported', error: null, availableVersion: null, downloadProgress: null });
+    return getUpdateStatus();
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  setUpdateState({ status: 'checking', error: null, downloadProgress: null });
+
+  try {
+    // Keep the startup check off the app's default session so refreshing proxy state cannot
+    // interrupt playback, provider requests, or other live connections.
+    const ses = session.fromPartition('folia-update-check');
+    await ses.setProxy({ mode: 'system' });
+    await ses.forceReloadProxyConfig();
+    const response = await ses.fetch(discovery.url, {
+      headers: {
+        Accept: 'text/yaml, text/plain',
+        'User-Agent': `Folia/${app.getVersion()}`,
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Update metadata request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const metadata = await response.text();
+    const latestVersion = parseUpdateMetadataVersion(metadata);
+    if (!latestVersion) {
+      throw new Error('Update metadata did not include a version.');
+    }
+
+    const hasUpdate = compareVersions(latestVersion, app.getVersion()) > 0;
+    setUpdateState({
+      status: hasUpdate ? 'available' : 'latest',
+      availableVersion: hasUpdate ? latestVersion : null,
+      updateUrl: hasUpdate
+        ? getReleaseUrl(releaseChannel.id, latestVersion, FOLIA_RELEASES_URL)
+        : FOLIA_RELEASES_URL,
+      error: null,
+      lastCheckedAt: Date.now(),
+      downloadProgress: null,
+    });
+  } catch (error) {
+    setUpdateState({
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
+      lastCheckedAt: Date.now(),
+      downloadProgress: null,
+    });
+  } finally {
+    clearTimeout(timeout);
   }
 
   return getUpdateStatus();
@@ -3364,7 +3479,7 @@ function scheduleStartupUpdateCheck() {
     return;
   }
 
-  if (!isAutoUpdaterSupported()) {
+  if (!isPackagedUpdateRuntime()) {
     setUpdateState({ status: 'idle', error: null });
     return;
   }
@@ -5581,7 +5696,7 @@ ipcMain.handle('save-settings', (event, key, value) => {
       downloadProgress: null,
     });
 
-    if (getUpdateCheckEnabled() && isAutoUpdaterSupported()) {
+    if (getUpdateCheckEnabled() && isPackagedUpdateRuntime() && isUpdateCheckSupported()) {
       checkForUpdates().catch((error) => {
         setUpdateState({
           status: 'error',

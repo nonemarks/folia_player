@@ -84,8 +84,12 @@ test('playback buttons and seek gestures do not pan; slider arrows keep native b
     expect(await cameraX(wall)).toBeCloseTo(before, 1);
 });
 
-test('reduced motion disables fling and cancellation never starts one', async ({ mount, page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
+// 拆成两条、并且改用设置而不是 emulateMedia：动效不再跟随系统偏好（issue #370），
+// emulateMedia 已经影响不了 fling。这里用 addInitScript 在页面脚本运行前写好 localStorage，
+// store 初始化时读到的就是降级值；运行时切换开关是即时生效的，只是这个测试框架里没有入口去点它，
+// 所以「降级」和「完整动效」各挂一次。
+test('reduced queue collage motion disables fling', async ({ mount, page }) => {
+    await page.addInitScript(() => localStorage.setItem('reduce_motion_lattice', 'true'));
     const wall = await mount('lattice');
     await settle(page);
     await dragCover(page, wall);
@@ -93,13 +97,29 @@ test('reduced motion disables fling and cancellation never starts one', async ({
     const released = await cameraX(wall);
     await page.waitForTimeout(150);
     expect(await cameraX(wall)).toBeCloseTo(released, 1);
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
+});
+
+test('cancellation never starts a fling', async ({ mount, page }) => {
+    const wall = await mount('lattice');
+    await settle(page);
     await dragCover(page, wall);
     await wall.locator('.lattice-field').dispatchEvent('pointercancel', { pointerId: 1 });
     const cancelled = await cameraX(wall);
     await page.mouse.up();
     await page.waitForTimeout(150);
     expect(await cameraX(wall)).toBeCloseTo(cancelled, 1);
+});
+
+test('the system preference alone no longer reduces motion', async ({ mount, page }) => {
+    // #370 的回归点：系统关掉动画效果时，应用默认仍然播放完整动效。
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const wall = await mount('lattice');
+    await settle(page);
+    await dragCover(page, wall);
+    const dragged = await cameraX(wall);
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+    expect(await cameraX(wall)).toBeGreaterThan(dragged + 10);
 });
 
 test('touch swipe coasts and a secondary pointer cannot replace the gesture', async ({ mount, page }) => {
@@ -163,11 +183,11 @@ test('Escape returns only after card focus has been cleared', async ({ mount, pa
     await expect(state).toHaveAttribute('data-backs', '1');
 });
 
-test('primary modifier Q exits Lattice immediately', async ({ mount, page }) => {
+test('primary modifier B exits Lattice immediately', async ({ mount, page }) => {
     const wall = await mount('lattice');
     const state = wall.locator('[data-backs]');
 
-    await page.keyboard.press('Control+q');
+    await page.keyboard.press('Control+b');
 
     await expect(state).toHaveAttribute('data-backs', '1');
 });
@@ -474,4 +494,24 @@ test('expanded chrome uses the configured main-bar slot to open volume', async (
     await wall.locator('.lattice-chrome [data-action=volume]').click();
     await expect(wall.locator('[data-command]')).toHaveAttribute('data-command', 'playback-volume');
     await expect(wall.locator('.lattice-chrome [data-action=lyrics-timeline]')).toHaveCount(0);
+});
+
+test('pause, resume and duration updates re-render no poster', async ({ mount, page }) => {
+    const wall = await mount('lattice');
+    await settle(page);
+    const transport = wall.locator('.lattice-poster.is-expanded .lattice-transport-button');
+    const playing = await transport.getAttribute('aria-label');
+    await expect(wall.locator('.lattice-poster')).not.toHaveCount(0);
+
+    // Armed after the wall has settled so the opening wave's own renders are not counted.
+    await page.evaluate(() => { (window as unknown as { __renderCounts: Record<string, number> }).__renderCounts = {}; });
+    await wall.getByRole('button', { name: 'Toggle player state' }).click();
+    await wall.getByRole('button', { name: 'Bump duration' }).click();
+
+    // The expanded card's chrome still follows the transport...
+    await expect(transport).not.toHaveAttribute('aria-label', playing!);
+    const counts = () => page.evaluate(() => (window as unknown as { __renderCounts: Record<string, number> }).__renderCounts);
+    // ...and the update reached it through the wall, not around it.
+    expect((await counts()).Lattice ?? 0).toBeGreaterThan(0);
+    expect((await counts()).LatticePoster ?? 0).toBe(0);
 });

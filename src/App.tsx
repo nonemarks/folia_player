@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
-import { AnimatePresence, motion, useMotionValueEvent, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useMotionValueEvent } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft } from 'lucide-react';
 import { loadCachedOrFetchCover } from './services/coverCache';
@@ -8,6 +8,7 @@ import CommandPalette from './components/command-palette/CommandPalette';
 import AddToPlaylistHost from './components/app/AddToPlaylistHost';
 import { useCommandPalette } from './components/command-palette/useCommandPalette';
 import { useCommandPaletteContext } from './hooks/useCommandPaletteContext';
+import { useReducedMotionFor } from './hooks/useReducedMotionFor';
 import AppShell from './components/app/AppShell';
 import Home from './components/app/Home';
 import PlayerPanel from './components/app/PlayerPanel';
@@ -21,6 +22,9 @@ import AutomixModelReminder from './components/modal/AutomixModelReminder';
 const AutomixTransitionAnimation = lazy(() => import('./components/app/overlays/AutomixTransitionAnimation'));
 const Lattice = lazy(() => import('./components/app/lattice/Lattice'));
 import { UserGuideModal } from './components/modal/UserGuideModal';
+import { PlaybackEntryViewPrompt } from './components/modal/playback-entry-view/PlaybackEntryViewPrompt';
+import { LatticeFmNotice } from './components/modal/playback-entry-view/LatticeFmNotice';
+import { usePlaybackEntryViewPromptGate } from './hooks/usePlaybackEntryViewPromptGate';
 import { USER_GUIDE_AUTO_OPEN_VERSION } from './components/modal/userGuideContent';
 import { useAppDialogsModel } from './components/app/dialogs/useAppDialogsModel';
 import { useHomeModel } from './components/app/home/useHomeModel';
@@ -81,6 +85,7 @@ import { usePlaybackUiEffects } from './hooks/usePlaybackUiEffects';
 import { useLibraryPlaybackController } from './hooks/useLibraryPlaybackController';
 import { useWhisperAutoAlign } from './hooks/useWhisperAutoAlign';
 import { useNavidromeScrobbleReporter } from './hooks/useNavidromeScrobbleReporter';
+import { useNeteaseScrobbleReporter } from './hooks/useNeteaseScrobbleReporter';
 import { usePlaybackQueueController } from './hooks/usePlaybackQueueController';
 import { usePlaybackTransportController } from './hooks/usePlaybackTransportController';
 import { useLocalLibraryCatalog } from './hooks/useLocalLibraryCatalog';
@@ -285,6 +290,8 @@ export default function App() {
             setLastSeenGuideVersion(__APP_VERSION__);
         }
     }, [lastSeenGuideVersion, setLastSeenGuideVersion, setIsUserGuideModalOpen]);
+
+    usePlaybackEntryViewPromptGate();
 
     useEffect(() => initializeSyncCoordinator(), []);
 
@@ -689,6 +696,8 @@ export default function App() {
         localMusicState,
         setLocalMusicState,
         navigateToPlayer,
+        navigateToPlaybackView,
+        navigateFromPlayerCapsule,
         navigateToHome,
         navigateToLattice,
         navigateBackFromLattice,
@@ -700,7 +709,7 @@ export default function App() {
         pushCollection,
         backCollection,
     } = useAppNavigation();
-    const reduceLatticeMotion = useReducedMotion();
+    const reduceLatticeMotion = useReducedMotionFor('lattice');
     const [hasLatticeExited, setHasLatticeExited] = useState(currentView !== 'lattice');
 
     useEffect(() => {
@@ -995,7 +1004,7 @@ export default function App() {
         setLyrics,
         setIsLyricsLoading,
         setLikedSongIds,
-        navigateToPlayer,
+        navigateToPlaybackView,
         persistLastPlaybackCache,
         restoreCachedThemeForSong,
         interruptStagePlaybackForMainTransition,
@@ -1093,7 +1102,7 @@ export default function App() {
         userId: user?.id,
         setLyrics,
         setIsLyricsLoading,
-        navigateToPlayer,
+        navigateToPlaybackView,
         navigateToSearch,
         persistLastPlaybackCache,
         restoreCachedThemeForSong,
@@ -1457,6 +1466,11 @@ export default function App() {
         pauseDuringTransition: handlePauseDuringTransition,
     });
     useNavidromeScrobbleReporter({
+        audioRef,
+        currentSong,
+        activeDeck: automix.activeDeck,
+    });
+    useNeteaseScrobbleReporter({
         audioRef,
         currentSong,
         activeDeck: automix.activeDeck,
@@ -2282,6 +2296,7 @@ export default function App() {
         togglePlay,
         toggleLoop,
         navigateToPlayer,
+        navigateFromPlayerCapsule,
         shouldHidePlayerProgressBar,
         onSeekMainAudio: seekMainAudio,
         onStagePlayerSeek: publishStagePlayerPlaybackUpdate,
@@ -2428,6 +2443,14 @@ export default function App() {
             }}
             onPause={(e) => {
                 if (!automix.isActiveDeck(e.currentTarget)) return;
+                // A deck whose source failed fires `pause` immediately AFTER `error` - Chromium
+                // clears the play state as part of failing the load - and that is not the listener
+                // pausing. Read as one, it dropped the transport to PAUSED and spent the autoplay
+                // intent, and the transcode fallback then read that PAUSED back as "the listener
+                // paused during recovery" and cancelled the resume: the track was transcoded, the
+                // source re-pointed, and the deck left silent until play was pressed by hand.
+                // What happens to a failed source belongs to the error path below.
+                if (e.currentTarget.error) return;
                 shouldAutoPlay.current = false;
                 if (!e.currentTarget.ended) {
                     setPlayerState(PlayerState.PAUSED);
@@ -2792,6 +2815,8 @@ export default function App() {
 
             <AppDialogs model={appDialogsModel} />
             <UserGuideModal theme={theme} />
+            <PlaybackEntryViewPrompt theme={theme} />
+            <LatticeFmNotice />
         </AppShell>
     );
 }

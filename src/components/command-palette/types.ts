@@ -7,7 +7,9 @@ import type { LyricSegmentationRecord, LyricSegmentationSource } from '../../typ
 import type { AppLanguagePreference } from '../../i18n/config';
 import type { PanelTab } from '../UnifiedPanel';
 import type { AppView, CommandFilterHandle } from '../../stores/useAppViewStore';
-import { type SettingsModalInitialTab, type SettingsSubviewId } from '../../stores/useSettingsModalStore';
+import type { GridSurfaceHandle } from '../../types/gridCommandSurface';
+import { type SettingsModalInitialTab, type SettingsSubviewId, type VisualizerSettingsSection } from '../../stores/useSettingsModalStore';
+import type { SettingsAnchorId } from '../modal/settings/navigation/settingsAnchorModel';
 import type { LyricStaffAbsorbMode, LyricStaffPolicy } from '../../utils/lyrics/staffCreditsPolicy';
 import type { AudioEqualizerModeId } from '../../utils/audioEqualizer';
 import type { ThemeGenerationSource } from '../../services/themePreferences';
@@ -17,11 +19,12 @@ import type { QueueBatchAction, QueueFacetKind } from './queueQuery';
 import type { CommandPlatform } from './availability';
 import type { CommandPaletteSurface } from './surfaces/types';
 import type { CommandSyntaxSpec } from './syntax/types';
+import type { PlaybackEntryView } from '../../stores/usePlaybackEntryViewStore';
 
 // src/components/command-palette/types.ts
 // Shared command palette contracts used by the registry, hook, and UI shell.
 
-export type CommandPaletteGroup = 'search' | 'settings' | 'navigation' | 'panel' | 'playback' | 'visualizer';
+export type CommandPaletteGroup = 'search' | 'settings' | 'navigation' | 'panel' | 'playback' | 'visualizer' | 'grid';
 
 /**
  * What a command needs around it to mean anything.
@@ -32,7 +35,7 @@ export type CommandPaletteGroup = 'search' | 'settings' | 'navigation' | 'panel'
  * only offer a global shortcut a command that works from anywhere, and anything else that asks
  * "would this be reachable if I were somewhere else".
  */
-export type CommandScope = 'player-surface' | 'filtering-surface' | 'lattice';
+export type CommandScope = 'player-surface' | 'filtering-surface' | 'lattice' | 'grid-surface';
 
 export type CommandPaletteSearchSource = SearchSource;
 
@@ -182,7 +185,12 @@ export type CommandPalettePanelContext = {
 };
 
 export type CommandPaletteSettingsContext = {
-    openSettings: (initialTab?: SettingsModalInitialTab, initialSubview?: SettingsSubviewId | null) => void;
+    openSettings: (
+        initialTab?: SettingsModalInitialTab,
+        initialSubview?: SettingsSubviewId | null,
+        initialVisualizerSection?: VisualizerSettingsSection | null,
+        initialAnchorId?: SettingsAnchorId | null,
+    ) => void;
     setIsUserGuideModalOpen: (isOpen: boolean) => void;
     setAppLanguagePreference: (preference: AppLanguagePreference) => Promise<void> | void;
     toggleTransparentBackground: () => void;
@@ -191,10 +199,21 @@ export type CommandPaletteSettingsContext = {
     subtitleContentMode: SubtitleContentMode;
     cycleSubtitleContentMode: () => void;
     toggleSubtitleOverlayBackground: () => void;
+    /** Which surface pressing play opens; see usePlaybackEntryViewStore. */
+    playbackEntryView: PlaybackEntryView;
+    setPlaybackEntryView: (view: PlaybackEntryView) => void;
     startPlayerBottomBarPositioning: () => void;
     canStartPlayerBottomBarPositioning: boolean;
     toggleAlwaysShowPlayerBackButton: () => void;
+    toggleGridViewFullBleedCover: () => void;
+    toggleGridViewSquareCards: () => void;
+    /** A getter: the full-bleed toggle it gates on flips with nothing re-rendering the context. */
+    canUseGridViewSquareCards: () => boolean;
     toggleLatticeVignette: () => void;
+    /** Motion reduction for the queue collage, the surface issue #370 was filed about. */
+    toggleReduceLatticeMotion: () => void;
+    /** Whether the OS animation setting is allowed to reduce motion in the app at all. */
+    toggleFollowSystemReducedMotion: () => void;
     toggleLatticeAutoFocusOnSongChange: () => void;
     latticePosterTintEnabled: boolean;
     latticePosterTintUseCustomColor: boolean;
@@ -216,6 +235,13 @@ export type CommandPaletteSettingsContext = {
      */
     canAutoScanLocalLibrary: () => boolean;
     toggleLocalLibraryAutoScan: () => void;
+    /**
+     * Whether NetEase listening reports can be turned on at all - the provider supports them and the
+     * account is signed in. A getter because signing in and out changes the answer while the palette
+     * is open, and the settings panel gates its toggle on the same predicate.
+     */
+    canReportNeteasePlayback: () => boolean;
+    toggleNeteaseScrobble: () => void;
     voiceInputPauseSupported: boolean;
     /** Lab switch for the experimental mod system; gates the `mods` command. */
     modSystemEnabled: boolean;
@@ -308,6 +334,11 @@ export type CommandPaletteScopeContext = {
      * writes through it; every other command ignores it.
      */
     filter: CommandFilterHandle | null;
+    /**
+     * The track grid on screen, if any. Carries what only it knows — its filtered set, its sort
+     * choice, its two panels — plus the collection maintenance its own branch allows.
+     */
+    grid: GridSurfaceHandle | null;
 };
 
 // Namespaces mirror CommandPaletteGroup one-to-one (plus `shared` and `scope`), so a command's

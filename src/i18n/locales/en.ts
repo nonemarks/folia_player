@@ -180,7 +180,8 @@ export default {
     "confirm": "Confirm",
     "stageWaiting": "Waiting for external Stage input",
     "stageActionUnavailable": "This action is unavailable in Stage mode",
-    "latticeUnavailableInFm": "Queue collage is unavailable in Personal FM mode",
+    "latticeUnavailableInFm": "Lattice does not support Personal FM mode",
+    "latticeFmOpenedInPlayer": "Lattice does not support Personal FM mode. Opened the standard player instead",
     "noPlayableSongs": "No playable songs in this list",
     "songUnavailableTag": "Unavailable",
     "queueShuffled": "Queue shuffled",
@@ -307,6 +308,8 @@ export default {
     "sleepTimerMinutesLabel": "Minutes",
     "sleepTimerInputPlaceholder": "Enter minutes, --on, or --off",
     "latticePosterTintPlaceholder": "Adjust the controls below",
+    "gridViewCardsPlaceholder": "Adjust the controls below",
+    "reduceMotionPlaceholder": "Adjust the controls below",
     "sleepTimerSetPreview": "Start a {{minutes}} min timer",
     "sleepTimerOffPreview": "Press Enter to cancel the sleep timer",
     "sleepTimerUnknownOption": "Unknown option --{{option}}",
@@ -328,6 +331,7 @@ export default {
     "groupPanel": "Panel",
     "groupPlayback": "Playback",
     "groupVisualizer": "Visualizer",
+    "groupGrid": "Grid",
     "groupOther": "Command",
     "syntax": {
       "hint": "Options",
@@ -339,6 +343,10 @@ export default {
       "sleepTimer": {
         "on": "Start the sleep timer",
         "off": "Cancel the sleep timer"
+      },
+      "gridFilter": {
+        "play": "Play the filtered songs now",
+        "add": "Append the filtered songs to the queue"
       },
       "lyricSegmentation": {
         "ai": "Segment this song with the configured model",
@@ -415,6 +423,37 @@ export default {
       "home-albums": { "title": "Open albums", "description": "Open albums tab" },
       "home-navidrome": { "title": "Open Navidrome", "description": "Open Navidrome tab" },
       "home-radio": { "title": "Open radio", "description": "Open radio tab" },
+      "grid-sort-file-name": { "title": "Sort by file name", "description": "Order the local tracks by their file name" },
+      "grid-sort-modified-date": { "title": "Sort by modified date", "description": "Order the local tracks by when the file was last changed" },
+      "grid-sort-album-track": { "title": "Sort by album track number", "description": "Order the local tracks by disc and track number" },
+      "grid-sort-direction": { "title": "Reverse sort order", "description": "Switch the local track list between ascending and descending" },
+      "grid-toggle-info-panel": { "title": "Toggle collection panel", "description": "Show or hide the collection info and actions panel" },
+      "grid-toggle-track-list": { "title": "Toggle track list", "description": "Show or hide the track list beside the grid" },
+      "grid-resync-folder": { "title": "Reimport this folder", "description": "Scan this local folder again and refresh its songs" },
+      "grid-resync-all-folders": { "title": "Reimport every folder", "description": "Scan every local folder again and refresh the library" },
+      "grid-organize-song-info": { "title": "Organize song info", "description": "Clean up the titles, artists and albums of this folder" },
+      "grid-export-playlist": { "title": "Export this playlist", "description": "Save this local playlist as an m3u8 file" },
+      "grid-edit-entity": { "title": "Edit this album or artist", "description": "Open the local library entity editor for this collection" },
+      "grid-toggle-edit-mode": { "title": "Toggle edit mode", "description": "Enter or leave the mode that lets you remove songs from this collection" },
+      "settings-interaction": { "title": "Interaction settings", "description": "Open keyboard, shortcut and grid interaction settings" },
+      "settings-custom-shortcut": { "title": "Custom shortcuts", "description": "Jump to the custom keyboard shortcut bindings" },
+      "settings-grid-action-button": { "title": "Grid action button", "description": "Jump to what the grid action button slides to" },
+      "settings-pinned-commands": { "title": "Pinned command slots", "description": "Choose the three commands pinned in the palette" },
+      "settings-home-tabs": { "title": "Home tab visibility", "description": "Choose which tabs the home screen shows" },
+      "settings-playback-entry-view": { "title": "Play opens", "description": "Jump to which view pressing play opens" },
+      "playback-entry-view-player": { "title": "Play opens: Visualizer", "description": "Pressing play opens the player and its visualizer" },
+      "playback-entry-view-lattice": { "title": "Play opens: Lattice", "description": "Pressing play opens the queue collage" },
+      "settings-theme-presets": { "title": "Theme presets", "description": "Jump to the built-in and saved theme presets" },
+      "settings-lyrics-renderer": { "title": "Lyrics renderer", "description": "Jump to how lyrics are drawn on the player" },
+      "settings-grid-card-style": { "title": "Grid card style", "description": "Jump to how the home grid draws its cards" },
+      "settings-queue-behavior": { "title": "Queue behavior", "description": "Jump to how the play queue is built and kept" },
+      "settings-netease-scrobble": { "title": "NetEase listening report", "description": "Jump to whether finished plays are reported to NetEase Cloud Music" },
+      "netease-scrobble-toggle": { "title": "NetEase listening report", "description": "Turn reporting of finished NetEase plays on or off" },
+      "settings-audio-output": { "title": "Audio output", "description": "Jump to the audio output device and format settings" },
+      "settings-transition": { "title": "Smart transition", "description": "Jump to the FOLIA transition settings" },
+      "settings-navidrome": { "title": "Navidrome server", "description": "Jump to the Navidrome server connection" },
+      "settings-stage-mode": { "title": "Stage mode", "description": "Jump to the Stage external player settings" },
+      "settings-media-cache": { "title": "Media cache", "description": "Jump to the downloaded audio cache" },
       "filter-view": { "title": "Filter this view", "description": "Narrow the cards on screen by name" },
       "panel-cover": { "title": "Panel: cover", "description": "Open the cover panel tab" },
       "panel-controls": { "title": "Panel: controls", "description": "Open the controls panel tab" },
@@ -470,9 +509,15 @@ export default {
       "settings-toggle-transparent": { "title": "Toggle transparency", "description": "Toggle transparent player background" },
       "settings-toggle-daylight": { "title": "Toggle light/dark", "description": "Toggle theme daylight/midnight mode" },
       "settings-toggle-player-back-button": { "title": "Always show player back button", "description": "Toggle whether the player page back button stays visible" },
+      "settings-gridview-cards": { "title": "Grid card look", "description": "Adjust full-bleed covers and how far grid cards shrink and fade with distance" },
+      "settings-toggle-gridview-full-bleed-cover": { "title": "Full-bleed grid covers", "description": "Toggle whether grid card artwork fills the whole card" },
+      "settings-toggle-gridview-square-cards": { "title": "Square grid cards", "description": "Toggle whether full-bleed grid cards are square instead of poster-shaped" },
       "settings-toggle-lattice-vignette": { "title": "Lattice vignette", "description": "Turn the edge vignette on the queue collage on or off" },
       "settings-toggle-lattice-auto-focus": { "title": "Lattice auto-focus", "description": "Toggle whether the queue collage follows the playing song when tracks change" },
       "lattice-poster-tint": { "title": "Lattice poster tint", "description": "Adjust the overlay that quiets posters outside the current queue collage focus" },
+      "settings-reduce-motion": { "title": "Reduce motion", "description": "Turn down the animation on each surface that has one, or follow the system setting" },
+      "settings-toggle-reduce-lattice-motion": { "title": "Reduce queue collage motion", "description": "Turn the queue collage expansion, camera flight and entrance wave down to instant" },
+      "settings-toggle-follow-system-reduced-motion": { "title": "Follow system reduced motion", "description": "Toggle whether the system animation setting is allowed to reduce motion in the app" },
       "settings-toggle-track-switch-buttons": { "title": "Always show track switch arrows", "description": "Toggle whether the progress bar track switch arrows stay visible beside the title" },
       "settings-toggle-main-window-titlebar": { "title": "Always show window control buttons", "description": "Toggle whether the main window control buttons stay visible" },
       "settings-toggle-auto-play-on-launch": { "title": "Auto-play on launch", "description": "Toggle whether opening the app resumes the last session by itself" },
@@ -745,7 +790,9 @@ export default {
     "loadMore": "Load More",
     "headerTitle": "Title",
     "headerTime": "Time",
-    "loading": "Loading"
+    "loading": "Loading",
+    "loadFailed": "Failed to load: {{error}}",
+    "loadNotPublic": "This playlist is not public, so the current music source cannot read its contents"
   },
   "search": {
     "placeholder": "Search songs...",
@@ -908,13 +955,15 @@ export default {
     "gridFolderExpandTreePanel": "Expand",
     "gridFolderCollapseTreePanel": "Collapse",
     "gridFolderRescanRoot": "Rescan imported root",
+    "gridFolderIgnored": "Ignored",
+    "gridFolderClearIgnore": "Restore and rescan",
     "gridFolderRemoveRoot": "Remove imported root",
     "gridFolderAddToQueue": "Add to queue",
     "gridFolderRemoveSelected": "Remove from library",
     "gridFolderCreatePlaylistDescription": "Create a playlist with {{count}} selected local tracks.",
     "gridFolderPlaylistNamePlaceholder": "Playlist name",
     "gridFolderRemoveSelectedTitle": "Remove selected tracks?",
-    "gridFolderRemoveSelectedDescription": "This removes {{count}} tracks from Folia and its playlists. Files on disk will not be deleted.",
+    "gridFolderRemoveSelectedDescription": "Remove {{count}} tracks. Roots are removed; fully selected subfolders are ignored during scans. Disk files stay unchanged.",
     "gridFolderRemoveRootTitle": "Remove imported root?",
     "gridFolderRemoveRootDescription": "Remove {{path}} and all its tracks from Folia? Files on disk will not be deleted.",
     "login": "Login",
@@ -1244,6 +1293,8 @@ export default {
     "appLanguageEnUS": "English",
     "appLanguageInID": "Indonesian",
     "appLanguageSystemHint": "Follow the browser or system language. Current: {{language}}",
+    "playbackEntryView": "View opened by Play",
+    "playbackEntryViewDesc": "Which view opens by default after you press play.",
     "homeTabsVisibility": "Top Capsule Entries",
     "homeTabsVisibilityDesc": "Customize the capsule entries shown at the top of the home page",
     "bottomUiSettings": "Bottom Controls",
@@ -1316,6 +1367,8 @@ export default {
     "enableUpdateCheckDesc": "Check GitHub releases through the system proxy when the desktop app starts.",
     "enableAutoUpdate": "Enable Auto Update",
     "enableAutoUpdateDesc": "Automatically download updates after a new version is found.",
+    "autoUpdateUnavailable": "Automatic updates unavailable",
+    "manualUpdateOnlyDesc": "New versions are still detected, but upgrading requires a full installer or a supported package manager.",
     "updateChannel": "Update Channel",
     "updateChannelDesc": "Choose which release lane this desktop app follows.",
     "updateChannelRealeco": "Realeco · Stable",
@@ -1325,12 +1378,15 @@ export default {
     "updateUnsupportedSystem": "Automatic updates are unavailable on the current system.",
     "updateUnsupportedChannel": "Automatic updates are unavailable for this internal build.",
     "autoUpdateGithubNotice": "Auto update needs access to GitHub; if the network is unstable, keep a system proxy enabled.",
+    "updateCheckGithubNotice": "Version checks need access to GitHub. When an update is found, the app links to the full installer.",
     "openReleasePage": "Open Release Page",
     "downloadChina": "CN Download",
     "downloadSources": "Download from",
     "quarkDrive": "Quark Drive",
     "baiduDrive": "Baidu Drive",
     "githubRelease": "GitHub",
+    "fullInstallerGithub": "Full installer (GitHub)",
+    "aurPackage": "Upgrade through AUR",
     "downloadUpdate": "Download Update",
     "restartToInstallUpdate": "Restart to Install",
     "staticMode": "Static Mode",
@@ -1364,6 +1420,21 @@ export default {
     "clearWhisperCacheDone": "Cleared {{count}} cached item(s).",
     "clearWhisperCacheEmpty": "No cached alignments to clear.",
     "clearWhisperCacheError": "Failed to clear the cache.",
+    "reduceMotionSection": "Reduce motion",
+    "reduceMotionSectionDesc": "Folia plays its full animation by default and no longer follows the system animation setting on its own. Turn down whichever surface you want quieter.",
+    "reduceMotionFollowSystem": "Follow system setting",
+    "reduceMotionFollowSystemDesc": "Let the operating system's animation setting reduce motion everywhere, the way earlier versions always did.",
+    "reduceMotionForcedBySystem": "Currently reduced by the system setting above.",
+    "reduceMotionLattice": "Queue collage",
+    "reduceMotionLatticeDesc": "Poster expansion, camera flight, the opening wave, drag inertia and lyric fades on the queue collage.",
+    "reduceMotionTransitionOverlay": "Mix transition",
+    "reduceMotionTransitionOverlayDesc": "The automix progress ring and the progress border drawn around the now playing card.",
+    "reduceMotionMonetBackground": "Monet background drift",
+    "reduceMotionMonetBackgroundDesc": "The slow drift of the cover-derived background image.",
+    "reduceMotionUiMicroMotion": "Interface micro-motion",
+    "reduceMotionUiMicroMotionDesc": "Small feedback animations: the mode stepper, the remote progress glow and the grid panel hint.",
+    "reduceMotionSettingsScroll": "Settings smooth scrolling",
+    "reduceMotionSettingsScrollDesc": "Whether jumping to a settings section glides there or lands on it instantly.",
     "labPerformanceSection": "Performance & Background",
     "labPlayerUiSection": "Player Page UI",
     "labWindowAndToolsSection": "Window & Tools",
@@ -1508,6 +1579,16 @@ export default {
     "latticePosterTintCustomColorDesc": "Replace the theme-derived gradient with one fixed overlay colour.",
     "latticePosterTintColor": "Overlay colour",
     "latticePosterTintIntensity": "Overlay intensity",
+    "gridViewCardSettings": "Grid cards",
+    "gridViewFullBleedCover": "Full-bleed cover",
+    "gridViewFullBleedCoverDesc": "Let the artwork fill the whole grid card. The title and artist move onto a gradient over the cover, the way the queue collage handles them.",
+    "gridViewSquareCard": "Square cards",
+    "gridViewSquareCardDesc": "Make the card as tall as it is wide so a square cover is shown whole instead of cropped top and bottom. The card keeps its area, growing wider as it loses height, and the grid spacing follows.",
+    "gridViewMinCardScale": "Minimum card size",
+    "gridViewMinCardScaleDesc": "How far cards away from the centre are allowed to shrink. Higher keeps the outer grid readable, lower deepens the sense of depth.",
+    "gridViewMinCardOpacity": "Minimum card opacity",
+    "gridViewMinCardOpacityDesc": "How far cards away from the centre are allowed to fade. Higher keeps the outer grid visible, lower puts more focus on the centre.",
+    "gridViewCardFalloffReset": "Restore default falloff",
     "disableVisualizerGeometricBackground": "Hide common geometric background",
     "disableVisualizerGeometricBackgroundDesc": "Hide the shared geometric background shapes on the player page.",
     "desktopTrayBehavior": "Desktop tray behavior",
@@ -1624,6 +1705,7 @@ export default {
     "subtitleOverlayOpacity": "Subtitle Opacity",
     "subtitleOverlayBackground": "Subtitle Background",
     "subtitleOverlayBackgroundDesc": "Add a theme-aware, soft diffused halo to improve readability over busy visuals.",
+    "subtitleUpcomingLyricsBlur": "Blur non-translation lyrics",
     "showHarmonySubtitle": "Show Harmony Subtitles",
     "showHarmonySubtitleDesc": "Show or hide the top harmony lyric overlay.",
     "harmonySubtitleBackground": "Harmony Subtitle Background",
@@ -1978,6 +2060,8 @@ export default {
     "themeGenerationSourceAi": "AI Inference",
     "themeGenerationSourceCover": "Cover Colors",
     "themeGenerationSourceAiDesc": "Reads the lyrics with an AI model and infers a mood palette. Needs an API key and consumes tokens.",
+    "themeGenerationSourceAiUnavailable": "No API key is configured for the selected AI provider, so AI inference is disabled.",
+    "configureAiApiKey": "Open AI theme settings",
     "themeGenerationSourceCoverDesc": "Builds the palette straight from the cover colors. No API key needed, but the result is less expressive and carries fewer attributes.",
     "autoGenerateSongThemeCoverDesc": "When a playing song has no cached theme, generate one from its cover and apply it.",
     "autoGenerateSongThemeDesc": "When a playing song has no cached AI theme, generate and apply one automatically.",
@@ -1991,6 +2075,7 @@ export default {
     "confirmClearAll": "Are you sure you want to clear all cache?",
     "electronSettings": "AI Theme Settings",
     "aiProvider": "AI Provider",
+    "otherCompatibleApi": "Other Compatible API",
     "useSystemProxyAI": "Use System Proxy for AI",
     "useSystemProxyAIDesc": "Route strictly AI requests through system proxy.",
     "geminiApiKey": "Gemini API Key",
@@ -2001,7 +2086,7 @@ export default {
     "openaiApiTemperature": "Temperature",
     "openaiApiTemperatureDesc": "Range: 0–2. Defaults to 0.7 when left blank.",
     "geminiApiKeyDesc": "Netease API backend runs locally.",
-    "openaiApiUrlDesc": "Use other LLM APIs compatible with the OpenAI format.",
+    "openaiApiUrlDesc": "An OpenAI-compatible API is not necessarily the official OpenAI API. You can use compatible providers and models such as DeepSeek.",
     "save": "Save",
     "grid3dCardStyle": "3D Grid Card Style",
     "grid3dCardStyleDesc": "Choose the appearance of each card in the 3D grid: cover image only or classic Polaroid text cards.",
@@ -2191,6 +2276,10 @@ export default {
     "scanningFolder": "Scanning {{folderName}}",
     "lyricFilterUpdated": "Lyric filter rule updated",
     "queueSettings": "Play Queue",
+    "scrobbleSettings": "Listening Report",
+    "neteaseScrobble": "Report plays (NetEase only)",
+    "neteaseScrobbleDesc": "Reports a play to your NetEase account after you have really listened to at least 30 seconds of an online NetEase track. Local files, cloud-disk uploads and other providers are never reported. This feature carries some risk - use it with care.",
+    "neteaseScrobbleSignInHint": "Sign in to NetEase Cloud Music to use this.",
     "queueDefaultBehavior": "Default position when adding to queue",
     "queueDefaultBehaviorDesc": "Default behavior when adding a song to the queue.",
     "queueAppendLabel": "Append to end",
@@ -2203,7 +2292,7 @@ export default {
     "goToGithubRelease": "Go to GitHub release page",
     "chinaDownloadHint": "Note: GitHub downloads may be slow in China. Use Quark Drive or Baidu Drive instead.",
     "macManualUpdateNotice": "Note: macOS requires downloading the full installer manually to update.",
-    "linuxManualUpdateNotice": "Note: Linux does not support auto update. Please download the package (AppImage/deb/rpm) to update manually.",
+    "linuxManualUpdateNotice": "Linux does not support automatic updates. Download the complete deb, rpm, or tar.gz package to upgrade manually; only stable AUR installations should upgrade folia-major-bin through the package manager.",
     "manualUpdateNotice": "Note: Automatic update is not supported on this platform. Please download the package manually.",
     "versionCopiedHint": "Click to copy version info",
     "versionCopiedToast": "Copied",
@@ -2342,6 +2431,52 @@ export default {
         "title": "Hide the Monet Spectrum",
         "description": "The Monet visualizer can now hide its audio spectrum, leaving just the lyrics and artwork."
       }
+    },
+    "v0_7_5": {
+      "intro": "Version 0.7.5 gives you more control over where playback opens, brings grid and settings actions into the command palette, and improves desktop reliability.",
+      "playbackEntryChoice": {
+        "title": "Choose Where Playback Opens",
+        "description": "Choose whether pressing Play opens the visualizer player or the Lattice queue collage. Folia asks once after the release notes, and the choice remains available in Interface settings. Personal FM still opens the standard player because Lattice cannot host it."
+      },
+      "commandPaletteGridActions": {
+        "title": "Grid Actions in the Command Palette",
+        "description": "Run the actions available on the current grid—sorting, panels, rescans, metadata cleanup, playlist export, and editing—from the keyboard. Settings commands now jump to exact sections, and --play or --add can act on filtered songs."
+      },
+      "localFolderRecovery": {
+        "title": "Ignore and Restore Local Subfolders",
+        "description": "Removing a subfolder from an imported local library now keeps it ignored on later scans without removing the rest of the root folder. The folder tree keeps a recoverable entry so you can restore and rescan it when needed."
+      },
+      "neteaseScrobble": {
+        "title": "Optional NetEase Listening Reports",
+        "description": "Signed-in NetEase users can opt in to report an online NetEase track after at least 30 seconds of real playback. Local files, cloud-drive tracks, and other providers are never reported; this account-writing feature remains off unless you enable it."
+      },
+      "desktopReliability": {
+        "title": "Clearer Desktop Updates and Crash Reports",
+        "description": "macOS and Linux builds can now check for new versions and lead you to a full installer or AUR, while Windows keeps automatic updating. When Folia crashes it saves a diagnostic log and can open its folder; the Windows uninstaller can also remove user data on request."
+      },
+      "visualizerRefinements": {
+        "title": "Lighter, Clearer Visualizers",
+        "description": "Tempera and Sonnet now adjust render resolution around GPU texture boundaries to reduce avoidable memory use. Monet and Lattice titles avoid clipping, and the bottom subtitle can show upcoming non-translation lyrics without blur."
+      }
+    },
+    "v0_7_7": {
+      "intro": "Version 0.7.7 restores reliable QQ Music playback, improves embedded local lyrics and covers, and reduces Lattice artwork overhead.",
+      "qqPlaybackReliability": {
+        "title": "More Reliable QQ Music Playback",
+        "description": "QQ Music playback now uses additional CDN selection and a faster fallback path to reduce failures caused by current upstream rate limits."
+      },
+      "localLibraryCovers": {
+        "title": "Local Covers Survive Missing Album Tags",
+        "description": "Embedded artwork now remains available throughout the player and queue even when a local file has no album name. Local list views also request a smaller, appropriate thumbnail."
+      },
+      "embeddedLyricTracks": {
+        "title": "Cleaner Embedded Translation and Romanization",
+        "description": "Embedded bilingual and trilingual lyrics now keep aligned translation and romanization tracks instead of mixing them into the main lyrics or dropping romanization."
+      },
+      "latticeArtworkEfficiency": {
+        "title": "Lighter Lattice Artwork Loading",
+        "description": "Lattice now loads cover sizes suited to each poster and prewarms larger artwork when opening a song, reducing unnecessary image decoding while keeping expansion transitions clear."
+      }
     }
   },
   "export": {
@@ -2398,7 +2533,9 @@ export default {
     "deleteFolderTitle": "Delete Folder?",
     "deleteFolderMessage": "You are about to remove \"{{folderName}}\" from your library.",
     "deleteFolderCount": "This will remove a total of {{count}} song(s) from your library, including nested subfolders.",
-    "deleteFolderNote": "Note: This will only remove songs from your library. Your files on disk will not be affected.",
+    "deleteFolderNote": "Disk files stay unchanged.",
+    "deleteSubfolderMessage": "Remove “{{folderName}}” and skip future scans. Restore in All view. Disk files stay unchanged.",
+    "deleteRootFolderMessage": "Remove “{{folderName}}” and all its tracks from the library. Disk files stay unchanged.",
     "importNotSupported": "Folder import not supported in this browser or cancelled",
     "insecureHttpDisabled": "Local library is disabled on remote HTTP. Use HTTPS, localhost, or the Electron app.",
     "resyncFailed": "Failed to resync folder. Please try again.",
@@ -2677,6 +2814,20 @@ export default {
   "timeline": {
     "title": "Timeline",
     "noLyrics": "No lyrics"
+  },
+  "playbackEntryView": {
+    "title": "Where should Play take you?",
+    "description": "Both views play and show lyrics; they just put the emphasis in different places. Pick the one Play should open by default.",
+    "settingsHint": "You can change this any time under Options \u2192 Interface \u2192 View opened by Play.",
+    "confirm": "Use this",
+    "player": {
+      "title": "Visualizer",
+      "description": "A customizable single-song lyrics view with multiple lyric animations and background combinations."
+    },
+    "lattice": {
+      "title": "Lattice (queue collage)",
+      "description": "The whole play queue as a poster wall, with the playing song lifted out of it."
+    }
   },
   "userGuide": {
     "title": "Welcome to Folia",

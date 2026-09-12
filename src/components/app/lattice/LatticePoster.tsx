@@ -1,14 +1,15 @@
+import { LatticeTitle } from './LatticeTitle';
 import { lazy, memo, Suspense } from 'react';
-import { motion, type MotionValue } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useRef, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent } from 'react';
-import { PlayerState, type SongResult } from '../../../types';
 import type { ReflowTile } from './layout';
 import type { LatticeTile } from './latticeModel';
 import { useLatticeChromeDisclosure } from './useLatticeChromeDisclosure';
 import LatticePlaybackControls from './LatticePlaybackControls';
 import { useLatticeExpansionSettled } from './useLatticeExpansionSettled';
 import { prewarmLatticeLyrics } from './lyrics/prewarmLatticeLyrics';
+import { prewarmLatticePosterArtwork, useLatticePosterArtwork } from './useLatticePosterArtwork';
 import { countRender } from '../../../dev/renderCount';
 
 // Renders one poster and its expanded Player Chrome controls.
@@ -21,6 +22,10 @@ type LatticePosterProps = {
     rect: Omit<ReflowTile, 'instanceId'>;
     /** Empty world-space distance between neighbouring poster slots. */
     gap: number;
+    /** World units to device pixels: the camera's scale times the display's pixel ratio. */
+    pixelScale: number;
+    /** World-space edge of the gear an expanded card takes, so a press can warm that variant. */
+    expandedSize: number;
     /** Seconds this poster waits before dropping into its slot, or null outside the opening wave. */
     entranceDelay: number | null;
     /** Reverse-wave delay used when the complete wall leaves the viewport. */
@@ -28,11 +33,6 @@ type LatticePosterProps = {
     expanded: boolean;
     reducedMotion: boolean | null;
     didDragRef: MutableRefObject<boolean>;
-    currentSong: SongResult | null;
-    playerState: PlayerState;
-    currentTime: MotionValue<number>;
-    playbackDuration: number;
-    canTogglePlayback: boolean;
     onExpand: (instanceId: string) => void;
     onPlay: (tile: LatticeTile) => void;
     onTogglePlayback: () => void;
@@ -56,7 +56,9 @@ const ENTRANCE_LIFT = 90;
 
 // `tile` and `rect` are rebuilt by the wall's own memos whenever the queue, the selection or the
 // camera moves, so comparing them by identity would re-render every poster for values that did not
-// change. Every other prop is a scalar, a ref, a MotionValue or a permanently-identified callback.
+// change. Every other prop is a scalar, a ref or a permanently-identified callback. Transport state
+// is deliberately absent: it reaches the expanded chrome through `LatticeTransportContext`, because
+// as a prop it changed on every pause and resume and no comparison here could absorb that.
 const sameRect = (a: LatticePosterProps['rect'], b: LatticePosterProps['rect']) => (
     a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 );
@@ -85,16 +87,13 @@ function LatticePoster({
     tile,
     rect,
     gap,
+    pixelScale,
+    expandedSize,
     entranceDelay,
     exitDelay,
     expanded,
     reducedMotion,
     didDragRef,
-    currentSong,
-    playerState,
-    currentTime,
-    playbackDuration,
-    canTogglePlayback,
     onExpand,
     onPlay,
     onTogglePlayback,
@@ -112,9 +111,16 @@ function LatticePoster({
     // The lyric scene is a Pixi renderer whose layout is rebuilt from the card's box, so mounting it
     // mid-expansion would rasterize every line once per animation frame. It waits for the spring.
     const [expansionSettled, onExpansionComplete] = useLatticeExpansionSettled(expanded, Boolean(reducedMotion));
+    // The artwork only has to cover the card's own box, and a square cover is scaled to the longer
+    // edge. Both inputs are discrete - gears are integer spans and the camera only rescales on a
+    // breakpoint - so this is not a per-frame value even while the card animates towards the size.
+    const coverUrl = useLatticePosterArtwork(tile.coverUrl, Math.max(rect.width, rect.height) * pixelScale);
     // Hover and press are the last moments before the open: warming here keeps the lyric chunk,
     // the Pixi module and the first shader compile off the click path.
     const warmLyrics = () => { if (isCurrent) prewarmLatticeLyrics(); };
+    // Deliberately not on hover: a pointer sweeping the wall would pull a full-size cover per card,
+    // which costs more than the swap it saves. A press is already an open in all but name.
+    const warmExpandedArtwork = () => prewarmLatticePosterArtwork(tile.coverUrl, expandedSize * pixelScale);
     // Frozen at mount: the wave's own delay must not follow later camera moves.
     const landingDelay = useRef(entranceDelay).current;
     const landing = entranceDelay === null ? null : landingDelay;
@@ -153,7 +159,7 @@ function LatticePoster({
             ref={chrome.articleRef}
             onPointerEnter={(event: PointerEvent<HTMLElement>) => { warmLyrics(); chrome.onPointerEnter(event); }}
             onPointerLeave={chrome.onPointerLeave}
-            onPointerDownCapture={(event: PointerEvent<HTMLElement>) => { warmLyrics(); chrome.onPointerDownCapture(event); }}
+            onPointerDownCapture={(event: PointerEvent<HTMLElement>) => { warmLyrics(); warmExpandedArtwork(); chrome.onPointerDownCapture(event); }}
             onFocusCapture={chrome.onFocusCapture}
             onBlurCapture={chrome.onBlurCapture}
             key={instanceId}
@@ -200,7 +206,7 @@ function LatticePoster({
                         opacity: { duration: 0.24, delay: landing },
                     }}
             style={{
-                backgroundImage: tile.coverUrl ? `url("${tile.coverUrl}")` : fallbackBackground(tile.id),
+                backgroundImage: coverUrl ? `url("${coverUrl}")` : fallbackBackground(tile.id),
                 zIndex: expanded ? 20 : undefined,
             }}
             onAnimationComplete={onExpansionComplete}
@@ -219,11 +225,13 @@ function LatticePoster({
                 {String(tile.queueIndex + 1).padStart(2, '0')}
             </span>
             {expanded && expansionSettled && isCurrent ? (
-                <Suspense fallback={<span className="lattice-poster-copy"><strong>{tile.title}</strong><small>{tile.artist}</small></span>}>
+                <Suspense fallback={<span className="lattice-poster-copy"><LatticeTitle title={tile.title} expanded={expanded} layoutSettled={expansionSettled} targetPosterWidth={rect.width} /><small>{tile.artist}</small></span>}>
                     <LatticeLyrics key={tile.id} tile={tile} reducedMotion={Boolean(reducedMotion)} />
                 </Suspense>
             ) : <span className="lattice-poster-copy">
-                <strong>{tile.title}</strong>
+                {/* The expansion gate doubles as "this box has stopped growing", which is exactly when
+                    the title can be fitted without waiting out the debounce a second time. */}
+                <LatticeTitle title={tile.title} expanded={expanded} layoutSettled={expansionSettled} targetPosterWidth={rect.width} />
                 <small>{tile.artist}</small>
             </span>}
             {expanded && (
@@ -236,11 +244,6 @@ function LatticePoster({
                     <LatticePlaybackControls
                         revealed={chrome.revealed}
                         tile={tile}
-                        currentSong={currentSong}
-                        playerState={playerState}
-                        currentTime={currentTime}
-                        playbackDuration={playbackDuration}
-                        canTogglePlayback={canTogglePlayback}
                         onPlay={onPlay}
                         onTogglePlayback={onTogglePlayback}
                         onSeek={onSeek}

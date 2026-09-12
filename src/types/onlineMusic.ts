@@ -48,6 +48,8 @@ export interface ProviderCapabilities {
     playlistTrackMutations?: boolean;
     likes?: boolean;
     userAlbums?: boolean;
+    /** The provider accepts a listening report for a track the user actually played. */
+    playbackReports?: boolean;
 }
 
 export interface ProviderAvailability {
@@ -181,6 +183,9 @@ export type QrLoginState =
 export type ProviderErrorCode =
     | 'auth-required'
     | 'unsupported'
+    // 集合设为不公开，当前这条读取路径没资格读它。与 `unsupported`（这个后端或 provider 没有这项能力）
+    // 分开，界面才能只在这种情况下给出「不是公开歌单」的解释。
+    | 'not-public'
     | 'unavailable'
     | 'not-playable'
     | 'network'
@@ -207,6 +212,24 @@ export interface OnlinePlaybackProvider {
     getAudioSource(song: SongResult, quality: AudioQualityPreference): Promise<ProviderAudioSource | null>;
     getAvailability?(song: SongResult): ProviderSongAvailability;
     getReplacement?(song: SongResult): Promise<ProviderSongReplacement | null>;
+}
+
+/**
+ * One finished listening report, in the only two units a provider can be told the truth in:
+ * how many seconds of this track were really rendered, and how long the track is.
+ *
+ * `playedSeconds` is never a position on the progress bar - a listener who drags to the end has
+ * not listened to the song. Callers must hand over accumulated playback and must already have
+ * capped it at `totalSeconds`; nothing downstream can tell an inflated number from a real one.
+ */
+export interface ProviderPlaybackReport {
+    playedSeconds: number;
+    totalSeconds?: number;
+    quality?: AudioQualityPreference;
+}
+
+export interface OnlinePlaybackReportProvider {
+    reportPlayback(song: SongResult, report: ProviderPlaybackReport): Promise<void>;
 }
 
 export interface OnlineLyricsProvider {
@@ -307,6 +330,7 @@ export interface OnlineMusicProvider {
     getSongPageUrl?(song: SongResult): string | null;
     search?: OnlineSearchProvider;
     playback?: OnlinePlaybackProvider;
+    playbackReports?: OnlinePlaybackReportProvider;
     lyrics?: OnlineLyricsProvider;
     auth?: OnlineAuthProvider;
     library?: OnlineLibraryProvider;
@@ -328,6 +352,7 @@ export type OmniAudioSource = ProviderAudioSource;
 export type OmniSongAvailability = ProviderSongAvailability;
 export type OmniSongReplacement = ProviderSongReplacement;
 export type OmniLyricsResult = ProviderLyricsResult;
+export type OmniPlaybackReport = ProviderPlaybackReport;
 export type OmniChorusRange = ChorusRange;
 export type OmniAlbum = ProviderAlbumSummary;
 export type OmniArtist = ProviderArtistSummary;

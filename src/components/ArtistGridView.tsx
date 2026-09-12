@@ -12,7 +12,10 @@ import { createCoverPlaceholder } from '../utils/coverPlaceholders';
 import { getSizedCoverUrl } from '../utils/coverUrl';
 import { getSongCoverUrl } from '../services/onlineMusic/songMetadata';
 import { getLocalCoverAssetUrl } from '../services/localCoverAssetUrl';
-import { PolaroidCard } from './GridView';
+import { PolaroidCard } from './folia-grid/PolaroidCard';
+import { HEX_CARD_CENTER_SCALE } from './folia-grid/hexCardTransform';
+import { squareGridCardBox } from './folia-grid/gridCardLayout';
+import { useGridViewSettingsStore } from '../stores/useGridViewSettingsStore';
 import { HexGridCoord, CubeCoord, getHexCubicSpiral } from './folia-grid/hexViewport';
 import { useFoliaHexViewport } from './folia-grid/useFoliaHexViewport';
 import { CollectionListItem, SidePanelList } from './shared/SidePanelList';
@@ -187,6 +190,69 @@ export const getArtistGridAlbumCoverUrl = (album: any): string | undefined => {
     return typeof coverUrl === 'string' && coverUrl ? toHttps(coverUrl) : undefined;
 };
 
+// Card box, hex spacing and the sizes of the artist wall's own avatar and bio cards, per
+// container-width breakpoint. Lifted out of the component so the memo shows only the choice
+// between the plain box and the squared one.
+const resolveArtistGridCardBox = (width: number) => {
+    if (width < 768) {
+        // Mobile/Narrow
+        return {
+            cardWidth: 180,
+            cardHeight: 280,
+            spacingX: 205,
+            spacingY: 270,
+            maxDistance: 420,
+            lodStart: 280,
+            lodEnd: 320,
+            avatarSize: 200,
+            bioWidth: 360,
+            bioHeight: 200,
+        };
+    } else if (width < 1440) {
+        // Desktop
+        return {
+            cardWidth: 220,
+            cardHeight: 330,
+            spacingX: 250,
+            spacingY: 320,
+            maxDistance: 500,
+            lodStart: 340,
+            lodEnd: 385,
+            avatarSize: 280,
+            bioWidth: 480,
+            bioHeight: 260,
+        };
+    } else if (width < 2000) {
+        // Large Desktop
+        return {
+            cardWidth: 250,
+            cardHeight: 375,
+            spacingX: 285,
+            spacingY: 365,
+            maxDistance: 580,
+            lodStart: 400,
+            lodEnd: 450,
+            avatarSize: 320,
+            bioWidth: 540,
+            bioHeight: 280,
+        };
+    } else {
+        // Ultra Desktop
+        return {
+            cardWidth: 280,
+            cardHeight: 420,
+            spacingX: 320,
+            spacingY: 410,
+            maxDistance: 660,
+            lodStart: 450,
+            lodEnd: 510,
+            avatarSize: 360,
+            bioWidth: 600,
+            bioHeight: 300,
+        };
+    }
+};
+
 const ArtistGridView: React.FC<ArtistGridViewProps> = ({
     collection,
     onBack,
@@ -201,6 +267,11 @@ const ArtistGridView: React.FC<ArtistGridViewProps> = ({
     isInteractive = true,
 }) => {
     const { t } = useTranslation();
+    // The artist wall renders the same cards as GridView, so it follows the same look settings.
+    const fullBleedCover = useGridViewSettingsStore(state => state.gridViewFullBleedCover);
+    const squareCards = useGridViewSettingsStore(state => state.gridViewSquareCards) && fullBleedCover;
+    const minCardScale = useGridViewSettingsStore(state => state.gridViewMinCardScale);
+    const minCardOpacity = useGridViewSettingsStore(state => state.gridViewMinCardOpacity);
     const localLibraryCatalog = useLocalLibraryCatalog(localSongs);
     const closeBtnBg = isDaylight ? 'bg-black/5 hover:bg-black/10 text-black/60' : 'bg-black/20 hover:bg-white/10 text-white/60';
     const cardBg = isDaylight ? 'bg-white/60 border border-white/30' : 'bg-zinc-900/60 border border-white/10';
@@ -236,65 +307,9 @@ const ArtistGridView: React.FC<ArtistGridViewProps> = ({
 
     // Layout values for different container size breakpoints
     const layoutConfig = useMemo(() => {
-        const width = containerSize.width;
-        if (width < 768) {
-            // Mobile/Narrow
-            return {
-                cardWidth: 180,
-                cardHeight: 280,
-                spacingX: 205,
-                spacingY: 270,
-                maxDistance: 420,
-                lodStart: 280,
-                lodEnd: 320,
-                avatarSize: 200,
-                bioWidth: 360,
-                bioHeight: 200,
-            };
-        } else if (width < 1440) {
-            // Desktop
-            return {
-                cardWidth: 220,
-                cardHeight: 330,
-                spacingX: 250,
-                spacingY: 320,
-                maxDistance: 500,
-                lodStart: 340,
-                lodEnd: 385,
-                avatarSize: 280,
-                bioWidth: 480,
-                bioHeight: 260,
-            };
-        } else if (width < 2000) {
-            // Large Desktop
-            return {
-                cardWidth: 250,
-                cardHeight: 375,
-                spacingX: 285,
-                spacingY: 365,
-                maxDistance: 580,
-                lodStart: 400,
-                lodEnd: 450,
-                avatarSize: 320,
-                bioWidth: 540,
-                bioHeight: 280,
-            };
-        } else {
-            // Ultra Desktop
-            return {
-                cardWidth: 280,
-                cardHeight: 420,
-                spacingX: 320,
-                spacingY: 410,
-                maxDistance: 660,
-                lodStart: 450,
-                lodEnd: 510,
-                avatarSize: 360,
-                bioWidth: 600,
-                bioHeight: 300,
-            };
-        }
-    }, [containerSize.width]);
+        const box = resolveArtistGridCardBox(containerSize.width);
+        return squareCards ? squareGridCardBox(box) : box;
+    }, [containerSize.width, squareCards]);
 
     // Dynamically calculate visible clipping radius centered on (0,0) viewport coordinates
     const clipRadius = useMemo(() => {
@@ -877,8 +892,8 @@ const ArtistGridView: React.FC<ArtistGridViewProps> = ({
 
                     el.style.display = '';
                     const tVal = Math.min(dist / layoutConfig.maxDistance, 1);
-                    const scale = 1.1 - 0.65 * tVal;
-                    const opac = 1.0 - 0.60 * tVal;
+                    const scale = HEX_CARD_CENTER_SCALE - (HEX_CARD_CENTER_SCALE - minCardScale) * tVal;
+                    const opac = 1.0 - (1.0 - minCardOpacity) * tVal;
                     const z = Math.round(50 - 49 * tVal);
 
                     el.style.transform = `translate(${coord.baseX}px, ${coord.baseY}px) scale(${scale})`;
@@ -922,7 +937,7 @@ const ArtistGridView: React.FC<ArtistGridViewProps> = ({
             unsubY();
             if (rafId !== null) cancelAnimationFrame(rafId);
         };
-    }, [dragX, dragY, baseCoords, layoutConfig, clipRadius, updateRenderedIndexesForViewport]);
+    }, [dragX, dragY, baseCoords, layoutConfig, clipRadius, minCardOpacity, minCardScale, updateRenderedIndexesForViewport]);
 
     // Setup arrow keyboard navigation
     useEffect(() => {
@@ -1018,8 +1033,8 @@ const ArtistGridView: React.FC<ArtistGridViewProps> = ({
             const initialCenterY = coord.baseY + initialDy;
             const initialDist = Math.sqrt(initialCenterX * initialCenterX + initialCenterY * initialCenterY);
             const initialT = Math.min(initialDist / layoutConfig.maxDistance, 1);
-            const initialScale = 1.1 - 0.65 * initialT;
-            const initialOpacity = 1.0 - 0.60 * initialT;
+            const initialScale = HEX_CARD_CENTER_SCALE - (HEX_CARD_CENTER_SCALE - minCardScale) * initialT;
+            const initialOpacity = 1.0 - (1.0 - minCardOpacity) * initialT;
             const initialZ = Math.round(50 - 49 * initialT);
 
             // Index 0: Circular Avatar Card (No label details, pure image visual)
@@ -1151,6 +1166,7 @@ const ArtistGridView: React.FC<ArtistGridViewProps> = ({
                         t={t}
                         cardWidth={layoutConfig.cardWidth}
                         cardHeight={layoutConfig.cardHeight}
+                        fullBleedCover={fullBleedCover}
                         openWhenFocusedOnCardClick={!isSongCard}
                         isFocused={focusedIndex === idx}
                         onSelect={() => {
@@ -1188,6 +1204,9 @@ const ArtistGridView: React.FC<ArtistGridViewProps> = ({
         layoutConfig.cardHeight,
         layoutConfig.maxDistance,
         clipRadius,
+        fullBleedCover,
+        minCardOpacity,
+        minCardScale,
         focusedIndex,
         artistInfo,
         playableTopSongs,

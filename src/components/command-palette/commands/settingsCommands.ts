@@ -3,10 +3,12 @@ import { isSyncConfigured } from '../../../services/sync/syncConfig';
 import { buildObsCustomCss } from '../../../services/obs/obsCustomCss';
 import { hasUploadedObsAsset } from '../../../services/obs/visualSettingsConfig';
 import type { CommandPaletteCommand } from '../types';
-import { createToggleCommand, createAppLanguageCommand, createSettingsCommand, defineCommand } from '../commandFactories';
+import { createToggleCommand, createAppLanguageCommand, createSettingsCommand, createSettingsAnchorCommand, defineCommand } from '../commandFactories';
 import { sleepTimerCommand } from './sleepTimerCommand';
-import { Layers3 } from 'lucide-react';
+import { Gauge, Images, Layers3 } from 'lucide-react';
 import { latticePosterTintSurface } from '../surfaces/latticePosterTintSurface';
+import { gridViewCardsSurface } from '../surfaces/gridViewCardsSurface';
+import { reduceMotionSurface } from '../surfaces/reduceMotionSurface';
 
 // src/components/command-palette/commands/settingsCommands.ts
 // Commands in the `settings` group: settings subviews, app toggles, theme, sync, and desktop-only switches.
@@ -27,10 +29,62 @@ export const settingsCommands: CommandPaletteCommand[] = [
     },
     createSettingsCommand('settings-options', 'Open Options', 'Open the options center', ['settings', 'options', '设置', '选项'], 'options', null, { executeShortcut: 'o' }),
     createSettingsCommand('settings-appearance', 'Appearance settings', 'Open visual and appearance settings', ['appearance', 'visual settings', '外观', '视觉'], 'options', 'appearance'),
+    createSettingsAnchorCommand('settings-theme-presets', 'Theme presets', 'Jump to the built-in and saved theme presets', ['preset theme', 'color preset', '预设主题'], 'themePresets'),
+    createSettingsAnchorCommand('settings-lyrics-renderer', 'Lyrics renderer', 'Jump to how lyrics are drawn on the player', ['lyric renderer', 'lyric engine', '歌词渲染'], 'lyricsRenderer'),
+    createSettingsAnchorCommand('settings-grid-card-style', 'Grid card style', 'Jump to how the home grid draws its cards', ['card style', 'polaroid', 'grid style', '卡片样式'], 'grid3dCardStyle'),
     createSettingsCommand('settings-general', 'General settings', 'Open general app preferences', ['general', 'language settings', 'locale', '通用', '语言'], 'options', 'general'),
+    createSettingsAnchorCommand('settings-home-tabs', 'Home tab visibility', 'Choose which tabs the home screen shows', ['hide tabs', 'home tabs', '首页标签'], 'homeTabsVisibility'),
+    createSettingsAnchorCommand('settings-playback-entry-view', 'Play opens', 'Jump to which view pressing play opens', ['entry view', 'open on play', 'default view', '播放进入视图', '默认视图'], 'playbackEntryView'),
+    {
+        id: 'playback-entry-view-player',
+        isAvailable: context => (context ? context.settings.playbackEntryView !== 'player' : true),
+        group: 'settings',
+        title: 'Play opens: Visualizer',
+        description: 'Pressing play opens the player and its visualizer',
+        keywords: ['entry view player', 'open player on play', 'visualizer', '播放进入播放器', '播放进入可视化'],
+        execute: (_input, context) => {
+            if (context.settings.playbackEntryView === 'player') return false;
+            context.settings.setPlaybackEntryView('player');
+            return true;
+        },
+    },
+    {
+        id: 'playback-entry-view-lattice',
+        isAvailable: context => (context ? context.settings.playbackEntryView !== 'lattice' : true),
+        group: 'settings',
+        title: 'Play opens: Lattice',
+        description: 'Pressing play opens the queue collage',
+        keywords: ['entry view lattice', 'open lattice on play', 'queue collage', '播放进入队列拼贴', '播放进入海报墙'],
+        execute: (_input, context) => {
+            if (context.settings.playbackEntryView === 'lattice') return false;
+            context.settings.setPlaybackEntryView('lattice');
+            return true;
+        },
+    },
+    createSettingsAnchorCommand('settings-pinned-commands', 'Pinned command slots', 'Choose the three commands pinned in the palette', ['pinned commands', 'quick slots', '固定命令'], 'pinnedCommands'),
+    createSettingsCommand('settings-interaction', 'Interaction settings', 'Open keyboard, shortcut and grid interaction settings', ['interaction', 'keyboard', 'hotkey', '交互', '快捷键设置'], 'options', 'interaction'),
+    createSettingsAnchorCommand('settings-custom-shortcut', 'Custom shortcuts', 'Jump to the custom keyboard shortcut bindings', ['keybinding', 'rebind', 'hotkey', '自定义快捷键'], 'customShortcut'),
+    createSettingsAnchorCommand('settings-grid-action-button', 'Grid action button', 'Jump to what the grid action button slides to', ['grid button', 'action button', '海报墙按钮'], 'gridActionButton'),
     createSettingsCommand('settings-playback', 'Playback settings', 'Open playback behavior settings', ['playback', '播放', '播放设置'], 'options', 'playback'),
-    createSettingsCommand('settings-local-lyrics-priority', 'Local song lyrics priority', 'Choose whether local songs prefer local or online lyrics', ['local lyrics priority', 'online lyrics first', 'local song lyrics', '本地歌曲歌词优先级', '在线优先', '本地歌词', 'bendigeciyouxianji', 'bdgcyxj'], 'options', 'playback'),
+    createSettingsAnchorCommand('settings-queue-behavior', 'Queue behavior', 'Jump to how the play queue is built and kept', ['queue settings', 'queue behaviour', '队列行为'], 'queueSettings'),
+    createSettingsAnchorCommand('settings-netease-scrobble', 'NetEase listening report', 'Jump to whether finished plays are reported to NetEase Cloud Music', ['scrobble', 'netease scrobble', 'listening report', 'play count', '听歌打卡', '打卡', '听歌排行'], 'scrobbleSettings'),
+    createToggleCommand(
+        'netease-scrobble-toggle',
+        'settings',
+        'NetEase listening report',
+        'Turn reporting of finished NetEase plays on or off',
+        ['scrobble toggle', 'netease scrobble', 'report plays', '听歌打卡', '打卡', '听歌排行'],
+        context => context.settings.toggleNeteaseScrobble(),
+        // Same predicate the settings panel greys the toggle out with, and a function because
+        // signing out has to close the command off while the palette is already open.
+        { isAvailable: context => context?.settings.canReportNeteasePlayback() ?? true },
+    ),
+    createSettingsAnchorCommand('settings-audio-output', 'Audio output', 'Jump to the audio output device and format settings', ['output device', 'audio device', 'sound card', '输出设备'], 'audioOutputSettings'),
+    createSettingsAnchorCommand('settings-transition', 'Smart transition', 'Jump to the FOLIA transition settings', ['automix', 'crossfade', 'transition', '智能过渡', '转场'], 'transitionSettings'),
+    createSettingsAnchorCommand('settings-local-lyrics-priority', 'Local song lyrics priority', 'Choose whether local songs prefer local or online lyrics', ['local lyrics priority', 'online lyrics first', 'local song lyrics', '本地歌曲歌词优先级', '在线优先', '本地歌词', 'bendigeciyouxianji', 'bdgcyxj'], 'lyrics'),
     createSettingsCommand('settings-integration', 'Integration settings', 'Open Stage, Now Playing, and Navidrome settings', ['integration', 'stage', 'now playing', 'navidrome settings', '集成', '连接'], 'options', 'integration'),
+    createSettingsAnchorCommand('settings-navidrome', 'Navidrome server', 'Jump to the Navidrome server connection', ['navidrome', 'subsonic', 'music server', '音乐服务器'], 'navidrome'),
+    createSettingsAnchorCommand('settings-stage-mode', 'Stage mode', 'Jump to the Stage external player settings', ['stage', 'external player', '舞台模式'], 'stageMode'),
     {
         id: 'automix-toggle',
         group: 'settings',
@@ -85,8 +139,8 @@ export const settingsCommands: CommandPaletteCommand[] = [
             return true;
         },
     },
-    createSettingsCommand('settings-discord-presence', 'Discord playback status', 'Open Discord Rich Presence settings', ['discord', 'rich presence', 'discord presence', 'playing status', '播放状态', 'discord状态', 'discordzhuangtai', 'dc'], 'options', 'integration'),
-    createSettingsCommand('settings-obs-browser-source', 'OBS browser source', 'Open OBS browser source settings', ['obs', 'browser source', 'live source', '直播源', '浏览器源'], 'options', 'integration'),
+    createSettingsAnchorCommand('settings-discord-presence', 'Discord playback status', 'Open Discord Rich Presence settings', ['discord', 'rich presence', 'discord presence', 'playing status', '播放状态', 'discord状态', 'discordzhuangtai', 'dc'], 'discordRichPresence'),
+    createSettingsAnchorCommand('settings-obs-browser-source', 'OBS browser source', 'Open OBS browser source settings', ['obs', 'browser source', 'live source', '直播源', '浏览器源'], 'obsBrowserSource'),
     {
         id: 'desktop-toggle-lyric-api',
         platform: ['electron'],
@@ -146,7 +200,8 @@ export const settingsCommands: CommandPaletteCommand[] = [
         },
     },
     createSettingsCommand('settings-storage', 'Storage settings', 'Open cache and storage settings', ['storage', 'cache', '存储', '缓存'], 'options', 'storage'),
-    createSettingsCommand('settings-r2-sync', 'Sync server settings', 'Open sync server settings', ['sync server', 'd1 sync', 'cloud sync', 'sync settings', '同步', '云同步', 'd1同步'], 'options', 'storage'),
+    createSettingsAnchorCommand('settings-media-cache', 'Media cache', 'Jump to the downloaded audio cache', ['audio cache', 'downloads', 'offline songs', '音频缓存'], 'mediaCache'),
+    createSettingsAnchorCommand('settings-r2-sync', 'Sync server settings', 'Open sync server settings', ['sync server', 'd1 sync', 'cloud sync', 'sync settings', '同步', '云同步', 'd1同步'], 'r2Sync'),
     {
         id: 'sync-now',
         group: 'settings',
@@ -357,6 +412,30 @@ export const settingsCommands: CommandPaletteCommand[] = [
     createToggleCommand('settings-toggle-lattice-vignette', 'settings', 'Lattice vignette', 'Turn the edge vignette on the queue collage on or off', ['lattice', 'vignette', 'queue collage vignette', 'collage vignette', 'poster wall vignette', '暗角', '边缘暗角', '队列拼贴', '队列拼贴暗角', '拼贴暗角'], context => context.settings.toggleLatticeVignette()),
     createToggleCommand('settings-toggle-lattice-auto-focus', 'settings', 'Lattice auto-focus', 'Toggle whether the queue collage follows the playing song when tracks change', ['lattice', 'lattice auto focus', 'queue collage', 'follow playing song', 'follow track changes', 'poster wall follow', '队列拼贴', '切歌自动聚焦', '自动聚焦当前歌曲', '海报墙跟随'], context => context.settings.toggleLatticeAutoFocusOnSongChange()),
     defineCommand({
+        id: 'settings-gridview-cards',
+        group: 'settings',
+        title: 'Grid card look',
+        description: 'Adjust full-bleed covers and how far grid cards shrink and fade with distance',
+        keywords: ['grid cards', 'folia grid', 'card cover', 'card falloff', 'card size', 'card opacity', '网格卡片', '卡片封面', '卡片衰减'],
+        icon: Images,
+        requiresInput: true,
+        surface: gridViewCardsSurface,
+        placeholder: context => context.shared.t('commandPalette.gridViewCardsPlaceholder', 'Adjust the controls below'),
+        execute: () => false,
+    }),
+    createToggleCommand('settings-toggle-gridview-full-bleed-cover', 'settings', 'Full-bleed grid covers', 'Toggle whether grid card artwork fills the whole card', ['full bleed cover', 'edge to edge cover', 'grid cover art', 'cover fills card', '全画幅封面', '封面铺满', '网格卡片封面'], context => context.settings.toggleGridViewFullBleedCover()),
+    createToggleCommand(
+        'settings-toggle-gridview-square-cards',
+        'settings',
+        'Square grid cards',
+        'Toggle whether full-bleed grid cards are square instead of poster-shaped',
+        ['square cards', 'square grid card', 'uncropped cover', 'card aspect ratio', '正方形卡片', '方形卡片', '卡片比例'],
+        context => context.settings.toggleGridViewSquareCards(),
+        // Same gate the settings panel hides the row behind: squaring the card only means anything
+        // once the artwork owns it. A getter, because the parent toggle flips without a re-render.
+        { isAvailable: context => (context ? context.settings.canUseGridViewSquareCards() : false) },
+    ),
+    defineCommand({
         id: 'lattice-poster-tint',
         group: 'settings',
         title: 'Lattice poster tint',
@@ -368,6 +447,23 @@ export const settingsCommands: CommandPaletteCommand[] = [
         placeholder: context => context.shared.t('commandPalette.latticePosterTintPlaceholder', 'Adjust the controls below'),
         execute: () => false,
     }),
+    defineCommand({
+        id: 'settings-reduce-motion',
+        group: 'settings',
+        title: 'Reduce motion',
+        description: 'Turn down the animation on each surface that has one, or follow the system setting',
+        keywords: ['reduced motion', 'animation', 'disable animation', 'motion', 'accessibility motion',
+            '降低动态效果', '减少动画', '关闭动画', '动效', '动画效果', '动态效果'],
+        icon: Gauge,
+        requiresInput: true,
+        surface: reduceMotionSurface,
+        placeholder: context => context.shared.t('commandPalette.reduceMotionPlaceholder', 'Adjust the controls below'),
+        execute: () => false,
+    }),
+    // The queue collage is the surface #370 was filed about, so it gets a direct toggle as well as
+    // a row on the panel above: the listener who lost its animation should not have to find it.
+    createToggleCommand('settings-toggle-reduce-lattice-motion', 'settings', 'Reduce queue collage motion', 'Turn the queue collage expansion, camera flight and entrance wave down to instant', ['reduce lattice motion', 'lattice animation', 'queue collage animation', 'collage motion', 'poster wall animation', '队列拼贴动画', '拼贴动效', '降低拼贴动态效果', '海报墙动画'], context => context.settings.toggleReduceLatticeMotion()),
+    createToggleCommand('settings-toggle-follow-system-reduced-motion', 'settings', 'Follow system reduced motion', 'Toggle whether the system animation setting is allowed to reduce motion in the app', ['system animation setting', 'os reduced motion', 'system motion preference', '跟随系统动画设置', '跟随系统减少动画', '系统动效偏好'], context => context.settings.toggleFollowSystemReducedMotion()),
     createToggleCommand('settings-toggle-track-switch-buttons', 'settings', 'Always show track switch arrows', 'Toggle whether the progress bar track switch arrows stay visible beside the title', ['track switch buttons', 'previous next arrows', 'progress bar arrows', 'song switch buttons', '切歌箭头', '切换箭头', '始终显示切歌按钮', '进度条切歌按钮', '上一首下一首按钮', 'jinduting qiege', 'sysqgan'], context => context.settings.toggleAlwaysShowTrackSwitchButtons()),
     createToggleCommand('settings-toggle-main-window-titlebar', 'settings', 'Always show window control buttons', 'Toggle whether the main window control buttons stay visible', ['always show window controls', 'window control buttons', 'always show titlebar', 'main window titlebar', 'titlebar', '标题栏', '控制按钮', '始终显示标题栏', '始终显示控制按钮', '主窗口标题栏', 'kongzhi annniu', 'bt', 'zckbt'], context => context.settings.toggleAlwaysShowMainWindowTitlebar()),
     createToggleCommand('settings-toggle-auto-play-on-launch', 'settings', 'Auto-play on launch', 'Toggle whether opening the app resumes the last session by itself', ['autoplay', 'auto play', 'resume on open', 'play on startup', '自动播放', '启动自动播放', '进入应用自动播放', '续播'], context => context.settings.toggleAutoPlayOnLaunch()),

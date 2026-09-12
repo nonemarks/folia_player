@@ -7,7 +7,7 @@
     "email": "chthollyphile@users.noreply.github.com"
   },
   "private": true,
-  "version": "0.7.4",
+  "version": "0.7.7",
   "license": "AGPL-3.0",
   "type": "module",
   "main": "electron/main.cjs",
@@ -19,6 +19,7 @@
     "dev:probe": "vite --open /dev-probe.html",
     "build": "npm run build:vercel-api && vite build",
     "build:vercel-api": "tsc -p api-ts/tsconfig.json",
+    "postinstall": "patch-package",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "codemap": "node dev/mcp/ts-code-map/codemap.mjs",
@@ -37,6 +38,7 @@
     "manual:wallpaper-watchdog": "npx tsx test/manual/wallpaper-watchdog-sim.ts",
     "manual:analysis-idle": "node test/manual/analysis_idle_release.mts",
     "manual:visualizer-memory": "node test/manual/visualizer-memory-probe.mjs",
+    "manual:lattice-cover-memory": "node test/manual/lattice-cover-memory.mjs",
     "stage:client": "vite --open /stage-client.html",
     "dev:electron": "cross-env ELECTRON_DEV=true FOLIA_WINDOWTOLAYER_PATH=build/windowtolayer FOLIA_WALLPAPER_HELPER_PATH=build/folia-wallpaper-helper.exe concurrently -k \"vite\" \"wait-on tcp:3000 && electron .\"",
     "dev:electron:update-preview": "cross-env ELECTRON_DEV=true FOLIA_DEV_UPDATE_PREVIEW=true FOLIA_WINDOWTOLAYER_PATH=build/windowtolayer FOLIA_WALLPAPER_HELPER_PATH=build/folia-wallpaper-helper.exe concurrently -k \"vite\" \"wait-on tcp:3000 && electron .\"",
@@ -175,7 +177,13 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": [
+        "en_US",
+        "zh_CN",
+        "id"
+      ],
+      "include": "build/installer.nsh"
     },
     "portable": {
       "artifactName": "${productName}-Portable-${version}.${ext}"
@@ -200,7 +208,7 @@
     "@google/genai": "^2.16.0",
     "@neteasecloudmusicapienhanced/api": "^4.40.1",
     "@xhayper/discord-rpc": "^1.3.4",
-    "@yakult-green-tea/qq-music-api": "^3.1.0",
+    "@yakult-green-tea/qq-music-api": "3.1.0",
     "axios": "^1.18.1",
     "busboy": "^1.6.0",
     "electron-store": "^11.0.2",
@@ -247,6 +255,7 @@
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^1.31.0",
     "opencc-js": "^1.4.1",
+    "patch-package": "^8.0.1",
     "pinyin-pro": "3.29.3",
     "pixi.js": "^8.20.1",
     "postcss": "^8.5.28",

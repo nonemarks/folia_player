@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import type { MotionValue } from 'framer-motion';
 import { X, Command, Keyboard, Loader2, Check, AlertCircle, ChevronLeft, Download, ExternalLink, CircleHelp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import type { LyricFilterDraft } from './LyricFilterSettingsModal';
 import GlobalLyricOffsetModal from './settings/GlobalLyricOffsetModal';
 import WhisperSettingsModal from './settings/WhisperSettingsModal';
 import WhisperLyricOverviewModal from './settings/WhisperLyricOverviewModal';
+import { settingsCardClassFor, settingsToggleOffClassFor } from './settings/settingsCardClasses';
 import AppearanceSettingsSubview from './settings/AppearanceSettingsSubview';
 import DesktopSettingsSubview from './settings/DesktopSettingsSubview';
 import GeneralSettingsSubview from './settings/GeneralSettingsSubview';
@@ -29,14 +30,17 @@ import { AiHelpPromptModal } from './AiHelpPromptModal';
 import { discordIconUrl, openDiscordInvite } from '../shared/discordCommunity';
 import meowImageUrl from '../../../build/miao.png';
 import type { LyricData } from '../../types';
-import { type SettingsSubviewId, type VisualizerSettingsSection } from '../../stores/useSettingsModalStore';
+import { type SettingsModalState, type SettingsSubviewId, type VisualizerSettingsSection } from '../../stores/useSettingsModalStore';
 import { SettingsAnchorProvider, useSettingsAnchorList, useSettingsAnchorStore } from './settings/navigation/SettingsAnchorContext';
 import SettingsSidebarChips from './settings/navigation/SettingsSidebarChips';
 import SettingsSidebarWide from './settings/navigation/SettingsSidebarWide';
+import { settingsAnchorSubview } from './settings/navigation/settingsAnchorModel';
 import SettingsSectionHeader from './settings/SettingsSectionHeader';
 import { buildSettingsNavGroups, findSettingsNavItem, type SettingsSectionId } from './settings/navigation/settingsNavModel';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useSettingsScrollSpy } from '../../hooks/useSettingsScrollSpy';
+import { useReducedMotionFor } from '../../hooks/useReducedMotionFor';
+import { useSettingsInitialAnchor } from '../../hooks/useSettingsInitialAnchor';
 import { useShallow } from 'zustand/react/shallow';
 import type { ObsBrowserSourceStatus } from '../../types/obsBrowserSource';
 import { getWebAiProvider } from '../../services/runtimeConfig';
@@ -60,6 +64,7 @@ import { selectHomeLayoutSettingsSnapshot, useHomeLayoutSettingsStore } from '..
 import { setNavidromeEnabledState, useLibraryStore } from '../../stores/useLibraryStore';
 
 const DEFAULT_OPENAI_TEMPERATURE = '0.7';
+const AUR_PACKAGE_URL = 'https://aur.archlinux.org/packages/folia-major-bin';
 const VERSION_INFO = __DOCKER_STACK_VERSION__
     ? `${__APP_VERSION_LABEL__} v${__APP_VERSION__} · Stack ${__DOCKER_STACK_VERSION__} · ${__COMMIT_HASH__}`
     : `${__APP_VERSION_LABEL__} v${__APP_VERSION__} - ${__GIT_BRANCH__} - ${__COMMIT_HASH__}`;
@@ -69,6 +74,8 @@ interface SettingsModalProps {
     initialTab?: 'help' | 'options';
     initialSubview?: SettingsSubviewId | null;
     initialVisualizerSection?: VisualizerSettingsSection | null;
+    /** A section inside the subview to land on, rather than its top. */
+    initialAnchor?: SettingsModalState['initialAnchor'];
     theme?: Theme;
     bgMode: ThemeMode;
     onApplyDefaultTheme: () => void;
@@ -129,6 +136,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     initialTab = 'help',
     initialSubview = null,
     initialVisualizerSection = null,
+    initialAnchor = null,
     theme,
     bgMode,
     onApplyDefaultTheme,
@@ -244,6 +252,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         subtitleContentMode,
         subtitleOverlayOpacity,
         subtitleOverlayBackground,
+        subtitleUpcomingLyricsBlur,
         showHarmonySubtitle,
         harmonySubtitleBackground,
         lyricsFontStyle,
@@ -261,6 +270,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         handleSetSubtitleContentMode: onSubtitleContentModeChange,
         handleSetSubtitleOverlayOpacity: setSubtitleOverlayOpacity,
         handleToggleSubtitleOverlayBackground: onToggleSubtitleOverlayBackground,
+        handleToggleSubtitleUpcomingLyricsBlur: onToggleSubtitleUpcomingLyricsBlur,
         handleToggleShowHarmonySubtitle: onToggleShowHarmonySubtitle,
         handleToggleHarmonySubtitleBackground: onToggleHarmonySubtitleBackground,
         handleSetLyricsFontStyle: onLyricsFontStyleChange,
@@ -455,6 +465,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         STAGE_MODE_SOURCE: 'stage-api',
         DISCORD_RICH_PRESENCE_ENABLED: false,
     });
+    const [electronSettingsLoaded, setElectronSettingsLoaded] = useState(false);
+    const [savedElectronAiCredentials, setSavedElectronAiCredentials] = useState({
+        AI_PROVIDER: 'gemini',
+        GEMINI_API_KEY: '',
+        OPENAI_API_KEY: '',
+    });
     const [electronSaveStatus, setElectronSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [updateStatus, setUpdateStatus] = useState<ElectronUpdateStatus | null>(null);
     const [discordPresenceStatus, setDiscordPresenceStatus] = useState<ElectronDiscordPresenceStatus | null>(null);
@@ -463,8 +479,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [cacheDirectoryStatus, setCacheDirectoryStatus] = useState<'idle' | 'choosing'>('idle');
     const [stageActionStatus, setStageActionStatus] = useState<'idle' | 'regenerating'>('idle');
     const configuredAiProvider = isElectron ? electronSettings.AI_PROVIDER : getWebAiProvider();
-    const aiServiceLabel = configuredAiProvider === 'openai' ? 'OpenAI Compatible' : 'Google Gemini';
+    const aiServiceLabel = configuredAiProvider === 'openai' ? t('options.otherCompatibleApi') : 'Google Gemini';
+    const isElectronRuntime = typeof window !== 'undefined' && Boolean(window.electron);
+    const savedAiApiKey = savedElectronAiCredentials.AI_PROVIDER === 'openai'
+        ? savedElectronAiCredentials.OPENAI_API_KEY
+        : savedElectronAiCredentials.GEMINI_API_KEY;
+    const aiApiKeyStatus: 'loading' | 'configured' | 'missing' = !isElectronRuntime
+        ? 'configured'
+        : !electronSettingsLoaded
+            ? 'loading'
+            : savedAiApiKey.trim()
+                ? 'configured'
+                : 'missing';
     const showQuarkDownload = electronSettings.UPDATE_CHANNEL === 'realeco';
+
+    useEffect(() => {
+        if (aiApiKeyStatus === 'missing' && themeGenerationSource === 'ai') {
+            onChangeThemeGenerationSource('cover');
+        }
+    }, [aiApiKeyStatus, onChangeThemeGenerationSource, themeGenerationSource]);
+
     useEffect(() => {
         if ((window as any).electron) {
             setIsElectron(true);
@@ -475,8 +509,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         ...settings,
                         OPENAI_API_TEMPERATURE: String(settings.OPENAI_API_TEMPERATURE ?? '').trim() || DEFAULT_OPENAI_TEMPERATURE,
                     }));
+                    setSavedElectronAiCredentials({
+                        AI_PROVIDER: settings.AI_PROVIDER === 'openai' ? 'openai' : 'gemini',
+                        GEMINI_API_KEY: String(settings.GEMINI_API_KEY ?? ''),
+                        OPENAI_API_KEY: String(settings.OPENAI_API_KEY ?? ''),
+                    });
                 }
-            });
+            }).finally(() => setElectronSettingsLoaded(true));
             (window as any).electron.getCacheDirectory().then((result: ElectronCacheDirectoryResult) => {
                 if (result?.path) {
                     setCacheDirectory(result.path);
@@ -591,6 +630,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             await (window as any).electron.saveSettings('ENABLE_AUTO_UPDATE', electronSettings.ENABLE_AUTO_UPDATE);
             await (window as any).electron.saveSettings('UPDATE_CHANNEL', electronSettings.UPDATE_CHANNEL);
             await (window as any).electron.saveSettings('DISCORD_RICH_PRESENCE_ENABLED', electronSettings.DISCORD_RICH_PRESENCE_ENABLED);
+            setSavedElectronAiCredentials({
+                AI_PROVIDER: electronSettings.AI_PROVIDER === 'openai' ? 'openai' : 'gemini',
+                GEMINI_API_KEY: electronSettings.GEMINI_API_KEY,
+                OPENAI_API_KEY: electronSettings.OPENAI_API_KEY,
+            });
             setElectronSaveStatus('saved');
             setTimeout(() => setElectronSaveStatus('idle'), 2000);
         }
@@ -634,7 +678,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     const handleToggleAutoUpdate = async () => {
-        if (!window.electron?.saveSettings || !electronSettings.ENABLE_UPDATE_CHECK || !updateStatus?.supported) {
+        if (!window.electron?.saveSettings || !electronSettings.ENABLE_UPDATE_CHECK || !updateStatus?.autoUpdateSupported) {
             return;
         }
 
@@ -915,11 +959,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const errorTextColor = isDaylight ? 'text-red-600' : 'text-red-400';
     const errorBgColor = isDaylight ? 'bg-red-500/10' : 'bg-red-500/10';
     const overlayBackground = isDaylight ? 'rgba(0,0,0,0.32)' : 'rgba(0,0,0,0.5)';
-    const toggleOffBackgroundClass = isDaylight ? 'bg-zinc-300/90' : 'bg-white/10';
+    const toggleOffBackgroundClass = settingsToggleOffClassFor(isDaylight);
     const accentOutlineColor = theme?.accentColor || (isDaylight ? '#44403c' : '#f4f4f5');
-    const settingsCardClass = isDaylight
-        ? 'bg-black/[0.025] border-black/10'
-        : 'bg-white/5 border-white/5';
+    const settingsCardClass = settingsCardClassFor(isDaylight);
     const settingsCardInteractiveClass = isDaylight
         ? 'bg-black/[0.025] border-black/10 hover:bg-black/[0.055]'
         : 'bg-white/5 border-white/5 hover:bg-white/8';
@@ -1181,25 +1223,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const updateBadgeIcon = updateStatus?.status === 'checking'
         ? <Loader2 size={13} className="animate-spin" />
         : updateStatus?.availableVersion
-            ? <Download size={13} />
+            ? updateStatus.autoUpdateSupported
+                ? <Download size={13} />
+                : <ExternalLink size={13} />
             : updateStatus?.status === 'error'
                 ? <AlertCircle size={13} />
                 : <Check size={13} />;
     const canDownloadUpdate = Boolean(
         electronSettings.ENABLE_UPDATE_CHECK &&
-        updateStatus?.supported &&
+        updateStatus?.autoUpdateSupported &&
         updateStatus?.availableVersion &&
         updateStatus.status !== 'downloading' &&
         updateStatus.status !== 'downloaded'
     );
-    const canEnableAutoUpdate = Boolean(electronSettings.ENABLE_UPDATE_CHECK && updateStatus?.supported);
+    const canEnableAutoUpdate = Boolean(electronSettings.ENABLE_UPDATE_CHECK && updateStatus?.autoUpdateSupported);
 
     const settingsNavGroups = useMemo(
         () => buildSettingsNavGroups(t, { isElectron }),
         [t, isElectron],
     );
     const activeSettingsNavItem = findSettingsNavItem(settingsNavGroups, activeSettingsSection);
-    const prefersReducedMotion = useReducedMotion() ?? false;
+    const prefersReducedMotion = useReducedMotionFor('settingsScroll');
     const { activeAnchorId, scrollToAnchor } = useSettingsScrollSpy({
         containerRef: contentScrollRef,
         anchors: settingsAnchors,
@@ -1214,6 +1258,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             contentScrollRef.current.scrollTop = 0;
         }
     }, [activeSettingsSection]);
+
+    // A command can ask for one section inside the page, not just the page itself; the scroll waits
+    // for that section to register, which is the only moment it exists to scroll to. It runs after
+    // the reset above on purpose — that reset fires on the same commit the section changes on, and
+    // a scrollTop write would abort the smooth scroll this starts.
+    useSettingsInitialAnchor(initialAnchor, settingsAnchors, scrollToAnchor);
+
 
     return (
         <motion.div
@@ -1443,7 +1494,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                         {t('options.newVersionFound', { version: updateStatus.availableVersion })}
                                                     </span>
 
-                                                    {updateStatus.status === 'downloaded' ? (
+                                                    {updateStatus.autoUpdateSupported && updateStatus.status === 'downloaded' ? (
                                                         <button
                                                             type="button"
                                                             onClick={handleInstallUpdate}
@@ -1451,12 +1502,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                         >
                                                             {t('options.restartToInstallUpdate')}
                                                         </button>
-                                                    ) : updateStatus.status === 'downloading' ? (
+                                                    ) : updateStatus.autoUpdateSupported && updateStatus.status === 'downloading' ? (
                                                         <span className="text-zinc-300 opacity-80">
                                                             {t('options.downloadingProgress', { percent: Math.round(updateStatus.downloadProgress?.percent || 0) })}
                                                         </span>
                                                     ) : (
-                                                        !electronSettings.ENABLE_AUTO_UPDATE && (
+                                                        updateStatus.autoUpdateSupported && !electronSettings.ENABLE_AUTO_UPDATE && (
                                                             <button
                                                                 type="button"
                                                                 onClick={handleDownloadUpdate}
@@ -1507,8 +1558,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                         style={{ color: 'var(--text-secondary)' }}
                                                     >
                                                         <ExternalLink size={11} />
-                                                        {t('options.githubRelease')}
+                                                        {updateStatus.autoUpdateSupported
+                                                            ? t('options.githubRelease')
+                                                            : t('options.fullInstallerGithub')}
                                                     </button>
+                                                    {updateStatus.platform === 'linux' && electronSettings.UPDATE_CHANNEL === 'realeco' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOpenDownloadUrl(AUR_PACKAGE_URL)}
+                                                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 opacity-65 transition-colors hover:bg-white/10 hover:opacity-100"
+                                                            style={{ color: 'var(--text-secondary)' }}
+                                                        >
+                                                            <ExternalLink size={11} />
+                                                            {t('options.aurPackage')}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </>
                                         )}
@@ -1516,7 +1580,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         {/* 第三行：多平台网络与手动下载提醒小字 */}
                                         {updateStatus?.availableVersion && (
                                             <div className="text-xs opacity-60 mt-0.5 space-y-0.5" style={{ color: 'var(--text-secondary)' }}>
-                                                {(updateStatus.platform === 'darwin' || updateStatus.platform === 'linux' || !updateStatus.supported) && (
+                                                {!updateStatus.autoUpdateSupported && (
                                                     <div>
                                                         {updateStatus.platform === 'darwin'
                                                             ? t('options.macManualUpdateNotice')
@@ -1550,11 +1614,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         groups={settingsNavGroups}
                                         activeSectionId={activeSettingsSection}
                                         onSelectSection={setActiveSettingsSection}
-                                        anchors={settingsAnchors}
                                         activeAnchorId={activeAnchorId}
-                                        onSelectAnchor={scrollToAnchor}
+                                        onSelectAnchor={(sectionId, anchorId) => {
+                                            if (sectionId === activeSettingsSection) {
+                                                scrollToAnchor(anchorId);
+                                                return;
+                                            }
+                                            useSettingsModalStore.getState().openSettings('options', settingsAnchorSubview(anchorId), null, anchorId);
+                                        }}
                                         isDaylight={isDaylight}
-                                        reducedMotion={prefersReducedMotion}
                                         theme={theme}
                                     />
                                 ) : (
@@ -1594,6 +1662,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 onToggleSongThemeAutoSwitch={onToggleSongThemeAutoSwitch}
                                                 themeGenerationSource={themeGenerationSource}
                                                 onChangeThemeGenerationSource={onChangeThemeGenerationSource}
+                                                aiApiKeyStatus={aiApiKeyStatus}
+                                                onOpenAiSettings={() => useSettingsModalStore.getState().openSettings('options', 'desktop', null, 'electronSettings')}
                                                 onToggleTransparentPlayerBackground={resolvedToggleTransparentPlayerBackground}
                                                 onToggleAutoHidePlayerChrome={onToggleAutoHidePlayerChrome}
                                                 onSaveCustomTheme={onSaveCustomTheme}
@@ -1892,6 +1962,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         subtitleContentMode={subtitleContentMode}
                         subtitleOverlayOpacity={subtitleOverlayOpacity}
                         subtitleOverlayBackground={subtitleOverlayBackground}
+                        subtitleUpcomingLyricsBlur={subtitleUpcomingLyricsBlur}
                         showHarmonySubtitle={showHarmonySubtitle}
                         harmonySubtitleBackground={harmonySubtitleBackground}
                         classicTuning={classicTuning}
@@ -1940,6 +2011,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         onSubtitleContentModeChange={onSubtitleContentModeChange}
                         onSubtitleOverlayOpacityChange={setSubtitleOverlayOpacity}
                         onToggleSubtitleOverlayBackground={onToggleSubtitleOverlayBackground}
+                        onToggleSubtitleUpcomingLyricsBlur={onToggleSubtitleUpcomingLyricsBlur}
                         onToggleShowHarmonySubtitle={onToggleShowHarmonySubtitle}
                         onToggleHarmonySubtitleBackground={onToggleHarmonySubtitleBackground}
                         onClassicTuningChange={onClassicTuningChange}
