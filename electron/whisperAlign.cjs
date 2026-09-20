@@ -1331,6 +1331,15 @@ function getPlatformAssetInfo() {
     return null;
 }
 
+function findWhisperAsset(release, assetInfo) {
+    return release?.assets?.find((asset) => assetInfo.pattern.test(asset.name)) || null;
+}
+
+function getNightlyReleaseTag(release) {
+    const match = release?.body?.match(/Nightly build:[^\n]*\/releases\/tag\/([^\s)]+)/i);
+    return match ? match[1] : null;
+}
+
 /**
  * Make an HTTP/HTTPS GET request and return the response body as a buffer.
  * Supports redirect following and custom headers.
@@ -1394,7 +1403,7 @@ function applyMirror(url, mirrorPrefix) {
  * Tries direct connection first, then falls back to mirrors.
  */
 async function fetchLatestWhisperRelease() {
-    const apiUrl = 'https://api.github.com/repos/ggerganov/whisper.cpp/releases/latest';
+    const apiUrl = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest';
 
     for (const mirror of GITHUB_MIRRORS) {
         const url = applyMirror(apiUrl, mirror);
@@ -1412,6 +1421,22 @@ async function fetchLatestWhisperRelease() {
         'Please check your network connection or try again later. ' +
         'You can also manually download whisper-cli from https://github.com/ggerganov/whisper.cpp/releases'
     );
+}
+
+async function fetchWhisperRelease(tag) {
+    const apiUrl = `https://api.github.com/repos/ggml-org/whisper.cpp/releases/tags/${encodeURIComponent(tag)}`;
+
+    for (const mirror of GITHUB_MIRRORS) {
+        const url = applyMirror(apiUrl, mirror);
+        try {
+            const data = await httpGet(url, { timeout: 15000 });
+            return JSON.parse(data.toString('utf-8'));
+        } catch (err) {
+            console.warn(`[WhisperInstaller] Failed to fetch release ${tag} from ${url}: ${err.message}`);
+        }
+    }
+
+    throw new Error(`Unable to fetch whisper.cpp release ${tag}.`);
 }
 
 /**
@@ -1769,12 +1794,27 @@ async function installWhisperCli(onProgress) {
     // 1. Fetch latest release info
     if (onProgress) onProgress({ status: 'fetching-release', progress: 0 });
 
-    const release = await fetchLatestWhisperRelease();
-    const asset = release.assets.find((a) => assetInfo.pattern.test(a.name));
+    let release = await fetchLatestWhisperRelease();
+    let asset = findWhisperAsset(release, assetInfo);
+
+    // Stable releases may contain source-only artifacts while publishing the binaries
+    // in the nightly release linked from the stable release notes.
+    if (!asset) {
+        const nightlyTag = getNightlyReleaseTag(release);
+        if (nightlyTag) {
+            const nightlyRelease = await fetchWhisperRelease(nightlyTag);
+            const nightlyAsset = findWhisperAsset(nightlyRelease, assetInfo);
+            if (nightlyAsset) {
+                release = nightlyRelease;
+                asset = nightlyAsset;
+            }
+        }
+    }
+
     if (!asset) {
         throw new Error(
             `No matching binary found for ${process.platform}-${process.arch} in whisper.cpp release ${release.tag_name}. ` +
-            `Available assets: ${release.assets.map((a) => a.name).join(', ')}`
+            `Available assets: ${(release.assets || []).map((a) => a.name).join(', ') || 'none'}`
         );
     }
 
@@ -2144,5 +2184,7 @@ module.exports = {
     installWhisperCli,
     installFfmpeg,
     fetchAudioBuffer,
+    findWhisperAsset,
+    getNightlyReleaseTag,
     SUPPORTED_MODELS,
 };
