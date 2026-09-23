@@ -791,6 +791,8 @@ declare global {
       closeWindow: () => Promise<boolean>;
       quitApp: () => Promise<boolean>;
       isWindowMaximized: () => Promise<boolean>;
+      isWindowFullscreen: () => Promise<boolean>;
+      onWindowFullscreenChanged: (callback: (fullscreen: boolean) => void) => () => void;
       getWindowTransparentMode: () => Promise<boolean>;
       setWindowTransparentMode: (
         enabled: boolean,

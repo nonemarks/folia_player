@@ -24,6 +24,7 @@ import { DurationMatchBadge } from './DurationMatchBadge';
 import WhisperSettingsPanel from '../shared/WhisperSettingsPanel';
 import ErrorBoundary from '../shared/ErrorBoundary';
 import { isWhisperFeaturePresent } from '../../services/whisperModService';
+import { hasRenderableLyrics } from '../../utils/lyrics/validity';
 
 interface LyricMatchModalProps {
     song: LocalSong;
@@ -199,7 +200,7 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
             if (lyricsSource === 'online') {
                 try {
                     processed = await fetchLyricsForMatchSource(source, selectedResult);
-                    lyricsFailed = !processed?.lyrics;
+                    lyricsFailed = !processed?.isPureMusic && !hasRenderableLyrics(processed?.lyrics);
                 } catch (error) {
                     console.warn('[LocalMusic] Lyrics failed while applying metadata selection:', error);
                     lyricsFailed = true;
@@ -513,7 +514,11 @@ const LyricMatchModal: React.FC<LyricMatchModalProps> = ({ song, onClose, onMatc
 
                         {/* Lyric Preview Panel */}
                         <div className="w-full h-28 flex-shrink-0 mt-4 flex flex-col">
-                            <LyricPreviewPanel selectedResult={selectedResult} source={source} isDaylight={isDaylight} />
+                            <LyricPreviewPanel
+                                selectedResult={selectedResult}
+                                source={source}
+                                isDaylight={isDaylight}
+                            />
                         </div>
                     </div>
                         </div>

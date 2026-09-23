@@ -31,6 +31,9 @@
     "node_modules",
     "dist",
     "release",
+    "build/whisper.cpp-cuda",
+    "build/whisper.cpp-cuda-build",
+    "build/whisper.cpp-cuda-nmake",
     "sync-server",
     "original"
   ]

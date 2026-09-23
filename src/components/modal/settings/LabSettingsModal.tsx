@@ -9,6 +9,7 @@ import ThemedDialog from '../../shared/ThemedDialog';
 import { SettingsAnchor } from './navigation/SettingsAnchorContext';
 import SettingsSectionHeading from './navigation/SettingsSectionHeading';
 import MotionReductionSettingsSection from './MotionReductionSettingsSection';
+import PonderHintSettingsSection from './PonderHintSettingsSection';
 import { useAudioSettingsStore } from '../../../stores/useAudioSettingsStore';
 import { useVisualizerSettingsStore } from '../../../stores/useVisualizerSettingsStore';
 import { useTypographySettingsStore } from '../../../stores/useTypographySettingsStore';
@@ -86,6 +87,7 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
         alwaysShowPlayerBackButton,
         alwaysShowTrackSwitchButtons,
         alwaysShowMainWindowTitlebar,
+        useNativeMacFullscreenButton,
         showOpenPanelCloseButton,
         enablePlayerPageNativeBlur,
         onToggleHidePlayerProgressBar,
@@ -93,6 +95,7 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
         onToggleAlwaysShowPlayerBackButton,
         onToggleAlwaysShowTrackSwitchButtons,
         onToggleAlwaysShowMainWindowTitlebar,
+        onToggleNativeMacFullscreenButton,
         onToggleOpenPanelCloseButton,
         onTogglePlayerPageNativeBlur,
     } = usePlayerChromeSettingsStore(useShallow(state => ({
@@ -101,6 +104,7 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
         alwaysShowPlayerBackButton: state.alwaysShowPlayerBackButton,
         alwaysShowTrackSwitchButtons: state.alwaysShowTrackSwitchButtons,
         alwaysShowMainWindowTitlebar: state.alwaysShowMainWindowTitlebar,
+        useNativeMacFullscreenButton: state.useNativeMacFullscreenButton,
         showOpenPanelCloseButton: state.showOpenPanelCloseButton,
         enablePlayerPageNativeBlur: state.enablePlayerPageNativeBlur,
         onToggleHidePlayerProgressBar: state.handleToggleHidePlayerProgressBar,
@@ -108,6 +112,7 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
         onToggleAlwaysShowPlayerBackButton: state.handleToggleAlwaysShowPlayerBackButton,
         onToggleAlwaysShowTrackSwitchButtons: state.handleToggleAlwaysShowTrackSwitchButtons,
         onToggleAlwaysShowMainWindowTitlebar: state.handleToggleAlwaysShowMainWindowTitlebar,
+        onToggleNativeMacFullscreenButton: state.handleToggleNativeMacFullscreenButton,
         onToggleOpenPanelCloseButton: state.handleToggleOpenPanelCloseButton,
         onTogglePlayerPageNativeBlur: state.handleTogglePlayerPageNativeBlur,
     })));
@@ -144,6 +149,7 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
     const selectedVisualizerFrameRateIndex = VISUALIZER_FRAME_RATE_OPTIONS.indexOf(selectedVisualizerFrameRate);
     const isLinux = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('linux');
     const isElectron = typeof window !== 'undefined' && Boolean(window.electron);
+    const isMacElectron = window.electron?.platform === 'darwin';
 
     const handleNativeBlurToggle = () => {
         if (enablePlayerPageNativeBlur) {
@@ -372,6 +378,12 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
 
                 </SettingsAnchor>
 
+                <PonderHintSettingsSection
+                    settingsCardClass={settingsCardClass}
+                    isDaylight={isDaylight}
+                    accentColor={theme?.accentColor}
+                />
+
                 <SettingsAnchor anchorId="labWindowAndTools" label={t('options.labWindowAndToolsSection')} className="space-y-4">
                     <SettingsSectionHeading icon={Boxes} label={t('options.labWindowAndToolsSection')} divider />
 
@@ -403,6 +415,21 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
                                     </div>
                                     {renderToggle(alwaysShowMainWindowTitlebar, () => onToggleAlwaysShowMainWindowTitlebar(!alwaysShowMainWindowTitlebar))}
                                 </div>
+
+                                {isMacElectron && (
+                                    <div className={`p-4 rounded-xl border flex items-center justify-between gap-4 ${settingsCardClass}`}>
+                                        <div className="space-y-1">
+                                            <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                                <Monitor size={14} />
+                                                {t('options.useNativeMacFullscreenButton')}
+                                            </div>
+                                            <div className="text-xs opacity-50 max-w-[360px]" style={{ color: 'var(--text-secondary)' }}>
+                                                {t('options.useNativeMacFullscreenButtonDesc')}
+                                            </div>
+                                        </div>
+                                        {renderToggle(useNativeMacFullscreenButton, () => onToggleNativeMacFullscreenButton(!useNativeMacFullscreenButton))}
+                                    </div>
+                                )}
 
                                 {isElectron && (
                                     <div className={`p-4 rounded-xl border flex items-center justify-between gap-4 ${settingsCardClass}`}>

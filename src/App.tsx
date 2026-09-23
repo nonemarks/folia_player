@@ -17,15 +17,16 @@ import AppDialogs from './components/app/dialogs/AppDialogs';
 import { useSettingsDialogModel } from './components/app/dialogs/useSettingsDialogModel';
 import AppOverlays from './components/app/overlays/AppOverlays';
 import AutomixModelReminder from './components/modal/AutomixModelReminder';
+import PonderHost from './components/ponder/PonderHost';
 // Lazy so animejs (~38KB gz) stays out of the bootstrap chunk: this overlay only ever draws when the
 // animation switch is on AND the mode is automix, both off by default, so it is mounted only then.
 const AutomixTransitionAnimation = lazy(() => import('./components/app/overlays/AutomixTransitionAnimation'));
 const Lattice = lazy(() => import('./components/app/lattice/Lattice'));
 import { UserGuideModal } from './components/modal/UserGuideModal';
+import ReleaseNotesDialog from './components/modal/ReleaseNotesDialog';
 import { PlaybackEntryViewPrompt } from './components/modal/playback-entry-view/PlaybackEntryViewPrompt';
 import { LatticeFmNotice } from './components/modal/playback-entry-view/LatticeFmNotice';
-import { usePlaybackEntryViewPromptGate } from './hooks/usePlaybackEntryViewPromptGate';
-import { USER_GUIDE_AUTO_OPEN_VERSION } from './components/modal/userGuideContent';
+import { useStartupExperienceGate } from './hooks/useStartupExperienceGate';
 import { useAppDialogsModel } from './components/app/dialogs/useAppDialogsModel';
 import { useHomeModel } from './components/app/home/useHomeModel';
 import { createLyricFilterPatternSaver } from './components/app/home/createLyricFilterPatternSaver';
@@ -247,16 +248,8 @@ export default function App() {
 
     // Auto-close the player panel when leaving the player view
     // (Effect moved to after useAppNavigation where currentView is defined)
-    const {
-        settingsModalState,
-        lastSeenGuideVersion,
-        setLastSeenGuideVersion,
-        setIsUserGuideModalOpen,
-    } = useSettingsModalStore(useShallow(state => ({
+    const { settingsModalState } = useSettingsModalStore(useShallow(state => ({
         settingsModalState: state.settingsModalState,
-        lastSeenGuideVersion: state.lastSeenGuideVersion,
-        setLastSeenGuideVersion: state.setLastSeenGuideVersion,
-        setIsUserGuideModalOpen: state.setIsUserGuideModalOpen,
     })));
     const automixEnabled = useAutomixSettingsStore(state => state.automixEnabled);
     const transitionMode = useAutomixSettingsStore(state => state.transitionMode);
@@ -280,18 +273,7 @@ export default function App() {
         [transitionMode, crossfadeMaxSec, transitionPerformance],
     );
 
-    useEffect(() => {
-        if (
-            typeof __APP_VERSION__ !== 'undefined' &&
-            USER_GUIDE_AUTO_OPEN_VERSION === __APP_VERSION__ &&
-            lastSeenGuideVersion !== __APP_VERSION__
-        ) {
-            setIsUserGuideModalOpen(true);
-            setLastSeenGuideVersion(__APP_VERSION__);
-        }
-    }, [lastSeenGuideVersion, setLastSeenGuideVersion, setIsUserGuideModalOpen]);
-
-    usePlaybackEntryViewPromptGate();
+    const startupExperience = useStartupExperienceGate();
 
     useEffect(() => initializeSyncCoordinator(), []);
 
@@ -422,6 +404,7 @@ export default function App() {
         enablePlayerPageNativeBlur,
         autoHidePlayerChrome,
         handleToggleAutoHidePlayerChrome,
+        autoHideCursorWithPlayerChrome,
         alwaysShowMainWindowTitlebar,
         handleToggleTransparentPlayerBackground,
     } = usePlayerChromeSettingsStore(useShallow(selectPlayerChromeSettingsSnapshot));
@@ -1691,6 +1674,15 @@ export default function App() {
         isNowPlayingControlDisabled,
         stageActiveEntryKind,
     ]);
+    // 播放页空闲时连指针一起隐藏。复用控制栏的自动隐藏时钟（3 秒无鼠标移动），不新开计时器：
+    // 只有「自动隐藏」模式下才成立，`always-hidden` 是常驻隐藏、没有唤回时机，不参与。
+    // 点击穿透（桌面宠物）也排除：那种状态下控制栏被钉成隐藏、鼠标移动不再唤回，跟着它走会把
+    // 指针永久藏掉；而真正穿透时画的是下层窗口的指针，隐藏本来也没有收益。
+    const shouldHidePlayerCursor = isPlayerView
+        && autoHideCursorWithPlayerChrome
+        && playerChromeVisibilityMode === 'auto-hide'
+        && !isMainWindowClickThroughEnabled
+        && isPlayerChromeHidden;
     const isSettingsModalOpen = settingsModalState.isOpen;
     const {
         obsBrowserSourceStatus,
@@ -2729,8 +2721,12 @@ export default function App() {
             </AnimatePresence>
 
             {/* --- VISUALIZER (Background Layer & Main Click Target) --- */}
+            {/* 指针隐藏跟着控制栏的空闲时钟走，不另起一套计时：控件收起时页面上已经没有可点的东西，
+                所以指针一起消失；任何鼠标移动都会同时唤回两者。class 只挂在这个视觉层容器上，
+                弹窗、命令面板、浮动控件和标题栏按钮都是它的兄弟节点，不在作用域内。 */}
             <div
-                className="absolute inset-0 z-0"
+                className={`absolute inset-0 z-0${shouldHidePlayerCursor ? ' cursor-auto-hidden' : ''}`}
+                data-testid="player-visual-surface"
                 onClick={handleContainerClick}
             >
                 <PlayerBottomBarLayoutContext.Provider value={currentView === 'player'}>
@@ -2764,6 +2760,10 @@ export default function App() {
             {/* Same arrangement, same reason. Mounted here rather than beside either of the two
                 switches that can open it, so that both reach the same one. */}
             <AutomixModelReminder isDaylight={isDaylight} />
+
+            {/* 思索教程。常驻的只有悬停探测和提示胶囊；教程层自己走 React.lazy，
+                animejs 不进 bootstrap chunk。 */}
+            <PonderHost theme={theme} isDaylight={isDaylight} />
 
             {currentView === 'player' && !showLyricMatchModal && (
                 <PlayerPanel model={playerPanelModel} />
@@ -2814,6 +2814,12 @@ export default function App() {
             />
 
             <AppDialogs model={appDialogsModel} />
+            <ReleaseNotesDialog
+                isOpen={startupExperience.isReleaseNotesOpen}
+                isDaylight={isDaylight}
+                theme={theme}
+                onClose={startupExperience.closeReleaseNotes}
+            />
             <UserGuideModal theme={theme} />
             <PlaybackEntryViewPrompt theme={theme} />
             <LatticeFmNotice />

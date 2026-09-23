@@ -20,6 +20,7 @@ export const SETTINGS_ANCHOR_DEFINITIONS = {
     // GeneralSettingsSubview (PinnedCommandSettings renders inside it)
     languageSettings: { section: 'general', labelKey: 'options.languageSettings' },
     homeTabsVisibility: { section: 'general', labelKey: 'options.homeTabsVisibility' },
+    rememberHomeCardPosition: { section: 'general', labelKey: 'options.rememberHomeCardPosition' },
     playbackEntryView: { section: 'general', labelKey: 'options.playbackEntryView' },
     bottomUiSettings: { section: 'general', labelKey: 'options.bottomUiSettings' },
     pinnedCommands: { section: 'general', labelKey: 'options.pinnedCommands' },
@@ -61,6 +62,7 @@ export const SETTINGS_ANCHOR_DEFINITIONS = {
     labPerformance: { section: 'lab', labelKey: 'options.labPerformanceSection' },
     labMotion: { section: 'lab', labelKey: 'options.reduceMotionSection' },
     labPlayerUi: { section: 'lab', labelKey: 'options.labPlayerUiSection' },
+    labPonder: { section: 'lab', labelKey: 'options.ponderHints' },
     labWindowAndTools: { section: 'lab', labelKey: 'options.labWindowAndToolsSection' },
 } as const satisfies Record<string, { section: SettingsSubviewId; labelKey: string; electronOnly?: boolean }>;
 

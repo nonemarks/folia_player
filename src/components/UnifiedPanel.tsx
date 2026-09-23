@@ -1,4 +1,5 @@
 import React from 'react';
+import { PANEL_SLIDE_CLAMP_PX, PANEL_SLIDE_TRACK_BASE_PX, PANEL_SLIDE_TRACK_FULL_PX, PANEL_SLIDE_TRIGGER_PX } from '../utils/panelSlideGesture';
 import { motion, AnimatePresence, useTransform } from 'framer-motion';
 import { Settings, Settings2, X, Disc, SlidersHorizontal, ListMusic, User as UserIcon, Home as HomeIcon, FileAudio, FileText, Radio, Cloud, Star, Command, ChevronLeft, MirrorRectangular } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -340,8 +341,8 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
             return;
         }
 
-        const dragX = Math.max(-44, Math.min(0, deltaX));
-        const progress = Math.min(1, Math.abs(dragX) / 36);
+        const dragX = Math.max(-PANEL_SLIDE_CLAMP_PX, Math.min(0, deltaX));
+        const progress = Math.min(1, Math.abs(dragX) / PANEL_SLIDE_TRIGGER_PX);
         button.style.transition = 'none';
         button.style.transform = `translateX(${dragX}px)`;
         button.style.filter = `brightness(${1 + progress * 0.18})`;
@@ -366,7 +367,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
         const trackFill = trackFillRef.current;
         if (trackFill) {
             trackFill.style.transition = 'none';
-            trackFill.style.width = `${48 + Math.abs(dragX)}px`;
+            trackFill.style.width = `${PANEL_SLIDE_TRACK_BASE_PX + Math.abs(dragX)}px`;
             if (progress >= 1) {
                 trackFill.style.backgroundColor = theme.accentColor;
                 trackFill.style.opacity = '0.35';
@@ -391,7 +392,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
             return;
         }
 
-        const dragX = Math.max(-44, Math.min(0, deltaX));
+        const dragX = Math.max(-PANEL_SLIDE_CLAMP_PX, Math.min(0, deltaX));
 
         if (mode === 'trigger') {
             button.animate(
@@ -417,8 +418,8 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
             if (trackFill) {
                 trackFill.animate(
                     [
-                        { width: `${48 + Math.abs(dragX)}px`, opacity: '0.35' },
-                        { width: '96px', opacity: '0' },
+                        { width: `${PANEL_SLIDE_TRACK_BASE_PX + Math.abs(dragX)}px`, opacity: '0.35' },
+                        { width: `${PANEL_SLIDE_TRACK_FULL_PX}px`, opacity: '0' },
                     ],
                     { duration: 250, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }
                 );
@@ -441,7 +442,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
 
             if (trackFill) {
                 trackFill.style.transition = '';
-                trackFill.style.width = '48px';
+                trackFill.style.width = `${PANEL_SLIDE_TRACK_BASE_PX}px`;
                 trackFill.style.backgroundColor = '';
                 trackFill.style.opacity = '';
             }
@@ -473,7 +474,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
         const trackFill = trackFillRef.current;
         if (trackFill) {
             trackFill.style.transition = 'width 160ms ease-out, background-color 160ms ease-out, opacity 160ms ease-out';
-            trackFill.style.width = '48px';
+            trackFill.style.width = `${PANEL_SLIDE_TRACK_BASE_PX}px`;
             trackFill.style.backgroundColor = '';
             trackFill.style.opacity = '';
         }
@@ -504,7 +505,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
         const deltaX = event.clientX - gesture.startX;
         const deltaY = event.clientY - gesture.startY;
         setToggleButtonDragFeedback(deltaX);
-        if (deltaX <= -36 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+        if (deltaX <= -PANEL_SLIDE_TRIGGER_PX && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
             gesture.triggered = true;
             suppressToggleClickRef.current = true;
             event.preventDefault();
@@ -623,8 +624,11 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                         >
                             <div className="p-5 flex flex-col">
                                 {/* Top: Cover Art */}
+                                {/* 四个角上的按钮平时完全看不见，所以整块封面是思索的落点：
+                                    指针停在封面上，讲的就是「这上面还藏着什么」。 */}
                                 <div
                                     ref={coverAreaRef}
+                                    data-ponder-panel-artwork
                                     onClick={(event) => {
                                         event.stopPropagation();
                                         if (!supportsHover) {
@@ -746,6 +750,8 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                                             key={tab.id}
                                             onClick={() => onTabChange(tab.id)}
                                             aria-pressed={currentTab === tab.id}
+                                            // 每一格各自是一个思索目标：停在哪一格，讲的就是那一页。
+                                            data-ponder-panel-tab-button={tab.id}
                                             className={`flex-1 py-2 flex items-center justify-center transition-all rounded-lg
                                                 ${currentTab === tab.id ? `${activeTabBg} shadow-sm` : 'opacity-40 hover:opacity-100'}`}
                                             title={tab.label}

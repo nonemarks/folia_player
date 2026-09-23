@@ -7,6 +7,7 @@ import { Grid3DSlider, Grid3DSliderItem } from './Grid3DSlider';
 import { ChevronDown } from 'lucide-react';
 import type { GridMapBatchConfig } from './gridMapBatch';
 import { isHideableGridItem } from './gridItemVisibility';
+import { useHomeCardPosition } from '../../hooks/useHomeCardPosition';
 
 // src/components/folia-grid/DesktopGrid3DSurface.tsx
 // Shared desktop home surface that keeps Grid3D slider and GridMap controls visually consistent.
@@ -43,6 +44,7 @@ const readHiddenGridPlaylists = (): Record<string, string[]> => {
 };
 
 interface DesktopGrid3DSurfaceProps {
+    focusMemoryScope?: string;
     title: string;
     mapButtonLabel: string;
     items: Grid3DSliderItem[];
@@ -59,14 +61,17 @@ interface DesktopGrid3DSurfaceProps {
     hasFloatingPlayer?: boolean;
     playlistVisibilityScope?: string;
     batchConfig?: GridMapBatchConfig;
+    ponderControls?: 'local-grid-controls';
+    gridMapPonderScope?: 'local-grid-map-page';
 }
 
 export const DesktopGrid3DSurface: React.FC<DesktopGrid3DSurfaceProps> = ({
+    focusMemoryScope,
     title,
     mapButtonLabel,
     items,
-    focusedIndex,
-    onFocusedIndexChange,
+    focusedIndex: legacyFocusedIndex,
+    onFocusedIndexChange: onLegacyFocusedIndexChange,
     onSelect,
     tabs = [],
     actions = [],
@@ -78,10 +83,15 @@ export const DesktopGrid3DSurface: React.FC<DesktopGrid3DSurfaceProps> = ({
     hasFloatingPlayer = false,
     playlistVisibilityScope = 'default',
     batchConfig,
+    ponderControls,
+    gridMapPonderScope,
 }) => {
     const [showGridMap, setShowGridMap] = useState(false);
     const [tabsExpanded, setTabsExpanded] = useState(false);
     const [hiddenPlaylistsByScope, setHiddenPlaylistsByScope] = useState(readHiddenGridPlaylists);
+    const { focusedIndex, onFocusedIndexChange } = useHomeCardPosition(
+        focusMemoryScope, items, legacyFocusedIndex, onLegacyFocusedIndexChange, isLoading,
+    );
 
     const activeTab = tabs.find(tab => tab.active) || tabs[0];
     const hiddenPlaylistIds = useMemo(
@@ -105,6 +115,7 @@ export const DesktopGrid3DSurface: React.FC<DesktopGrid3DSurfaceProps> = ({
 
     const handleVisibleSelect = (item: Grid3DSliderItem, index: number) => {
         const sourceIndex = items.indexOf(item);
+        if (sourceIndex >= 0) onFocusedIndexChange(sourceIndex);
         onSelect(item, sourceIndex >= 0 ? sourceIndex : index);
     };
 
@@ -131,7 +142,7 @@ export const DesktopGrid3DSurface: React.FC<DesktopGrid3DSurfaceProps> = ({
     };
 
     return (
-        <div className="w-full h-full min-h-0 flex flex-col justify-center relative">
+        <div data-ponder-page-scope="grid-page" className="w-full h-full min-h-0 flex flex-col justify-center relative">
             {!isLoading && (
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10">
                     <motion.button
@@ -151,7 +162,10 @@ export const DesktopGrid3DSurface: React.FC<DesktopGrid3DSurfaceProps> = ({
             )}
 
             {(actions.length > 0 || tabs.length > 0) && (
-                <div className="absolute top-2 right-4 z-10 flex max-w-[min(44rem,calc(50%-7rem))] flex-wrap items-center justify-end gap-2">
+                <div
+                    data-ponder={ponderControls}
+                    className="absolute top-2 right-4 z-10 flex max-w-[min(44rem,calc(50%-7rem))] flex-wrap items-center justify-end gap-2"
+                >
                     <AnimatePresence mode="wait">
                         {tabsExpanded ? (
                             <motion.div
@@ -240,6 +254,7 @@ export const DesktopGrid3DSurface: React.FC<DesktopGrid3DSurfaceProps> = ({
             )}
 
             <Grid3DSlider
+                key={focusMemoryScope}
                 items={visibleItems}
                 focusedIndex={visibleFocusedIndex}
                 onFocusedIndexChange={handleVisibleFocusedIndexChange}
@@ -286,6 +301,7 @@ export const DesktopGrid3DSurface: React.FC<DesktopGrid3DSurfaceProps> = ({
                         isPlaylistHidden={(item) => hiddenPlaylistIds.has(String(item.id))}
                         onTogglePlaylistHidden={togglePlaylistHidden}
                         batchConfig={batchConfig}
+                        ponderPageScope={gridMapPonderScope}
                     />
                 )}
             </AnimatePresence>

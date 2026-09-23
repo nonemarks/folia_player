@@ -21,6 +21,7 @@ import { getSizedCoverUrl } from '../../utils/coverUrl';
 import ErrorBoundary from '../shared/ErrorBoundary';
 import WhisperSettingsPanel from '../shared/WhisperSettingsPanel';
 import { isWhisperFeaturePresent } from '../../services/whisperModService';
+import { hasRenderableLyrics } from '../../utils/lyrics/validity';
 
 // src/components/modal/OnlineLyricMatchModal.tsx
 
@@ -194,7 +195,12 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
         try {
             const processed = await fetchLyricsForMatchSource(source, selectedResult);
 
-            if (processed && (processed.lyrics || processed.isPureMusic)) {
+            if (!processed || (!hasRenderableLyrics(processed.lyrics) && !processed.isPureMusic)) {
+                alert(t('localMusic.noLyricsAvailable'));
+                return;
+            }
+
+            if (processed) {
                 const previousState = await loadOnlineLyricsState(song);
                 const nextState: OnlineLyricsState = {
                     lyricsSource: 'online',
@@ -408,7 +414,11 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
 
                         {/* Lyric Preview Panel */}
                         <div className="w-full h-28 flex-shrink-0 mt-4 flex flex-col">
-                            <LyricPreviewPanel selectedResult={selectedResult} source={source} isDaylight={isDaylight} />
+                            <LyricPreviewPanel
+                                selectedResult={selectedResult}
+                                source={source}
+                                isDaylight={isDaylight}
+                            />
                         </div>
                     </div>
                     )}

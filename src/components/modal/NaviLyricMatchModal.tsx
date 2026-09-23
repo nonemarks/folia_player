@@ -23,6 +23,7 @@ import { getProviderSongMetadata } from '../../services/onlineMusic/songMetadata
 import ErrorBoundary from '../shared/ErrorBoundary';
 import WhisperSettingsPanel from '../shared/WhisperSettingsPanel';
 import { isWhisperFeaturePresent } from '../../services/whisperModService';
+import { hasRenderableLyrics } from '../../utils/lyrics/validity';
 
 export interface NavidromeMatchData {
     matchedSongId?: MediaId;
@@ -207,7 +208,10 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
         try {
             // Always fetch lyrics
             const processed = await fetchLyricsForMatchSource(source, selectedResult);
-            if (!processed) return;
+            if (!processed || (!hasRenderableLyrics(processed.lyrics) && !processed.isPureMusic)) {
+                alert(t('localMusic.noLyricsAvailable'));
+                return;
+            }
             const parsedLyrics: LyricData | null = processed ? processed.lyrics : null;
 
             const matchData: NavidromeMatchData = {
@@ -447,7 +451,11 @@ const NaviLyricMatchModal: React.FC<NaviLyricMatchModalProps> = ({ song, onClose
 
                         {/* Lyric Preview Panel */}
                         <div className="w-full h-28 flex-shrink-0 mt-4 flex flex-col">
-                            <LyricPreviewPanel selectedResult={selectedResult} source={source} isDaylight={isDaylight} />
+                            <LyricPreviewPanel
+                                selectedResult={selectedResult}
+                                source={source}
+                                isDaylight={isDaylight}
+                            />
                         </div>
                     </div>
                     )}
