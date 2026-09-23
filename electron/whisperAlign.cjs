@@ -102,9 +102,9 @@ function findWhisperCli() {
     const cliName = getWhisperCliName();
 
     // 0. Explicit override via the FOLIA_WHISPER_CLI env var. Lets a power user point the
-    //    app at a self-built GPU (CUDA/Vulkan) whisper-cli that the auto-installer cannot
-    //    provide — e.g. a CUDA 12.8+ build required for RTX 50-series/Blackwell (sm_120),
-    //    which the published cublas 11.8/12.4 Windows binaries do not support. Accepts
+    //    app at a custom GPU (CUDA/Vulkan) whisper-cli — e.g. a CUDA 12.8+ build required
+    //    for RTX 50-series/Blackwell (sm_120), which the published CUDA 12.4 binary may not
+    //    support. Accepts
     //    either a full path to the executable or a directory containing it.
     const override = process.env.FOLIA_WHISPER_CLI;
     if (override && override.trim()) {
@@ -1315,7 +1315,10 @@ function getPlatformAssetInfo() {
     const arch = process.arch;
 
     if (platform === 'win32' && arch === 'x64') {
-        return { pattern: /whisper-bin-x64\.zip$/, type: 'zip' };
+        // The CUDA archive contains whisper-cli.exe plus the cuBLAS/CUDA DLLs it needs.
+        // CUDA 12.4 is the latest x64 Windows binary published by whisper.cpp; newer GPUs
+        // that need CUDA 12.8+ can use FOLIA_WHISPER_CLI to point at a custom build.
+        return { pattern: /whisper-cublas-12\.4\.0-bin-x64\.zip$/, type: 'zip' };
     }
     if (platform === 'win32' && arch === 'arm64') {
         // No pre-built ARM64 Windows binary yet
@@ -1336,8 +1339,9 @@ function findWhisperAsset(release, assetInfo) {
 }
 
 function getNightlyReleaseTag(release) {
-    const match = release?.body?.match(/Nightly build:[^\n]*\/releases\/tag\/([^\s)]+)/i);
-    return match ? match[1] : null;
+    // GitHub may wrap the nightly URL across lines in the release body.
+    const match = release?.body?.match(/Nightly build:[\s\S]*?\/releases\/tag\/([^)]*)\)/i);
+    return match ? match[1].replace(/\s/g, '') : null;
 }
 
 /**
@@ -1910,7 +1914,7 @@ async function installWhisperCli(onProgress) {
 
         // 7. Update the global whisperCliPath. Re-resolve through findWhisperCli() so an
         //    explicit FOLIA_WHISPER_CLI override still wins over the freshly auto-installed
-        //    (CPU) build; otherwise fall back to what we just installed.
+        //    CUDA build; otherwise fall back to what we just installed.
         whisperCliPath = findWhisperCli() || targetPath;
 
         if (onProgress) onProgress({ status: 'installed', progress: 100, path: targetPath, version: release.tag_name });
