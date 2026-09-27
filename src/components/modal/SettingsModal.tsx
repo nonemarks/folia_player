@@ -22,6 +22,8 @@ import GeneralSettingsSubview from './settings/GeneralSettingsSubview';
 import IntegrationSettingsSubview from './settings/IntegrationSettingsSubview';
 import type { PlayerCapConnectionStatus } from '../../types/playerCap';
 import LabSettingsModal from './settings/LabSettingsModal';
+import GraphicsSettingsSubview from './settings/GraphicsSettingsSubview';
+import ModsSettingsSubview from './settings/ModsSettingsSubview';
 import DeveloperSettingsSubview from './settings/DeveloperSettingsSubview';
 import PlaybackSettingsSubview from './settings/PlaybackSettingsSubview';
 import InteractionSettingsSubview from './settings/InteractionSettingsSubview';
@@ -327,6 +329,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         handleResetNomandBackgroundTuning: onResetNomandBackgroundTuning,
         handleSetLatentBackgroundTuning: onLatentBackgroundTuningChange,
         handleResetLatentBackgroundTuning: onResetLatentBackgroundTuning,
+        handleSetSoraBackgroundTuning: onSoraBackgroundTuningChange,
+        handleResetSoraBackgroundTuning: onResetSoraBackgroundTuning,
         handleSetMonetTuning: onMonetTuningChange,
         handleResetMonetTuning: onResetMonetTuning,
         handleSetPendoloTuning: onPendoloTuningChange,
@@ -366,6 +370,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         monetBackgroundTuning,
         nomandBackgroundTuning,
         latentBackgroundTuning,
+        soraBackgroundTuning,
         monetTuning,
         pendoloTuning,
         sonnetTuning,
@@ -429,6 +434,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             initialSubview === 'integration' ||
             initialSubview === 'storage' ||
             initialSubview === 'desktop' ||
+            initialSubview === 'graphics' ||
+            initialSubview === 'mods' ||
             initialSubview === 'lab' ||
             initialSubview === 'globalLyricOffset' ||
             initialSubview === 'lyricFilter' ||
@@ -1351,7 +1358,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-hidden relative z-10">
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative z-10">
                     <AnimatePresence mode="popLayout" initial={false}>
                         {activeTab === 'help' ? (
                             <motion.div
@@ -1362,7 +1369,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 animate="center"
                                 exit="exit"
                                 transition={shellTransition}
-                                className="space-y-6 select-none h-full overflow-y-auto custom-scrollbar pr-2 pb-4"
+                                className="space-y-6 select-none flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 pb-4"
                             >
                                 <SettingsHelpActions
                                     onOpenReleaseNotes={() => setShowReleaseNotes(true)}
@@ -1808,11 +1815,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         {activeSettingsSection === 'desktop' && isElectron && (
                                             <DesktopSettingsSubview
                                                 chrome={{
-                                                    borderColor,
                                                     isDaylight,
                                                     isElectron,
                                                     settingsCardClass,
-                                                    settingsIconClass,
                                                     successTextColor,
                                                     theme,
                                                     toggleOffBackgroundClass,
@@ -1851,6 +1856,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     onToggleWallpaperMacAutohideDock,
                                                 }}
                                             />
+                                        )}
+                                        {activeSettingsSection === 'graphics' && (
+                                            <GraphicsSettingsSubview
+                                                isDaylight={isDaylight}
+                                                settingsCardClass={settingsCardClass}
+                                                toggleOffBackgroundClass={toggleOffBackgroundClass}
+                                                utilityGhostButtonClass={utilityGhostButtonClass}
+                                                rangeInputClass={rangeInputClass}
+                                                theme={theme}
+                                            />
+                                        )}
+                                        {activeSettingsSection === 'mods' && isElectron && (
+                                            <ModsSettingsSubview isDaylight={isDaylight} theme={theme} />
                                         )}
                                         {activeSettingsSection === 'lab' && (
                                             <LabSettingsModal
@@ -1925,6 +1943,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             monet: { tuning: monetBackgroundTuning },
                             nomand: { tuning: nomandBackgroundTuning },
                             latent: { tuning: latentBackgroundTuning },
+                            sora: { tuning: soraBackgroundTuning },
                             url: {
                                 items: urlBackgroundList,
                                 selectedId: urlBackgroundSelectedId,
@@ -1954,6 +1973,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             latent: {
                                 onTuningChange: onLatentBackgroundTuningChange,
                                 onResetTuning: onResetLatentBackgroundTuning,
+                            },
+                            sora: {
+                                onTuningChange: onSoraBackgroundTuningChange,
+                                onResetTuning: onResetSoraBackgroundTuning,
                             },
                             url: {
                                 onAdd: onAddUrlBackgroundItem,
@@ -2088,6 +2111,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             monet: { tuning: monetBackgroundTuning },
                             nomand: { tuning: nomandBackgroundTuning },
                             latent: { tuning: latentBackgroundTuning },
+                            sora: { tuning: soraBackgroundTuning },
                             url: {
                                 items: urlBackgroundList,
                                 selectedId: urlBackgroundSelectedId,

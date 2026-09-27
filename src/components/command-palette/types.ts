@@ -74,6 +74,12 @@ export type CommandPaletteCommand = {
     getPreview?: (input: string, context: CommandPaletteContext) => string | null;
     queueIndex?: number;
     queueSong?: SongResult;
+    /**
+     * Where in the options tab this command lands, set by the settings factories. The settings
+     * sidebar search reads it to reuse the command's titles, synonyms and pinyin as extra ways to
+     * find that section.
+     */
+    settingsTarget?: { subview: SettingsSubviewId; anchorId?: SettingsAnchorId };
     execute: (input: string, context: CommandPaletteContext) => Promise<boolean> | boolean;
 };
 
@@ -315,9 +321,15 @@ export type CommandPaletteVisualizerContext = {
     visualizerBackgroundMode: VisualizerBackgroundMode | null;
     setVisualizerMode: (mode: VisualizerMode) => void;
     toggleRandomVisualizerModePerSong: () => void;
+    /** Lab > Fix lyric animation freeze on Linux: the Linux renderer fd leak workaround. */
+    toggleGlowBlurQuantize: () => void;
     setVisualizerBackgroundMode: (mode: VisualizerBackgroundMode) => void;
     setMonetBackgroundTuning: (patch: Partial<MonetBackgroundTuning>) => void;
     setLatentBackgroundTuning: (patch: Partial<LatentBackgroundTuning>) => void;
+    /** The built-in video layer behind the lyrics. */
+    toggleVideoLayer: () => void;
+    /** Opens the file picker for the video layer; resolves to the picked name, or null when cancelled. */
+    pickVideoLayerFile: () => Promise<string | null>;
     /**
      * Whether the active mode builds its typography from whole-line word segmentation. Resolved
      * from the registry by the context builder rather than read here: the command modules are

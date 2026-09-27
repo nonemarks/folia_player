@@ -323,7 +323,8 @@
       "avatar_url": "https://avatars.githubusercontent.com/u/63525418?v=4",
       "profile": "https://github.com/xinjiu-qwq",
       "contributions": [
-        "ideas"
+        "ideas",
+        "code"
       ]
     },
     {
@@ -597,6 +598,15 @@
       "profile": "https://github.com/qingyueyin",
       "contributions": [
         "ideas"
+      ]
+    },
+    {
+      "login": "linx3141",
+      "name": "霖夕Linx",
+      "avatar_url": "https://avatars.githubusercontent.com/u/198794512?v=4",
+      "profile": "https://github.com/linx3141",
+      "contributions": [
+        "bug"
       ]
     }
   ],

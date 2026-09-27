@@ -73,7 +73,7 @@ export async function isWhisperModAvailable(): Promise<boolean> {
  * Check if the mod system itself is available (even if whisper-align mod isn't enabled).
  */
 export function isModSystemAvailable(): boolean {
-    return !!window.electron?.mods?.invokeModCommand;
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,15 +81,9 @@ export function isModSystemAvailable(): boolean {
 // ---------------------------------------------------------------------------
 
 async function invokeCommand<T = unknown>(commandId: string, params: Record<string, unknown> = {}): Promise<ModCommandResult<T>> {
-    if (!window.electron?.mods?.invokeModCommand) {
-        return { ok: false, error: 'mod-system-not-available' };
-    }
-    try {
-        const result = await window.electron.mods.invokeModCommand(MOD_ID, commandId, params);
-        return result as ModCommandResult<T>;
-    } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    void commandId;
+    void params;
+    return { ok: false, error: 'mod-system-not-available' };
 }
 
 // ---------------------------------------------------------------------------

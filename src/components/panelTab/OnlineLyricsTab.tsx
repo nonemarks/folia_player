@@ -1,9 +1,10 @@
-import React, { useMemo, useRef, useCallback, useEffect } from 'react';
+import React, { useMemo, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Search, Upload, RotateCcw } from 'lucide-react';
+import { FileText, Search, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { OnlineLyricsState, ReplayGainMode, SongResult, LyricData } from '../../types';
 import LyricTimelineOffsetControl from './LyricTimelineOffsetControl';
+import LyricFileButton from './LyricFileButton';
 import ReplayGainControl from './ReplayGainControl';
 import { getLyricProviderLabel, getSongNativeLyricProviderSource } from '../../utils/lyrics/lyricSourceLabels';
 import WhisperAlignButton from '../shared/WhisperAlignButton';
@@ -42,7 +43,6 @@ const OnlineLyricsTab: React.FC<OnlineLyricsTabProps> = ({
     onSetLyrics,
 }) => {
     const { t } = useTranslation();
-    const inputRef = useRef<HTMLInputElement>(null);
 
     const activeTabBg = isDaylight ? 'bg-blue-500/15 text-blue-600' : 'bg-blue-500/20 text-blue-300';
     const tabContainerBg = isDaylight ? 'bg-black/5' : 'bg-white/5';
@@ -118,19 +118,10 @@ const OnlineLyricsTab: React.FC<OnlineLyricsTabProps> = ({
                         )}
                     </div>
                     <div className="flex items-center gap-1">
-                        <button
-                            onClick={() => inputRef.current?.click()}
-                            className={`p-1 rounded-md transition-all opacity-40 hover:opacity-100 ${isDaylight ? 'hover:bg-black/5' : 'hover:bg-white/5'}`}
-                            title={t('localMusic.importLyricsFile')}
-                        >
-                            <Upload size={14} />
-                        </button>
-                        <input
-                            type="file"
-                            accept=".lrc,.vtt,.ttml,.qrc,.yrc,.krc,.txt"
-                            ref={inputRef}
-                            className="hidden"
-                            onChange={handleImport}
+                        <LyricFileButton
+                            isDaylight={isDaylight}
+                            onImportChange={handleImport}
+                            buttonClassName={`p-1 rounded-md transition-all opacity-40 hover:opacity-100 ${isDaylight ? 'hover:bg-black/5' : 'hover:bg-white/5'}`}
                         />
                         <button
                             onClick={onMatchOnlineLyrics}

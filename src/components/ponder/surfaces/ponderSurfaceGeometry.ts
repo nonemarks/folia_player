@@ -156,14 +156,19 @@ export const GRID_VIEW_GEOMETRY = {
     filter: { left: 0.22, right: 0.22, top: 0.08, height: 0.11 },
 } satisfies Record<string, PonderRelativeRect>;
 
-/** 本地 Grid3D 右上角的分类切换与导入维护操作。 */
+/**
+ * 本地 Grid3D 顶栏：居中的是顶部视图胶囊的第二层（「全部」、分隔线、分类），右侧是导入维护操作。
+ * 分类里当前的「文件夹」带文字、较宽，其余三个只有图标，所以「歌单」是最右那一格窄的。
+ */
 export const LOCAL_GRID_CONTROLS_GEOMETRY = {
-    tabs: { left: 0.03, top: 0.18, width: 0.52, height: 0.32 },
-    folders: { left: 0.03, top: 0.18, width: 0.13, height: 0.32 },
-    playlists: { left: 0.42, top: 0.18, width: 0.13, height: 0.32 },
-    imports: { left: 0.58, top: 0.18, right: 0.03, height: 0.32 },
-    refresh: { left: 0.75, top: 0.18, width: 0.09, height: 0.32 },
-    playlistImport: { right: 0.03, top: 0.56, width: 0.18, height: 0.28 },
+    capsule: { left: 0.14, top: 0.18, width: 0.42, height: 0.32 },
+    map: { left: 0.15, top: 0.2, width: 0.1, height: 0.28 },
+    tabs: { left: 0.275, top: 0.18, width: 0.285, height: 0.32 },
+    folders: { left: 0.28, top: 0.2, width: 0.12, height: 0.28 },
+    playlists: { left: 0.505, top: 0.2, width: 0.05, height: 0.28 },
+    imports: { left: 0.6, top: 0.18, right: 0.03, height: 0.32 },
+    refresh: { left: 0.77, top: 0.18, width: 0.09, height: 0.32 },
+    playlistImport: { left: 0.88, top: 0.18, right: 0.03, height: 0.32 },
 } satisfies Record<string, PonderRelativeRect>;
 
 /** GridView 在线集合信息面板底部的通用与来源专属动作。 */
@@ -256,6 +261,19 @@ export const SIDE_PANEL_SOURCE_PAGE = {
     gain: { left: 0, right: 0, top: 0.28, height: 0.22 },
     lyrics: { left: 0, right: 0, top: 0.56, height: 0.28 },
     offset: { left: 0, right: 0, top: 0.89, height: 0.11 },
+    /** 按下歌词行那颗导入 / 导出之后弹出的歌词文件窗口：导入、导出这一首、批量导出三段。 */
+    fileDialog: { left: 0.04, right: 0.04, top: 0.14, height: 0.8 },
+} satisfies Record<string, PonderRelativeRect>;
+
+/**
+ * 歌词那一块标题行右端的两颗图标，坐标系是歌词块（SIDE_PANEL_SOURCE_PAGE.lyrics）。
+ *
+ * 左边那颗是导入 / 导出（两件事合在一颗按钮、一个窗口里），右边是在线匹配。单独量出来
+ * 而不是交给 flex 排，是因为锚点要指的就是左边那颗：骨架和锚点读同一条记录，高亮才罩得准。
+ */
+export const SIDE_PANEL_SOURCE_LYRICS = {
+    fileIcon: { right: 0.1, top: 0, width: 0.1, height: 0.3 },
+    matchIcon: { right: 0, top: 0, width: 0.1, height: 0.3 },
 } satisfies Record<string, PonderRelativeRect>;
 
 /**
@@ -284,6 +302,16 @@ export const SIDE_PANEL_CONTROLS_PAGE = {
      */
     modeList: { left: 0.04, right: 0.04, top: 0.53, bottom: 0.02 },
     modeListFooter: { left: 0.04, right: 0.04, bottom: 0.02, height: 0.11 },
+} satisfies Record<string, PonderRelativeRect>;
+
+/**
+ * 队列页里的一块，坐标系是 body。
+ *
+ * 队列页是 flex 排的：顶上一行占 body 高的 12%，打乱按钮是那一行最右端的图标。
+ * 这里只圈出它所在的那一角，给「队列面板上也能打乱」那一章指过去。
+ */
+export const SIDE_PANEL_QUEUE_PAGE = {
+    shuffle: { right: 0, top: 0, width: 0.12, height: 0.12 },
 } satisfies Record<string, PonderRelativeRect>;
 
 /**
@@ -406,6 +434,25 @@ export const QUEUE_COMMAND_GEOMETRY = {
     /** 收窄之后行变少，底下腾出来给批量预览。 */
     narrowedRows: { left: 0.04, right: 0.04, top: 0.34, bottom: 0.24 },
     preview: { left: 0.04, right: 0.04, bottom: 0.05, height: 0.16 },
+} satisfies Record<string, PonderRelativeRect>;
+
+/**
+ * 命令面板里「导出歌词缓存」那一页，坐标系是命令窗口。
+ *
+ * 顶上是输入行，下面一段说明，然后按「导哪些 → 导成什么 → 文件怎么命名」排成三节，
+ * 每节一个小标题；前两节是并排两张可多选的卡，LRC 的附带项缩在格式那一节右下。
+ * 开始按钮不在滚动区里，钉在窗口底边那条操作栏上。
+ */
+export const LYRIC_EXPORT_GEOMETRY = {
+    input: { left: 0.04, right: 0.04, top: 0.03, height: 0.10 },
+    /** 滚动区：三节内容所在的那一整块。 */
+    card: { left: 0.10, right: 0.10, top: 0.16, bottom: 0.13 },
+    copy: { left: 0.12, right: 0.12, top: 0.17, height: 0.05 },
+    scope: { left: 0.12, right: 0.12, top: 0.25, height: 0.18 },
+    formats: { left: 0.12, right: 0.12, top: 0.46, height: 0.25 },
+    names: { left: 0.12, right: 0.12, top: 0.74, height: 0.11 },
+    /** 底边操作栏：左边进度文字，右边开始 / 取消。 */
+    run: { left: 0, right: 0, bottom: 0, height: 0.10 },
 } satisfies Record<string, PonderRelativeRect>;
 
 /**

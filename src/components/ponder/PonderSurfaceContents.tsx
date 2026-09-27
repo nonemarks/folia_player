@@ -10,6 +10,7 @@ import PonderSidePanelSurface from './surfaces/PonderSidePanelSurface';
 import PonderOnboardingSurface from './surfaces/PonderOnboardingSurface';
 import PonderDesktopFeaturesSurface from './surfaces/PonderDesktopFeaturesSurface';
 import PonderQueueCommandSurface from './surfaces/PonderQueueCommandSurface';
+import PonderLyricExportSurface from './surfaces/PonderLyricExportSurface';
 import {
     PonderGridHotkeySurface,
     PonderLibraryWatchSurface,
@@ -254,7 +255,9 @@ const PageContents: React.FC<{
 
 const PonderSurfaceContents: React.FC<PonderSurfaceContentsProps> = ({ kind, accent, line, outline, registerStateNode }) => {
     const resolvedKind = kind ?? 'palette';
-    const contents = resolvedKind === 'player-bar'
+    const contents = resolvedKind === 'plain'
+        ? null
+        : resolvedKind === 'player-bar'
         ? <PonderPlayerBarSurface accent={accent} line={line} outline={outline} registerStateNode={registerStateNode} />
         : isPageSurfaceKind(resolvedKind)
         ? <PageContents kind={resolvedKind} line={line} outline={outline} accent={accent} registerStateNode={registerStateNode} />
@@ -298,6 +301,8 @@ const PonderSurfaceContents: React.FC<PonderSurfaceContentsProps> = ({ kind, acc
         ? <PonderThemeParkSurface accent={accent} line={line} outline={outline} registerStateNode={registerStateNode} />
         : resolvedKind === 'queue-command'
         ? <PonderQueueCommandSurface accent={accent} line={line} outline={outline} registerStateNode={registerStateNode} />
+        : resolvedKind === 'lyric-export'
+        ? <PonderLyricExportSurface accent={accent} line={line} outline={outline} registerStateNode={registerStateNode} />
         : resolvedKind === 'desktop-features'
         ? <PonderDesktopFeaturesSurface accent={accent} line={line} outline={outline} registerStateNode={registerStateNode} />
         : resolvedKind === 'ponder-onboarding'

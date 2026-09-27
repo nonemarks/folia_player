@@ -34,6 +34,7 @@ import {
     requireOnlineMusicProvider,
 } from './providerRegistry';
 import { saveProviderAccountSnapshot } from './providerAccountCache';
+import { applyOmniAudioHook, applyOmniLyricsHook } from '../hostExtensionHooks';
 
 // src/services/onlineMusic/omni.ts
 // Online Music Network Interface (Omni) - a unified interface for interacting with multiple online music providers.
@@ -228,6 +229,15 @@ export const omni = {
     // 没有这个能力就静默 no-op：netease / kugou 的扫码流程完全不受影响。
     async cancelQrLogin(providerId: OmniProviderId, key: string): Promise<void> {
         await requireOnlineMusicProvider(providerId).auth?.cancelQr?.(key);
+    },
+
+    // 诊断是失败之后的补救手段，自己不能再失败：provider 没实现就回空，抛错就把错误写进报告。
+    async getQrLoginDiagnostics(providerId: OmniProviderId): Promise<string[]> {
+        try {
+            return await requireOnlineMusicProvider(providerId).auth?.getQrLoginDiagnostics?.() ?? [];
+        } catch (error) {
+            return [`provider diagnostics unavailable: ${error instanceof Error ? error.message : String(error)}`];
+        }
     },
 
     // 只有明确声明了二维码寿命的 provider 才由前端计时；其余照旧只认后端报出的过期状态。
@@ -446,7 +456,8 @@ export const omni = {
         // may be the one that happens to see it. See getCachedSongReplayGain for what is lost
         // otherwise: the URL is never fetched again once the bytes are cached.
         if (source?.replayGain) void saveSongReplayGain(song, source.replayGain);
-        return source;
+        // Extension layers (Folium omni hooks) may swap the URL; the ReplayGain above stays the provider's.
+        return applyOmniAudioHook(song, source);
     },
 
     // Asked once per track, including for local and Navidrome songs, so an unsupported source is a
@@ -467,10 +478,12 @@ export const omni = {
         if (!provider.lyrics) return unsupported(provider.id, 'lyrics');
         const providerUserId = useOnlineProviderAccountStore.getState().accounts[provider.id]?.user?.id ?? context?.userId;
         const providerResult = await provider.lyrics.getLyrics(song, { ...context, userId: providerUserId });
-        return (await resolveProviderLyricsChorus(providerResult, {
+        const resolved = (await resolveProviderLyricsChorus(providerResult, {
             providerId: provider.id,
             songId: song.id,
         })).result;
+        // Extension layers (Folium omni hooks) may rewrite the lyrics after the provider answered.
+        return applyOmniLyricsHook(song, resolved);
     },
 
     async getChorusRanges(song: SongResult): Promise<OmniChorusRange[]> {
