@@ -19,7 +19,7 @@ type AppDialogsProps = {
 
 const AppDialogs: React.FC<AppDialogsProps> = ({ model }) => {
     countRender('AppDialogs');
-    const { statusToast, lyricMatchDialog, naviLyricMatchDialog, onlineLyricMatchDialog, unavailableReplacementDialog, settingsDialog, providerSwitchConfirmDialog } = model;
+    const { statusToast, lyricMatchDialog, naviLyricMatchDialog, onlineLyricMatchDialog, unavailableReplacementDialog, settingsDialog, providerSwitchConfirmDialog, wallpaperEntryConfirmDialog } = model;
 
     return (
         <>
@@ -81,6 +81,7 @@ const AppDialogs: React.FC<AppDialogsProps> = ({ model }) => {
             )}
             {unavailableReplacementDialog && <UnavailableReplacementDialog {...unavailableReplacementDialog} />}
             {providerSwitchConfirmDialog && <ConfirmDialog {...providerSwitchConfirmDialog} />}
+            {wallpaperEntryConfirmDialog && <ConfirmDialog {...wallpaperEntryConfirmDialog} />}
             <AnimatePresence>
                 {settingsDialog && (
                     <ErrorBoundary>

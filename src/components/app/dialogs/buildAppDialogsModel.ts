@@ -34,6 +34,7 @@ export type AppDialogsModel = {
     unavailableReplacementDialog?: UnavailableReplacementDialogProps | null;
     settingsDialog?: SettingsDialogProps | null;
     providerSwitchConfirmDialog?: ConfirmDialogProps | null;
+    wallpaperEntryConfirmDialog?: ConfirmDialogProps | null;
 };
 
 // What this file can read for itself, so the caller never names it. See useAppDialogsModel below.
@@ -41,6 +42,7 @@ type AppDialogsAmbient = {
     statusMsg: StatusMessage | null;
     isDaylight: boolean;
     currentSong: SongResult | null;
+    wallpaperEntryConfirmDialog: ConfirmDialogProps;
 };
 
 export type AppDialogsDeps = {
@@ -75,6 +77,7 @@ export const buildAppDialogsModel = ({
     showNaviLyricMatchModal,
     showOnlineLyricMatchModal,
     currentSong,
+    wallpaperEntryConfirmDialog,
     localSongs,
     setShowLyricMatchModal,
     setShowNaviLyricMatchModal,
@@ -151,4 +154,5 @@ export const buildAppDialogsModel = ({
     settingsDialog,
     providerSwitchConfirmDialog,
     };
-};
+    wallpaperEntryConfirmDialog,
+});
