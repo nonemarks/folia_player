@@ -154,5 +154,5 @@ export const buildAppDialogsModel = ({
     settingsDialog,
     providerSwitchConfirmDialog,
     wallpaperEntryConfirmDialog,
-};
+    };
 };

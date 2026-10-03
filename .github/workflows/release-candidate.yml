@@ -157,6 +157,8 @@ jobs:
           NODE
 
       - name: Install dependencies
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
         run: npm ci
 
       - name: Install Rust toolchain
