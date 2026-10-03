@@ -109,6 +109,10 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Ensure windowtolayer workspace exists
+        if: runner.os == 'Linux'
+        run: mkdir -p .windowtolayer-src
+
       - name: Cache Cargo build
         if: runner.os == 'Linux'
         uses: Swatinem/rust-cache@v2
