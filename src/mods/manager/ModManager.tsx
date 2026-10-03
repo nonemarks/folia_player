@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, Boxes, CheckSquare, CircleCheck, ExternalLink, FolderOpen, Power, RefreshCw, Store, TriangleAlert, Upload, X } from 'lucide-react';
+import { AlertCircle, Boxes, CheckSquare, CircleCheck, FolderOpen, Power, RefreshCw, Store, TriangleAlert, Upload, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Theme } from '@/types';
 import { DEFAULT_THEME } from '@/services/baseThemes';
@@ -8,6 +8,7 @@ import { useModsStore } from '../useModsStore';
 import { FOLIUM_VERSION } from '../folium/contract';
 import { useDesktopSettingsStore } from '../../stores/useDesktopSettingsStore';
 import { ModListItem, translateModError } from './ModListItem';
+import ModMarket from './ModMarket';
 import type { ModManagerClasses } from './modManagerClasses';
 
 // src/mods/manager/ModManager.tsx
@@ -22,16 +23,6 @@ type ModManagerProps = {
 };
 
 type Notice = { kind: 'ok' | 'error'; text: string };
-
-/** Where mods are published; linked from the toolbar and from the switched-off placeholder. */
-export const MOD_MARKET_URL = 'https://folium-compound.cielaniska.top/';
-
-/** On desktop a plain link would open inside the app window; hand it to the system browser instead. */
-const openLinkExternally = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (!window.electron?.openExternalUrl) return;
-    event.preventDefault();
-    void window.electron.openExternalUrl(event.currentTarget.href);
-};
 
 export const ModManager: React.FC<ModManagerProps> = ({ classes, isDaylight, theme }) => {
     const { t } = useTranslation();
@@ -55,6 +46,7 @@ export const ModManager: React.FC<ModManagerProps> = ({ classes, isDaylight, the
     const [isDragging, setIsDragging] = useState(false);
     const [installing, setInstalling] = useState(false);
     const [notice, setNotice] = useState<Notice | null>(null);
+    const [showMarket, setShowMarket] = useState(false);
     // Drag event depth counter: dragenter/dragleave fire per child element crossed,
     // so a plain boolean would flicker the overlay. Counting balances across the
     // whole panel; combined with pointer-events-none on the overlay it stays steady.
@@ -172,18 +164,15 @@ export const ModManager: React.FC<ModManagerProps> = ({ classes, isDaylight, the
     const toolbarButtonClass = `inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40`;
 
     const marketLink = (
-        <a
-            href={MOD_MARKET_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={openLinkExternally}
+        <button
+            type="button"
+            onClick={() => setShowMarket(true)}
             className={`${toolbarButtonClass} ${classes.ghostButton}`}
             style={{ color: 'var(--text-primary)' }}
         >
             <Store size={12} />
             {t('mods.market')}
-            <ExternalLink size={11} className="opacity-50" />
-        </a>
+        </button>
     );
 
     if (!bridgeAvailable) {
@@ -214,6 +203,7 @@ export const ModManager: React.FC<ModManagerProps> = ({ classes, isDaylight, the
             onDragLeave={handleDragLeave}
             onDrop={handleDropZip}
         >
+            {showMarket ? <ModMarket classes={classes} isDaylight={isDaylight} theme={theme} canInstall={canInstall} onClose={() => setShowMarket(false)} /> : null}
             {isDragging ? (
                 <motion.div
                     initial={{ opacity: 0 }}

@@ -962,6 +962,7 @@ declare global {
         getFfmpegStatus: () => Promise<{ ffmpeg: ModFfmpegStatus }>;
         openModsDirectory: () => Promise<{ ok: boolean; directory?: string; error?: string }>;
         installModFromZip: (zipPath: string) => Promise<{ ok: boolean; id?: string; error?: string }>;
+        downloadMarketMod: (payload: { url: string; sha256: string; fileName: string }) => Promise<{ ok: boolean; id?: string; error?: string }>;
         onModsStateChanged: (callback: (mods: ModRuntimeInfo[]) => void) => () => void;
         onExportProgress: (callback: (progress: ModExportProgress) => void) => () => void;
         onModLog: (callback: (entry: ModLogEntry) => void) => () => void;

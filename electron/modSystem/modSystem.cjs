@@ -20,6 +20,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { dialog, ipcMain, protocol, shell } = require('electron');
 const Store = require('electron-store').default || require('electron-store');
@@ -37,6 +38,7 @@ const { attachModProtocolHandler } = require('./modProtocol.cjs');
 const SETTINGS_NAMESPACE = 'mods';
 const EXPORT_PERMISSION = 'render.export';
 const NET_FETCH_PERMISSION = 'net.fetch';
+const MOD_MARKET_ORIGIN = 'https://folium-compound.cielaniska.top';
 
 // folium.net.fetch limits: a mod fetches small JSON/text, not downloads.
 const NET_FETCH_LIMITS = {
@@ -158,6 +160,7 @@ const IPC = {
     ffmpegStatus: 'folia-mods:ffmpeg-status',
     openDirectory: 'folia-mods:open-directory',
     installZip: 'folia-mods:install-zip',
+    marketDownload: 'folia-mods:market-download',
     fStateChanged: 'folia-mods:state-changed',
     fExportProgress: 'folia-mods:export-progress',
     fLog: 'folia-mods:log',
@@ -1304,6 +1307,30 @@ const createModSystem = ({ app, BrowserWindow, getMainWindow, getLocaleKey, isFe
         }
     };
 
+    // Download only catalog-declared archives from the official market, verify their digest,
+    // then reuse the normal staged installer and trust flow.
+    const downloadMarketMod = async ({ url, sha256, fileName }) => {
+        if (!isModSystemEnabled()) return { ok: false, error: 'mod-system-disabled' };
+        if (typeof url !== 'string' || !url.startsWith('/downloads/')) return { ok: false, error: 'market-invalid-url' };
+        if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(sha256)) return { ok: false, error: 'market-invalid-digest' };
+        const safeName = typeof fileName === 'string' && /^[a-zA-Z0-9._-]+\.zip$/.test(fileName) ? fileName : path.basename(url);
+        if (!/^[a-zA-Z0-9._-]+\.zip$/.test(safeName)) return { ok: false, error: 'market-invalid-file-name' };
+
+        const response = await fetch(`${MOD_MARKET_ORIGIN}${url}`, { redirect: 'follow' });
+        if (!response.ok) return { ok: false, error: `market-download-http-${response.status}` };
+        const bytes = Buffer.from(await response.arrayBuffer());
+        const actualDigest = crypto.createHash('sha256').update(bytes).digest('hex');
+        if (actualDigest.toLowerCase() !== sha256.toLowerCase()) return { ok: false, error: 'market-digest-mismatch' };
+
+        const tempPath = path.join(os.tmpdir(), `folia-market-${Date.now()}-${safeName}`);
+        fs.writeFileSync(tempPath, bytes, { mode: 0o600 });
+        try {
+            return await installModFromZip(tempPath);
+        } finally {
+            try { fs.unlinkSync(tempPath); } catch {}
+        }
+    };
+
     const notifyStateChanged = () => sendToRenderer(IPC.fStateChanged, listMods());
 
     const probeFfmpeg = () => {
@@ -1374,6 +1401,7 @@ const createModSystem = ({ app, BrowserWindow, getMainWindow, getLocaleKey, isFe
         handle(IPC.ffmpegStatus, async () => ({ ffmpeg: await probeFfmpeg() }));
         handle(IPC.openDirectory, () => openModsDirectory());
         handle(IPC.installZip, (_event, zipPath) => installModFromZip(zipPath));
+        handle(IPC.marketDownload, (_event, payload) => downloadMarketMod(payload));
     };
 
     const dispose = () => {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BarChart3, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
@@ -7,6 +7,7 @@ import WhisperAutoAlignToggle from '../../shared/WhisperAutoAlignToggle';
 import WhisperModelSelector from '../../shared/WhisperModelSelector';
 import WhisperLanguageSelector from '../../shared/WhisperLanguageSelector';
 import WhisperVocalSeparationToggle from '../../shared/WhisperVocalSeparationToggle';
+import { isWhisperFeaturePresent } from '../../../services/whisperModService';
 
 // src/components/modal/settings/WhisperSettingsModal.tsx
 // Whisper 独立设置页：环境检测、模型选择、自动对齐开关。
@@ -37,6 +38,17 @@ const WhisperSettingsModal: React.FC<WhisperSettingsModalProps> = ({
     onClose,
 }) => {
     const { t } = useTranslation();
+    const [whisperModLoaded, setWhisperModLoaded] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        let active = true;
+        isWhisperFeaturePresent().then((available) => {
+            if (active) setWhisperModLoaded(available);
+        });
+        return () => { active = false; };
+    }, []);
+
+    if (whisperModLoaded !== true) return null;
 
     const glassBg = isDaylight ? 'bg-white/70' : 'bg-black/40';
     const borderColor = isDaylight ? 'border-black/5' : 'border-white/10';

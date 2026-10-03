@@ -9,6 +9,7 @@ import type { AudioQualityPreference } from '../types/onlineMusic';
 import { getCacheEntriesByPrefix, getCacheKeysByPrefix, getFromCache, removeFromCache, removeCacheEntriesByPrefix, saveToCache } from './db';
 import { useWhisperSettingsStore } from '../stores/useWhisperSettingsStore';
 import { detectLyricLanguage } from '../utils/lyrics/detectLyricLanguage';
+import { fetchAudioViaMod, isWhisperModAvailable, prepareAudioViaMod, transcribeViaMod } from './whisperModService';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,10 +104,10 @@ async function getOnlineSongAudioBlob(song: { id: string | number; name?: string
                 console.log(`[WhisperAlign] Got audio URL from provider, fetching...`);
 
                 // Use IPC to fetch audio in main process (bypasses CORS)
-                if (window.electron?.whisperAlignFetchAudio) {
+                if (await isWhisperModAvailable()) {
                     console.log(`[WhisperAlign] Using main-process fetch (CORS-safe)`);
                     try {
-                        const result = await window.electron.whisperAlignFetchAudio(source.url);
+                        const result = await fetchAudioViaMod(source.url);
                         if (result?.data && result.data.byteLength > 0) {
                             console.log(`[WhisperAlign] Fetched audio via IPC: ${result.data.byteLength} bytes, type: ${result.mimeType}`);
                             return { data: result.data, mimeType: result.mimeType };
@@ -465,6 +466,12 @@ export async function alignLyricsWithWhisper(
         force?: boolean;
     },
 ): Promise<LyricData | null> {
+    if (!(await isWhisperModAvailable())) {
+        throw new Error('Whisper mod is not enabled.');
+    }
+    if (!(await isWhisperModAvailable())) {
+        throw new Error('Whisper mod is not enabled.');
+    }
     const { language, model, onProgress, force } = options || {};
 
     // Resolve the transcription language once, here at the single convergence point for all five
@@ -581,12 +588,14 @@ export async function alignLyricsWithWhisper(
         if (!audioPath) {
             console.log(`[WhisperAlign] No local file path, trying online audio sources for song ${song.id}`);
             const audioResult = await getOnlineSongAudioBlob(song);
-            if (audioResult && audioResult.data && audioResult.data.byteLength > 0 && window.electron?.whisperAlignPrepareAudio) {
+            if (audioResult && audioResult.data && audioResult.data.byteLength > 0 && await isWhisperModAvailable()) {
                 const mimeType = audioResult.mimeType || 'audio/mpeg';
-                audioPath = await window.electron.whisperAlignPrepareAudio(audioResult.data, mimeType);
+                const prepared = await prepareAudioViaMod(audioResult.data, mimeType, jobId);
+                audioPath = prepared?.path ?? null;
                 console.log(`[WhisperAlign] Prepared audio file: ${audioPath}`);
-            } else if (audioResult && audioResult.data && audioResult.data.byteLength > 0 && !window.electron?.whisperAlignPrepareAudio) {
-                console.error(`[WhisperAlign] whisperAlignPrepareAudio IPC not available (not in Electron?)`);
+            } else if (audioResult && audioResult.data && audioResult.data.byteLength > 0) {
+                console.error(`[WhisperAlign] Whisper mod is not available for audio preparation`);
+                audioFailureReason = 'Whisper mod is not enabled';
                 audioFailureReason = 'IPC not available';
             } else {
                 // Build detailed failure reason from the failures array
@@ -613,13 +622,14 @@ export async function alignLyricsWithWhisper(
         // Step 2: Run Whisper transcription
         updateJob({ status: 'transcribing', progress: 10 });
 
-        const whisperResult: WhisperResult = await window.electron!.whisperAlignTranscribe!(audioPath, {
+        const whisperResult = await transcribeViaMod({
+            audioPath,
             model: model || 'base',
             language: effectiveLanguage,
             jobId,
             vocalSeparation,
             vocalSeparationGpu,
-        });
+        }) as WhisperResult;
 
         if ((whisperResult as any).cancelled) {
             updateJob({ status: 'cancelled', progress: 0 });

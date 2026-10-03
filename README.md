@@ -189,9 +189,15 @@ Vercel 与 Cloudflare 上的 QQ 音乐不再需要额外部署一个常驻 API �
 
 ### 直接下载
 
-- **Windows / macOS / Linux**: 最新版本的安装包请前往 [Releases 页面](https://github.com/chthollyphile/folia-major/releases/latest) 下载。
+- **Windows / macOS / Linux**: 最新版本的安装包请前往本 Fork 的 [Releases 页面](https://github.com/nonemarks/folia_player/releases/latest) 下载。
 - **Arch Linux**: 可通过 AUR 获取 [folia-major-bin](https://aur.archlinux.org/packages/folia-major-bin)。
 - **Flatpak**: 社区提供的第三方 flatpak，详情见 [Flatpark](https://flatpark.org/apps/top.izuna.foliamajor/)。
+
+### 发布渠道
+
+- **Stable**：`main` 分支上的 `realeco-release`、`package.json` 版本和发布提交信息一致时，由 GitHub Actions 构建桌面安装包并创建 Release。
+- **Pre-release**：通过 GitHub Actions 手动运行 Release Candidate、Nightly 或 Canary 工作流构建预发布版本。
+- README 或普通源码改动不会直接触发 Stable Release；发布前请先确认对应工作流的触发条件和版本校验。
 
 
 

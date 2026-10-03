@@ -243,12 +243,34 @@ async function cmdFetchAudio(params) {
     };
 }
 
+async function cmdInvoke(commandId, params = {}) {
+    const handlers = {
+        'check-status': cmdCheckStatus,
+        'list-models': cmdListModels,
+        'download-model': cmdDownloadModel,
+        'get-download-progress': cmdGetDownloadProgress,
+        'install-cli': cmdInstallCli,
+        'get-cli-install-progress': cmdGetCliInstallProgress,
+        'install-ffmpeg': cmdInstallFfmpeg,
+        'get-ffmpeg-install-progress': cmdGetFfmpegInstallProgress,
+        'transcribe': cmdTranscribe,
+        'cancel-transcription': cmdCancelTranscription,
+        'get-transcription-status': cmdGetTranscriptionStatus,
+        'prepare-audio': cmdPrepareAudio,
+        'fetch-audio': cmdFetchAudio,
+    };
+    const handler = handlers[commandId];
+    if (!handler) throw new Error(`Unknown Whisper command: ${commandId}`);
+    return handler(params);
+}
+
 // ---------------------------------------------------------------------------
 // Mod entry point
 // ---------------------------------------------------------------------------
 
 module.exports = function activate(api) {
     api.log.info('whisper-align mod loaded');
+    api.rpc.handle('command', cmdInvoke);
 
     // Register all commands
     api.commands.register({

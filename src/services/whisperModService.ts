@@ -1,6 +1,6 @@
 // src/services/whisperModService.ts
 // Service layer for communicating with the whisper-align mod via the mod command system.
-// Falls back to direct IPC when the mod is not available (backward compatibility).
+// Keeps the Whisper feature behind the whisper-align mod boundary.
 
 import type { WhisperAvailabilityDetail } from './whisperAlignService';
 
@@ -73,7 +73,7 @@ export async function isWhisperModAvailable(): Promise<boolean> {
  * Check if the mod system itself is available (even if whisper-align mod isn't enabled).
  */
 export function isModSystemAvailable(): boolean {
-    return false;
+    return !!window.electron?.mods?.invokeModRpc;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,9 +81,13 @@ export function isModSystemAvailable(): boolean {
 // ---------------------------------------------------------------------------
 
 async function invokeCommand<T = unknown>(commandId: string, params: Record<string, unknown> = {}): Promise<ModCommandResult<T>> {
-    void commandId;
-    void params;
-    return { ok: false, error: 'mod-system-not-available' };
+    if (!isModSystemAvailable()) return { ok: false, error: 'mod-system-not-available' };
+    try {
+        const response = await window.electron!.mods!.invokeModRpc(MOD_ID, 'command', [commandId, params]);
+        return response as ModCommandResult<T>;
+    } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +176,8 @@ export async function transcribeViaMod(params: {
     model?: string;
     language?: string;
     jobId?: string;
+    vocalSeparation?: boolean;
+    vocalSeparationGpu?: boolean;
 }): Promise<unknown> {
     const result = await invokeCommand('transcribe', params);
     if (result.ok) return result.result;
@@ -231,14 +237,13 @@ export async function fetchAudioViaMod(url: string): Promise<{ data: ArrayBuffer
 }
 
 // ---------------------------------------------------------------------------
-// Unified API: tries mod first, falls back to direct IPC
+// Unified API: uses the enabled mod only
 // ---------------------------------------------------------------------------
 
 /**
- * Get Whisper availability detail, trying mod first then falling back to direct IPC.
+ * Get Whisper availability detail through the mod only.
  */
 export async function getWhisperAvailabilityUnified(): Promise<WhisperAvailabilityDetail> {
-    // Try mod first
     const modAvailable = await isWhisperModAvailable();
     if (modAvailable) {
         const status = await getWhisperStatusViaMod();
@@ -254,22 +259,21 @@ export async function getWhisperAvailabilityUnified(): Promise<WhisperAvailabili
         }
     }
 
-    // Fall back to direct IPC
-    const { getWhisperAvailabilityDetail } = await import('./whisperAlignService');
-    return getWhisperAvailabilityDetail();
+    return {
+        available: false,
+        cliInstalled: false,
+        hasModel: false,
+        models: [],
+        ffmpegAvailable: false,
+        reason: 'mod-not-loaded',
+    };
 }
 
 /**
  * Whether the Whisper feature SURFACE is present - NOT whether CLI+model are ready.
- * True when the whisper-align mod is enabled or the direct IPC bridge exists. In
- * Electron the bridge always exists, so this only gates UI entry points (e.g. the
- * Whisper tab); actual readiness is reported by getWhisperAvailabilityUnified().
+ * True only when the whisper-align mod is loaded and enabled.
  */
 export async function isWhisperFeaturePresent(): Promise<boolean> {
-    // Check mod first
-    const modAvailable = await isWhisperModAvailable();
-    if (modAvailable) return true;
-
-    // Check direct IPC
-    return !!window.electron?.whisperAlignGetStatus;
+    return isWhisperModAvailable();
 }
+

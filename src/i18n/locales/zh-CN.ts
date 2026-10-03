@@ -1,4 +1,4 @@
-
+  
 
 export default {
   "notifications": {
@@ -793,6 +793,16 @@ export default {
     "experimental": "实验性",
     "warning": "模组兼容版本Folium v{{version}}。标有「官方认证」的模组经过 Folium 官方审查并签名，其余模组由第三方提供，未经官方审查。无论是否认证，启用后模组将以应用的完整权限运行（含 Node.js 运行时与任意设置，如 AI 服务地址与密钥）。请仅启用可信来源的模组。",
     "market": "模组市场",
+    "marketSubtitle": "来自 Folium 模组市场的官方目录",
+    "marketRefresh": "刷新目录",
+    "marketOpenWebsite": "在浏览器中打开市场",
+    "marketOfficial": "官方",
+    "marketCommunity": "社区",
+    "marketInstall": "安装",
+    "marketInstalling": "正在下载…",
+    "marketInstalled": "已安装",
+    "marketLoadFailed": "市场目录加载失败",
+    "installFailed": "模组安装失败",
     "trustRevoked": "该模组的文件在你上次确认之后发生了变化，已自动禁用。请确认来源无误后重新启用。",
     "devSourceHint": "开发目录中的模组：确认后修改文件不会撤销授权（仅开发版）。",
     "signatureVerified": "官方认证",

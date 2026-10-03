@@ -333,6 +333,7 @@ contextBridge.exposeInMainWorld('electron', {
         getFfmpegStatus: () => ipcRenderer.invoke('folia-mods:ffmpeg-status'),
         openModsDirectory: () => ipcRenderer.invoke('folia-mods:open-directory'),
         installModFromZip: (zipPath) => ipcRenderer.invoke('folia-mods:install-zip', zipPath),
+        downloadMarketMod: (payload) => ipcRenderer.invoke('folia-mods:market-download', payload),
         onModsStateChanged: (callback) => {
             const listener = (_event, mods) => callback(mods);
             ipcRenderer.on('folia-mods:state-changed', listener);

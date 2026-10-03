@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AudioLines, BarChart3, ChevronRight, ListFilter, Monitor, PlayCircle, Radio, RefreshCw, Settings2, Timer, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
@@ -13,6 +13,7 @@ import { SettingsAnchor } from './navigation/SettingsAnchorContext';
 import SettingsSectionHeading from './navigation/SettingsSectionHeading';
 import { useLyricSettingsStore } from '../../../stores/useLyricSettingsStore';
 import { useWhisperSettingsStore } from '../../../stores/useWhisperSettingsStore';
+import { isWhisperFeaturePresent } from '../../../services/whisperModService';
 import { useAudioSettingsStore } from '../../../stores/useAudioSettingsStore';
 import { useOnlineProviderAccountStore } from '../../../stores/useOnlineProviderAccountStore';
 import { isNeteaseScrobbleReady } from '../../../services/onlineMusic/playbackReportGate';
@@ -97,6 +98,14 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
     })));
     // fork: Whisper 开关属于独立的 whisper store，不在歌词设置里；单独订阅，决定歌词源列表是否展示 whisper 项
     const whisperAlignEnabled = useWhisperSettingsStore(state => state.whisperAlignEnabled);
+    const [whisperModLoaded, setWhisperModLoaded] = useState(false);
+    useEffect(() => {
+        let active = true;
+        isWhisperFeaturePresent().then((available) => {
+            if (active) setWhisperModLoaded(available);
+        });
+        return () => { active = false; };
+    }, []);
     const {
         devices: audioOutputDevices,
         ensureLoaded: ensureAudioOutputDevicesLoaded,
@@ -353,7 +362,7 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
                                 {LYRIC_MATCH_SOURCES
-                                    .filter(source => source !== 'whisper' || whisperAlignEnabled)
+                                    .filter(source => source !== 'whisper' || (whisperAlignEnabled && whisperModLoaded))
                                     .map((source) => {
                                     const option = { value: source, label: getLyricProviderPreferenceLabel(source) };
                                     const selected = preferredAlternativeLyricSource === option.value;
@@ -373,7 +382,7 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
                                 })}
                             </div>
                     </div>
-                    <button
+                    {whisperModLoaded && <button
                         type="button"
                         onClick={onOpenGlobalLyricOffsetSettings}
                         className="w-full p-4 border-t text-left transition-colors hover:bg-white/8"
@@ -396,8 +405,8 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
                                 <ChevronRight size={18} className="opacity-60" style={{ color: 'var(--text-primary)' }} />
                             </div>
                         </div>
-                    </button>
-                    <button
+                    </button>}
+                    {whisperModLoaded && <button
                         type="button"
                         onClick={onOpenWhisperSettings}
                         className="w-full p-4 border-t text-left transition-colors hover:bg-white/8"
@@ -415,7 +424,7 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
                             </div>
                             <ChevronRight size={18} className="shrink-0 opacity-60" style={{ color: 'var(--text-primary)' }} />
                         </div>
-                    </button>
+                    </button>}
                     <button
                         type="button"
                         onClick={onOpenWhisperLyricOverview}

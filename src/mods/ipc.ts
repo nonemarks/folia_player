@@ -147,6 +147,15 @@ export const installModFromZip = async (
     return response ?? { ok: false, error: 'no-electron-bridge' };
 };
 
+export const downloadMarketMod = async (payload: {
+    url: string;
+    sha256: string;
+    fileName: string;
+}): Promise<{ ok: boolean; id?: string; error?: string }> => {
+    const response = await bridge()?.downloadMarketMod(payload);
+    return response ?? { ok: false, error: 'no-electron-bridge' };
+};
+
 export const subscribeModsState = (callback: (mods: ModRuntimeInfo[]) => void): (() => void) =>
     bridge()?.onModsStateChanged(callback) ?? (() => {});
 
