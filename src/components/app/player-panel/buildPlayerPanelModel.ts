@@ -102,7 +102,7 @@ export type PlayerPanelDeps = {
     moveQueueSongToNext: UnifiedPanelProps['queue']['onMoveSongToNext'];
     saveCurrentQueueAsLocalPlaylist: UnifiedPanelProps['library']['onSaveCurrentQueueAsPlaylist'];
     user: UnifiedPanelProps['account']['user'];
-    handleLogout: UnifiedPanelProps['account']['onLogout'];
+    accountController: UnifiedPanelProps['account']['accountController'];
     cacheSize: UnifiedPanelProps['account']['cacheSize'];
     handleClearCache: UnifiedPanelProps['account']['onClearCache'];
     handleSyncData: UnifiedPanelProps['account']['onSyncData'];
@@ -189,7 +189,7 @@ export const buildPlayerPanelModel = ({
     openCurrentNavidromeArtist,
     handleCopySongInfoSuccess,
     user,
-    handleLogout,
+    accountController,
     audioQuality,
     cacheSize,
     handleClearCache,
@@ -290,7 +290,7 @@ export const buildPlayerPanelModel = ({
         },
         account: {
             user,
-            onLogout: handleLogout,
+            accountController,
             audioQuality,
             onAudioQualityChange: setAudioQuality,
             cacheSize,

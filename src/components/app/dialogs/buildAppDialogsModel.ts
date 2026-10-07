@@ -91,17 +91,13 @@ export const buildAppDialogsModel = ({
     settingsDialog = null,
     providerSwitchConfirmDialog = null,
 }: BuildAppDialogsModelParams): AppDialogsModel => {
-    // Find the song in localSongs; fall back to cached song if localSongs
-    // is briefly stale (e.g. during loadLocalSongs refresh). This prevents
-    // the LyricMatchModal from unmounting and losing user state when the
-    // song list is repopulated asynchronously.
+    // Keep the modal mounted while local library refreshes temporarily empty the song list.
     const foundSong = showLyricMatchModal && currentSong && isLocalPlaybackSong(currentSong)
         ? localSongs.find(song => song.id === currentSong.localRef.songId) ?? null
         : null;
     if (foundSong) {
         cachedLyricMatchSong = foundSong;
     }
-    // Only clear the cache when the modal is explicitly closed
     if (!showLyricMatchModal) {
         cachedLyricMatchSong = null;
     }
@@ -151,8 +147,6 @@ export const buildAppDialogsModel = ({
         onClose: () => setPendingUnavailableReplacement(null),
         onConfirm: handleUnavailableReplacementConfirm,
     },
-    settingsDialog,
     providerSwitchConfirmDialog,
     wallpaperEntryConfirmDialog,
-    };
 };

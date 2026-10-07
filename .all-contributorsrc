@@ -615,7 +615,8 @@
       "avatar_url": "https://avatars.githubusercontent.com/u/78797866?v=4",
       "profile": "https://github.com/HZDavy",
       "contributions": [
-        "bug"
+        "bug",
+        "code"
       ]
     },
     {
@@ -677,6 +678,15 @@
       "name": "mintcolor",
       "avatar_url": "https://avatars.githubusercontent.com/u/43575730?v=4",
       "profile": "https://github.com/Mintcolour",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "UndefinedFons",
+      "name": "Fons",
+      "avatar_url": "https://avatars.githubusercontent.com/u/190753033?v=4",
+      "profile": "http://fonstage.space",
       "contributions": [
         "code"
       ]

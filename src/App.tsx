@@ -67,7 +67,10 @@ import { useNeteaseLibrary } from './hooks/useNeteaseLibrary';
 import { useKugouLibrary } from './hooks/useKugouLibrary';
 import { useQqLibrary } from './hooks/useQqLibrary';
 import { useBodianLibrary } from './hooks/useBodianLibrary';
-import { useOnlineProviderPlatform } from './hooks/useOnlineProviderPlatform';
+import { useLibraryAccountController } from './library/app/useLibraryAccountController';
+import { createLibraryAccountSwitchCleanupPort } from './library/app/createLibraryAccountPort';
+import { useLibraryAccountProviders } from './library/core/bindings/useLibraryAccount';
+import { resolveActiveProviderSummary } from './library/core/model/accountRules';
 import { useAppPreferences } from './hooks/useAppPreferences';
 import { useElectronPlaybackBridge } from './hooks/useElectronPlaybackBridge';
 import { useElectronDisplaySleepBlocker } from './hooks/useElectronDisplaySleepBlocker';
@@ -102,7 +105,6 @@ import { useSongThemeAutoGeneration } from './hooks/useSongThemeAutoGeneration';
 import { useThemeController } from './hooks/useThemeController';
 import { useOnlineSongMetadataHydration } from './hooks/useOnlineSongMetadataHydration';
 import { resolveCommandPaletteSearchSource, resolveSearchSource, useSearchNavigationStore } from './stores/useSearchNavigationStore';
-import { useCollectionNavigationStore } from './stores/useCollectionNavigationStore';
 import { useOnlineProviderAccountStore } from './stores/useOnlineProviderAccountStore';
 import { useShallow } from 'zustand/react/shallow';
 import { clampMediaVolume, toSafeRemoteUrl } from './utils/appPlaybackHelpers';
@@ -112,8 +114,6 @@ import { FALLBACK_AI_DUAL_THEME } from './services/themeSanitizer';
 import { BASE_DUAL_THEME, DAYLIGHT_THEME, DEFAULT_THEME } from './services/baseThemes';
 import { initializeSyncCoordinator } from './services/sync/syncCoordinator';
 import { applyLocalLibraryEntityDisplay } from './services/playbackAdapters';
-import { clearPrefetchRuntime } from './services/prefetchService';
-import { clearTrackProfileRuntime } from './services/automix/profileService';
 import { transitionCapabilities } from './services/automix/stems';
 import { buildLocalLibraryIndex } from './utils/localLibraryIndex';
 import type { PlayerChromeVisibilityMode } from './types/remoteControl';
@@ -168,7 +168,6 @@ export default function App() {
         navidromeEnabled, setNavidromeEnabledState,
         starredNavidromeSongIds, setStarredNavidromeSongIds,
         isProviderSyncing, setIsProviderSyncing,
-        providerSwitchPending, setProviderSwitchPending,
     } = useLibraryStore(useShallow(state => ({
         navidromeEnabled: state.navidromeEnabled,
         setNavidromeEnabledState: state.setNavidromeEnabledState,
@@ -176,8 +175,6 @@ export default function App() {
         setStarredNavidromeSongIds: state.setStarredNavidromeSongIds,
         isProviderSyncing: state.isProviderSyncing,
         setIsProviderSyncing: state.setIsProviderSyncing,
-        providerSwitchPending: state.providerSwitchPending,
-        setProviderSwitchPending: state.setProviderSwitchPending,
     })));
     const {
         currentSong, setCurrentSong,
@@ -683,8 +680,6 @@ export default function App() {
         setFocusedPlaylistIndex,
         navidromeFocusedAlbumIndex,
         setNavidromeFocusedAlbumIndex,
-        pendingNavidromeSelection,
-        setPendingNavidromeSelection,
         localMusicState,
         setLocalMusicState,
         navigateToPlayer,
@@ -699,6 +694,7 @@ export default function App() {
         closeSearchView,
         navigateToCollection,
         pushCollection,
+        popCollectionTo,
         backCollection,
     } = useAppNavigation();
     const reduceLatticeMotion = useReducedMotionFor('lattice');
@@ -765,80 +761,42 @@ export default function App() {
         logout: logoutQqLibrary,
     } = useQqLibrary();
     const { refresh: refreshBodianLibrary, logout: logoutBodianLibrary } = useBodianLibrary();
-    const onlineProviderRefreshers = useMemo(() => ({
+    const onlineProviderRefreshers = useMemo<Partial<Record<OnlineProviderId, () => Promise<unknown>>>>(() => ({
         netease: refreshUserData,
         kugou: refreshKugouLibrary,
         qq: refreshQqLibrary,
         bodian: refreshBodianLibrary,
     }), [refreshKugouLibrary, refreshQqLibrary, refreshBodianLibrary, refreshUserData]);
-    const onlineProviderLogouts = useMemo(() => ({
+    const onlineProviderLogouts = useMemo<Partial<Record<OnlineProviderId, () => Promise<void>>>>(() => ({
         netease: handleLogout,
         kugou: logoutKugouLibrary,
         qq: logoutQqLibrary,
         bodian: logoutBodianLibrary,
     }), [handleLogout, logoutKugouLibrary, logoutQqLibrary, logoutBodianLibrary]);
 
-    const prepareOnlineProviderSwitch = useCallback((_currentProviderId: OnlineProviderId, nextProviderId: OnlineProviderId): Promise<boolean> => {
-        return new Promise<boolean>((resolve) => {
-            setProviderSwitchPending(prev => {
-                prev?.resolve(false);
-                return { nextProviderId, resolve };
-            });
-        });
-    }, []);
-
-    const handleConfirmProviderSwitch = useCallback(() => {
-        if (!providerSwitchPending) return;
-        const { nextProviderId, resolve } = providerSwitchPending;
-        setProviderSwitchPending(null);
-
-        // Stops any deck still fading out in the background: this path clears the active deck
-        // only, and a tail left running would have no control pointing at it any more.
-        automixRef.current?.abortTransition();
-        const audio = audioRef.current;
-        audio?.pause();
-        audio?.removeAttribute('src');
-        audio?.load();
-        if (audioSrc?.startsWith('blob:')) URL.revokeObjectURL(audioSrc);
-        setAudioSrc(null);
-        setCurrentSong(null);
-        setPlayQueue([]);
-        setLyrics(null);
-        setCachedCoverUrl(null);
-        setIsFmMode(false);
-        setPlayerState(PlayerState.IDLE);
-        clearPrefetchRuntime();
-        // The measurements are keyed by playback key, so the outgoing provider's are unreachable
-        // from here on. Dropped alongside the prefetch cache they were gathered with, rather than
-        // sitting in memory until the tab is closed.
-        clearTrackProfileRuntime();
-        useSearchNavigationStore.getState().resetRuntime(nextProviderId);
-        useCollectionNavigationStore.getState().clear();
-
-        resolve(true);
-    }, [audioRef, audioSrc, providerSwitchPending, setLyrics]);
-
-    const handleCancelProviderSwitch = useCallback(() => {
-        if (!providerSwitchPending) return;
-        providerSwitchPending.resolve(false);
-        setProviderSwitchPending(null);
-    }, [providerSwitchPending]);
-
-    const providerSwitchConfirmDialog = useMemo(() => {
-        if (!providerSwitchPending) return null;
-        const providerLabel = omni.getProviderLabel(providerSwitchPending.nextProviderId);
-        return {
-            isOpen: true,
-            isDaylight,
-            title: t('home.switchOnlineProvider'),
-            description: t('home.confirmOnlineProviderSwitch', { provider: providerLabel }),
-            onConfirm: handleConfirmProviderSwitch,
-            onClose: handleCancelProviderSwitch,
-        };
-    }, [handleCancelProviderSwitch, handleConfirmProviderSwitch, isDaylight, providerSwitchPending, t]);
-    const onlineProviderPlatform = useOnlineProviderPlatform(onlineProviderRefreshers, prepareOnlineProviderSwitch, onlineProviderLogouts);
+    // 在线账户 controller（Library v2 · A4）：扫码登录、选平台、切换确认与登出都在 core，App 只交出 per-provider 的
+    // 刷新与登出，以及确认切换后的播放清理端口。端口读的三样（audio / automix 句柄、歌词写入）都是稳定引用，建一次。
+    const [providerSwitchCleanup] = useState(() => createLibraryAccountSwitchCleanupPort(() => ({
+        audioRef,
+        automixRef,
+        setLyrics: setLyricsStable,
+    })));
+    const accountController = useLibraryAccountController({
+        refreshers: onlineProviderRefreshers,
+        logouts: onlineProviderLogouts,
+        switchCleanup: providerSwitchCleanup,
+    });
+    const { providers: onlineProviders, activeProviderId } = useLibraryAccountProviders(accountController);
+    const activeProvider = useMemo(
+        () => resolveActiveProviderSummary(onlineProviders, activeProviderId),
+        [activeProviderId, onlineProviders],
+    );
+    // 保留 App 对整张账户表的订阅（原先 useOnlineProviderPlatform 订阅它）：底栏与命令面板的收藏心形
+    // （resolveSongLiked → omni.isSongLiked）经 getState 读各平台的 likedSongIds，账户摘要里没有它，
+    // 只订阅 controller 快照的话收藏之后心形不会当场更新。取值没有用处。
+    useOnlineProviderAccountStore(state => state.accounts);
     const handleActiveProviderSyncData = useCallback(async () => {
-        const providerId = onlineProviderPlatform.activeProviderId;
+        const providerId = activeProviderId;
         if (providerId === 'netease') {
             await handleSyncData();
             return;
@@ -846,7 +804,7 @@ export default function App() {
 
         setIsProviderSyncing(true);
         try {
-            const synced = await onlineProviderPlatform.refreshProvider(providerId);
+            const synced = await onlineProviderRefreshers[providerId]?.();
             const refreshedAccount = useOnlineProviderAccountStore.getState().accounts[providerId];
             const authExpired = synced === false && refreshedAccount?.error === 'auth-required';
             setStatusMsg({
@@ -861,16 +819,17 @@ export default function App() {
         } finally {
             setIsProviderSyncing(false);
         }
-    }, [handleSyncData, onlineProviderPlatform.activeProviderId, onlineProviderPlatform.refreshProvider, setStatusMsg, t]);
-    const isActiveProviderSyncing = onlineProviderPlatform.activeProviderId === 'netease'
+    }, [activeProviderId, handleSyncData, onlineProviderRefreshers, setStatusMsg, t]);
+    const isActiveProviderSyncing = activeProviderId === 'netease'
         ? isSyncing
         : isProviderSyncing;
     const refreshActiveProviderPlaylists = useCallback(
-        () => omni.refreshProviderPlaylists(onlineProviderPlatform.activeProviderId),
-        [onlineProviderPlatform.activeProviderId],
+        () => omni.refreshProviderPlaylists(activeProviderId),
+        [activeProviderId],
     );
     useHomeProviderRefresh({
-        onlineProviderPlatform,
+        activeProviderId,
+        activeProviderFreshness: activeProvider?.freshness,
         refreshActiveProviderPlaylists,
         checkKugouLoginStatus,
     });
@@ -1730,8 +1689,8 @@ export default function App() {
     const currentSearchSourceTabInPalette = useMemo(() => resolveCommandPaletteSearchSource(
         currentSong,
         searchSourceTab,
-        onlineProviderPlatform.activeProviderId,
-    ), [currentSong, onlineProviderPlatform.activeProviderId, searchSourceTab]);
+        activeProviderId,
+    ), [activeProviderId, currentSong, searchSourceTab]);
     const toggleBrowserFullscreen = useCallback(async () => {
         if (typeof window !== 'undefined' && window.electron?.toggleFullscreenWindow) {
             return window.electron.toggleFullscreenWindow();
@@ -2196,7 +2155,8 @@ export default function App() {
     }, [navigateToCollection, setStatusMsg, t]);
 
     const homeModel = useHomeModel({
-        onlineProviderPlatform,
+        account: accountController,
+        activeProvider,
         playSong,
         navigateToPlayer,
         navigateToLattice,
@@ -2217,8 +2177,6 @@ export default function App() {
         onAddNavidromeSongsToQueue: addNavidromeSongsToQueue,
         navidromeFocusedAlbumIndex,
         setNavidromeFocusedAlbumIndex,
-        pendingNavidromeSelection,
-        setPendingNavidromeSelection,
         stageSource,
         openStagePlayer,
         theme,
@@ -2228,6 +2186,7 @@ export default function App() {
         onStatusMessage: setStatusMsg,
         onOpenCollection: openHomeCollection,
         onPushCollection: pushCollection,
+        onPopCollectionTo: popCollectionTo,
         onBackCollection: backCollection,
     });
     const playerDisplayCatalogIndex = useMemo(() => buildLocalLibraryIndex(
@@ -2244,7 +2203,7 @@ export default function App() {
     ), [localLibraryCatalog, playQueue, playerDisplayCatalogIndex]);
     const onlinePlaylists = useMemo(() => {
         return playerDisplayCurrentSong ? omni.getPlaylistsForSong(playerDisplayCurrentSong) : [];
-    }, [onlineProviderPlatform.providers, playerDisplayCurrentSong]);
+    }, [onlineProviders, playerDisplayCurrentSong]);
 
     const playerPanelModel = usePlayerPanelModel({
         navigateToHome,
@@ -2297,7 +2256,7 @@ export default function App() {
         moveQueueSongToNext,
         saveCurrentQueueAsLocalPlaylist,
         user,
-        handleLogout,
+        accountController,
         cacheSize,
         handleClearCache,
         handleSyncData: handleActiveProviderSyncData,
@@ -2388,7 +2347,6 @@ export default function App() {
         setPendingUnavailableReplacement,
         handleUnavailableReplacementConfirm,
         settingsDialog,
-        providerSwitchConfirmDialog,
     });
 
     useEffect(() => {

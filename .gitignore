@@ -40,7 +40,7 @@ test/test-song/*
 test/test-ReplayGain
 impl.md
 test-results/
-test-results/.dev-credentials
+.dev-credentials/
 .codex-remote-attachments
 test/manual/lyric-output/*
 test/manual/lyric-audit-output/*    
@@ -66,6 +66,7 @@ build/ffmpeg/
 build/whisper.cpp-cuda/
 build/whisper.cpp-cuda-build/
 build/whisper.cpp-cuda-nmake/
+build/koffi/
 # The transcode fallback's dev slot: same binary as build/ffmpeg/<os>-<arch>, staged here so
 # `npm run dev:electron` runs the audio-only runtime the release ships instead of system PATH.
 # `ffmpeg-8.1.2/` is the mod exporters' slot and is a full build the developer supplies.
@@ -84,6 +85,10 @@ mods/*.zip
 # Built by packaging/windows/build-wallpaper-helper.mjs (Windows wallpaper mode helper).
 build/folia-wallpaper-helper.exe
 packaging/windows/wallpaper-helper/target/
+
+# Local Rust Spout sender build artifacts.
+build/folia-spout-sender.exe
+packaging/windows/spout-sender/target/
 
 # Python bytecode from the htdemucs runner, written beside it by the downloaded runtime.
 __pycache__/

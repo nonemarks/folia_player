@@ -112,6 +112,17 @@ export const hasQqSession = (): boolean => Boolean(getWebSessionCookie());
 
 export const clearQqSession = (): void => removeProviderSessionValue('qq', 'cookie');
 
+// 后端的退避时长（qq-music-api 在 429 的响应体里给 retryAfterMs，同时带 Retry-After 头，单位是秒）。
+// 只收非负安全整数，读不出就不给，调用方按普通失败处理。
+const readRetryAfterMs = (body: unknown, response: Response): number | undefined => {
+    const fromBody = body && typeof body === 'object' ? (body as { retryAfterMs?: unknown }).retryAfterMs : undefined;
+    if (typeof fromBody === 'number' && Number.isSafeInteger(fromBody) && fromBody >= 0) return fromBody;
+    const raw = response.headers?.get?.('Retry-After')?.trim();
+    if (!raw || !/^\d+$/.test(raw)) return undefined;
+    const seconds = Number(raw);
+    return Number.isSafeInteger(seconds * 1000) ? seconds * 1000 : undefined;
+};
+
 const readJsonBody = async (response: Response): Promise<any> => {
     try {
         return await response.json();
@@ -236,7 +247,7 @@ export const requestQq = async <T = unknown>(operation: QqOperation, params: QqP
         // A missing, expired, rejected, or non-persisted backend session is surfaced uniformly as 401.
         if (response.status === 401) {
             clearQqSession();
-            throw new OnlineProviderError('auth-required', 'QQMusicApi login required', 'qq', failure);
+            throw new OnlineProviderError('auth-required', 'QQMusicApi login required', 'qq', failure, response.status);
         }
         // 404 是「这个后端没有这条路由」，不是网络故障 —— 用户可以自行部署任意版本的后端，
         // 新路由在旧后端上必然 404。报成 `unsupported`，调用方才能据此回落到旧路径，
@@ -247,9 +258,17 @@ export const requestQq = async <T = unknown>(operation: QqOperation, params: QqP
                 `QQMusicApi has no ${operation} route`,
                 'qq',
                 failure,
+                response.status,
             );
         }
-        throw new OnlineProviderError('network', `QQMusicApi request failed: ${response.status}`, 'qq', failure);
+        throw new OnlineProviderError(
+            'network',
+            `QQMusicApi request failed: ${response.status}`,
+            'qq',
+            failure,
+            response.status,
+            readRetryAfterMs(failure, response),
+        );
     }
 
     const body = await readJsonBody(response);
