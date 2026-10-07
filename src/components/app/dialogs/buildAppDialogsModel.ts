@@ -149,4 +149,5 @@ export const buildAppDialogsModel = ({
     },
     providerSwitchConfirmDialog,
     wallpaperEntryConfirmDialog,
+    };
 };
