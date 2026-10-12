@@ -118,15 +118,9 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
         };
     }, [song]);
 
-    const getMatchQuery = (query = searchQuery) => (
-        sourceSupportsManualSearch(source)
-            ? query.trim()
-            : buildLyricSearchQuery(songInfo.title, songInfo.artist, songInfo.album || '')
-    );
-
     const handleSearch = async (query = searchQuery) => {
-        const q = getMatchQuery(query);
-        if (!q.trim()) {
+        const q = query.trim();
+        if (!q) {
             return;
         }
 
@@ -314,7 +308,6 @@ const OnlineLyricMatchModal: React.FC<OnlineLyricMatchModalProps> = ({ song, onC
                                 </button>
                             </div>
                         )}
-
                         <div className="min-h-0 flex-1 overflow-y-auto space-y-3 pr-1">
                             {isSearching ? (
                                 <div className="flex justify-center items-center h-40">
