@@ -188,5 +188,9 @@ describe('wallpaper mode entry classification (source contract)', () => {
         const model = read('src/components/app/dialogs/useAppDialogsModel.ts');
         expect(model).toMatch(/confirmWallpaperEntry\(\)/);
         expect(model).toMatch(/cancelWallpaperEntry\(\)/);
+
+        const buildModel = read('src/components/app/dialogs/buildAppDialogsModel.ts');
+        expect(buildModel).toMatch(/providerSwitchConfirmDialog,\s*wallpaperEntryConfirmDialog,\s*\};/);
+        expect(buildModel).not.toMatch(/\},\s*;\s*wallpaperEntryConfirmDialog,\s*\}\);/);
     });
 });
