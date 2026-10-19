@@ -38,7 +38,7 @@ export const SETTINGS_ANCHOR_DEFINITIONS = {
     homeTabsVisibility: { section: 'home' },
     grid3dCardStyle: { section: 'home' },
     rememberHomeCardPosition: { section: 'home' },
-    gridViewCardSettings: { section: 'home' }
+    gridViewCardSettings: { section: 'home' },
 
     // pages/LyricsPage
     localLyricFormatOrder: { section: 'lyrics' },
