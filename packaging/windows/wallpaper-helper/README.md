@@ -26,8 +26,16 @@ spawn，负责把 Folia 主窗口挂入桌面图标层之下的 WorkerW 层、�
   混合 DPI 多屏下不成立，故改为两个进程各自负责自己一侧的坐标定义。
 
 构建：Windows 上 `cargo build --release`（由 `packaging/windows/build-wallpaper-helper.mjs`
-驱动）；纯逻辑单测（CLI 解析、JSONL 事件）可在任意平台 `cargo test`，Windows 相关模块
-被 `#[cfg(windows)]` 门控。
+驱动）。本地构建前需要安装 Rust 工具链，并确保新的终端能够找到 `cargo`：
+
+```powershell
+winget install Rustlang.Rustup
+```
+
+安装后重启终端，再运行 `npm run build:wallpaper-helper`。如果脚本提示
+`missing required tool: cargo`，说明 Rust 尚未安装完成或 Cargo 的目录尚未加入 PATH。
+纯逻辑单测（CLI 解析、JSONL 事件）可在任意平台 `cargo test`，Windows 相关模块被
+`#[cfg(windows)]` 门控。
 
 ## 代码来源与许可
 
