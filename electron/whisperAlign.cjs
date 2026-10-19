@@ -10,14 +10,20 @@ const https = require('https');
 const http = require('http');
 const { app, net } = require('electron');
 
-// Vocal isolation reuses the Automix htdemucs path DIRECTLY rather than through the analysis worker.
-// worker.cjs gates separation at a 40s window (its MAX_SAMPLES memory guard), which is an Automix
-// constraint, not a limit of the runner - htdemucs_runner.py chunks a whole track by the model's own
-// segment. sidecar.cjs is plain node (no 'electron'), so the main process can require it as-is, and
-// modelPaths.cjs resolves the SAME runtime + weights the Automix host does, so "is it installed"
-// cannot disagree between the two features.
-const sidecar = require('./analysis/sidecar.cjs');
-const { resolveRuntime, resolveModelFile } = require('./analysis/modelPaths.cjs');
+// Vocal isolation used to run through a Python sidecar. The current analysis runtime is MNN and no
+// longer ships that legacy sidecar, so keep vocal isolation as an optional feature: alignment falls
+// back to the full mix when the legacy runner is unavailable. Do not require removed legacy files at
+// module load time, or every Electron launch would fail before the main window can open.
+let legacyVocalRunner;
+try {
+    // Optional compatibility path for developer installations that still carry the old runner.
+    legacyVocalRunner = {
+        sidecar: require('./analysis/sidecar.cjs'),
+        modelPaths: require('./analysis/modelPaths.cjs'),
+    };
+} catch {
+    legacyVocalRunner = null;
+}
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -1147,6 +1153,12 @@ function runFfmpegTo(ffmpeg, args, output, timeoutMs = 120_000) {
  * @returns {Promise<string|null>} path to the vocals WAV, or null
  */
 async function separateVocals(audioPath, jobId, useGpu, onProgress) {
+    if (!legacyVocalRunner) {
+        console.info('[WhisperAlign] Vocal separation unavailable: legacy sidecar is not bundled');
+        return null;
+    }
+    const { sidecar, modelPaths } = legacyVocalRunner;
+    const { resolveRuntime, resolveModelFile } = modelPaths;
     const dirs = (typeof getModelsDirs === 'function' ? getModelsDirs() : []) || [];
     const pythonExe = resolveRuntime(dirs);
     const modelPath = resolveModelFile(dirs, 'htdemucs');
