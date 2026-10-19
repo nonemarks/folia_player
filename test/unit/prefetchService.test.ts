@@ -1,8 +1,32 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SongResult } from '@/types';
-import { clearPrefetchRuntime, getPrefetchWindowKey, getPrefetchedData, shouldRefreshPrefetchAfterQueueEdit, updatePrefetchedAudioUrl } from '@/services/prefetchService';
+import { OnlineProviderError } from '@/types/onlineMusic';
+import { clearPrefetchRuntime, getPrefetchWindowKey, getPrefetchedData, resolvePrefetchAudioUrl, shouldRefreshPrefetchAfterQueueEdit, updatePrefetchedAudioUrl } from '@/services/prefetchService';
 
 // test/unit/prefetchService.test.ts
+
+const mocks = vi.hoisted(() => ({
+    getAudioSource: vi.fn(),
+    hasCachedSongAudio: vi.fn(),
+    onlineRequestCooldown: vi.fn(),
+    noteOnlineRequestCooldown: vi.fn(),
+}));
+
+vi.mock('@/services/onlineMusic/omni', () => ({
+    omni: {
+        getAudioSource: (...args: unknown[]) => mocks.getAudioSource(...args),
+        canPlaySong: () => true,
+        resolveAudioQuality: (_providerId: string, quality: string) => quality,
+    },
+}));
+vi.mock('@/services/onlineMusic/resourceCache', async (importOriginal) => ({
+    ...await importOriginal<typeof import('@/services/onlineMusic/resourceCache')>(),
+    hasCachedSongAudio: (...args: unknown[]) => mocks.hasCachedSongAudio(...args),
+}));
+vi.mock('@/services/onlineMusic/failure/onlineRequestCooldown', () => ({
+    onlineRequestCooldown: (...args: unknown[]) => mocks.onlineRequestCooldown(...args),
+    noteOnlineRequestCooldown: (...args: unknown[]) => mocks.noteOnlineRequestCooldown(...args),
+}));
 
 const song: SongResult = {
     id: 'prefetch-song',
@@ -94,5 +118,106 @@ describe('prefetch refresh after an in-place queue edit', () => {
 
     it('does not refresh a queue left with only the playing song', () => {
         expect(shouldRefreshPrefetchAfterQueueEdit(current, queue, [current])).toBe(false);
+    });
+});
+
+// 预取只在成功时写；失败、冷却和被新队列取代的结果都返回 null，调用方什么都不写。
+describe('resolvePrefetchAudioUrl', () => {
+    const signal = () => new AbortController().signal;
+
+    beforeEach(() => {
+        clearPrefetchRuntime();
+        vi.clearAllMocks();
+        mocks.hasCachedSongAudio.mockResolvedValue(false);
+        mocks.onlineRequestCooldown.mockReturnValue(null);
+        mocks.getAudioSource.mockResolvedValue({
+            url: 'https://audio.test/song.flac',
+            fetchedAt: 0,
+            quality: 'high',
+            replayGain: { trackGain: -6 },
+        });
+        vi.spyOn(console, 'log').mockImplementation(() => { });
+        vi.spyOn(console, 'warn').mockImplementation(() => { });
+    });
+
+    it('returns the provider URL and its ReplayGain', async () => {
+        await expect(resolvePrefetchAudioUrl(song, 'high', signal())).resolves.toEqual({
+            audioUrl: 'https://audio.test/song.flac',
+            replayGain: { trackGain: -6 },
+        });
+        expect(mocks.getAudioSource).toHaveBeenCalledWith(song, 'high');
+    });
+
+    it('answers the media-cache sentinel without asking the provider', async () => {
+        mocks.hasCachedSongAudio.mockResolvedValue(true);
+
+        await expect(resolvePrefetchAudioUrl(song, 'high', signal())).resolves.toEqual({ audioUrl: 'CACHED_IN_DB' });
+        expect(mocks.getAudioSource).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing when the provider fails or gives no URL', async () => {
+        mocks.getAudioSource.mockRejectedValueOnce(new OnlineProviderError('not-playable', 'no link', 'netease'));
+        await expect(resolvePrefetchAudioUrl(song, 'high', signal())).resolves.toBeNull();
+
+        mocks.getAudioSource.mockResolvedValueOnce(null);
+        await expect(resolvePrefetchAudioUrl(song, 'high', signal())).resolves.toBeNull();
+
+        mocks.getAudioSource.mockResolvedValueOnce({ url: '', fetchedAt: 0, quality: 'high' });
+        await expect(resolvePrefetchAudioUrl(song, 'high', signal())).resolves.toBeNull();
+
+        expect(getPrefetchedData(song)).toBeNull();
+    });
+
+    it('rejects a URL the loader would also refuse, so a prefetch cannot smuggle it past the guard', async () => {
+        mocks.getAudioSource.mockResolvedValueOnce({ url: 'javascript:alert(1)', fetchedAt: 0, quality: 'high' });
+        await expect(resolvePrefetchAudioUrl(song, 'high', signal())).resolves.toBeNull();
+
+        mocks.getAudioSource.mockResolvedValueOnce({ url: '   ', fetchedAt: 0, quality: 'high' });
+        await expect(resolvePrefetchAudioUrl(song, 'high', signal())).resolves.toBeNull();
+    });
+
+    it('does not ask the provider while it is cooling down', async () => {
+        mocks.onlineRequestCooldown.mockReturnValue({ remainingMs: 12_000 });
+
+        await expect(resolvePrefetchAudioUrl(song, 'high', signal())).resolves.toBeNull();
+        expect(mocks.onlineRequestCooldown).toHaveBeenCalledWith('netease', 'prefetch');
+        expect(mocks.getAudioSource).not.toHaveBeenCalled();
+    });
+
+    it('hands a failure that asks to wait to the cooldown, for the provider', async () => {
+        mocks.getAudioSource.mockRejectedValueOnce(
+            new OnlineProviderError('network', 'slow down', 'netease', undefined, 429, 30_000),
+        );
+
+        await expect(resolvePrefetchAudioUrl(song, 'high', signal())).resolves.toBeNull();
+        expect(mocks.noteOnlineRequestCooldown).toHaveBeenCalledTimes(1);
+        expect(mocks.noteOnlineRequestCooldown).toHaveBeenCalledWith(expect.objectContaining({
+            case: 'retry-later',
+            operation: 'audio',
+            providerId: 'netease',
+            facts: expect.objectContaining({ httpStatus: 429, retryAfterMs: 30_000 }),
+        }));
+    });
+
+    it('drops a URL that arrives after the prefetch was superseded', async () => {
+        const controller = new AbortController();
+        mocks.getAudioSource.mockImplementationOnce(async () => {
+            controller.abort();
+            return { url: 'https://audio.test/stale.flac', fetchedAt: 0, quality: 'high' };
+        });
+
+        await expect(resolvePrefetchAudioUrl(song, 'high', controller.signal)).resolves.toBeNull();
+        expect(getPrefetchedData(song)).toBeNull();
+    });
+
+    it('does not ask the provider once aborted during the media-cache check', async () => {
+        const controller = new AbortController();
+        mocks.hasCachedSongAudio.mockImplementationOnce(async () => {
+            controller.abort();
+            return false;
+        });
+
+        await expect(resolvePrefetchAudioUrl(song, 'high', controller.signal)).resolves.toBeNull();
+        expect(mocks.getAudioSource).not.toHaveBeenCalled();
     });
 });

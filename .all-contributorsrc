@@ -735,6 +735,24 @@
       "contributions": [
         "bug"
       ]
+    },
+    {
+      "login": "awaxiaoyu",
+      "name": "awaxiaoyu",
+      "avatar_url": "https://avatars.githubusercontent.com/u/125581307?v=4",
+      "profile": "https://github.com/awaxiaoyu",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "nasaeds",
+      "name": "nasaed",
+      "avatar_url": "https://avatars.githubusercontent.com/u/135424755?v=4",
+      "profile": "https://github.com/nasaeds",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "commit": false,
