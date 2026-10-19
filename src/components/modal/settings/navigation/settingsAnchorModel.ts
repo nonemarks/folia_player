@@ -22,15 +22,6 @@ export const SETTINGS_ANCHOR_DEFINITIONS = {
     videoLayerSettings: { section: 'player' },
     labPlayerUi: { section: 'player' },
 
-    // PlaybackSettingsSubview (TransitionSettingsSection renders inside it)
-    queueSettings: { section: 'playback', labelKey: 'options.queueSettings' },
-    scrobbleSettings: { section: 'playback', labelKey: 'options.scrobbleSettings' },
-    transitionSettings: { section: 'playback', labelKey: 'options.transitionSettings' },
-    automixStats: { section: 'playback', labelKey: 'options.automixStats' },
-    replayGainSettings: { section: 'playback', labelKey: 'options.replayGainSettings' },
-    lyrics: { section: 'playback', labelKey: 'options.lyrics' },
-    audioOutputSettings: { section: 'playback', labelKey: 'options.audioOutputSettings' },
-
     // pages/HomePage; the library UI is drawn only where there is more than one to choose from, and
     // the Bravais group only while bravais is the one in effect.
     librarySuite: { section: 'home' },

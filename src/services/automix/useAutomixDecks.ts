@@ -24,7 +24,6 @@ import { useAudioSettingsStore } from '../../stores/useAudioSettingsStore';
 import { playbackFade } from '../playbackFade';
 import { getPlaybackRepresentation } from '../playbackRecovery/representationRegistry';
 import { buildNavidromeSourceRevision } from '../playbackRecovery/sourceRevision';
-import { useAutomixStatsStore } from '../../stores/useAutomixStatsStore';
 
 export type { TransitionDisplay };
 
@@ -366,7 +365,6 @@ export function useAutomixDecks({
     const stemSongsRef = useRef<{ from: SongResult | null; to: SongResult | null }>({ from: null, to: null });
 
     const sessionRef = useRef<AutomixSession | null>(null);
-    const recordAutomixTransition = useAutomixStatsStore(state => state.recordTransition);
     if (!sessionRef.current) {
         sessionRef.current = createAutomixSession({
             getContext: () => audioContextRef.current,
@@ -422,7 +420,6 @@ export function useAutomixDecks({
             // was made: separation runs on its own clock and a window that lands inside that gap
             // is still worth using.
             getStems: (key, role) => getStemsByKey(key, role),
-            onTransitionScheduled: recordAutomixTransition,
         });
     }
     const session = sessionRef.current;

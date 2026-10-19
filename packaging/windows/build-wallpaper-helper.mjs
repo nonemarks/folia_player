@@ -22,21 +22,10 @@ function run(command, args) {
   execFileSync(command, args, { stdio: 'inherit', cwd: SRC_DIR });
 }
 
-function requireTool(command, hint) {
-  try {
-    execFileSync(command, ['--version'], { stdio: 'ignore' });
-  } catch {
-    console.error(`[wallpaper-helper] missing required tool: ${command}. ${hint}`);
-    process.exit(1);
-  }
-}
-
 if (process.platform !== 'win32') {
   console.log('[wallpaper-helper] non-Windows host, skipping build');
   process.exit(0);
 }
-
-requireTool('cargo', 'Install Rust with rustup (https://rustup.rs/) and restart the terminal so cargo is on PATH.');
 
 mkdirSync(OUT_DIR, { recursive: true });
 run('cargo', ['build', '--release']);

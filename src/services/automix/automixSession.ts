@@ -159,7 +159,6 @@ export interface AutomixSessionPorts {
      * identities from arm time, so it names them. See `getStemsByKey`.
      */
     getStems?: (key: string | null, role: 'tail' | 'head') => TrackStems | null;
-    onTransitionScheduled?: (args: { stemmed: boolean; overlapSec: number }) => void;
 }
 
 export interface AutomixTransitionRequest {
@@ -1092,8 +1091,6 @@ export const createAutomixSession = (ports: AutomixSessionPorts) => {
                 incomingSectionStart: plannedTo?.sectionStart ?? null,
                 expansion: plan.expansion ?? null,
             });
-
-        ports.onTransitionScheduled?.({ stemmed: Boolean(stemmed), overlapSec: wall });
 
         /**
          * What actually happened, not what was planned.
