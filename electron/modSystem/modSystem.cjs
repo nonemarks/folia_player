@@ -599,7 +599,7 @@ const createModSystem = ({ app, BrowserWindow, getMainWindow, getLocaleKey, isFe
         .sort((left, right) => left.id.localeCompare(right.id));
 
     // The user's own mods folder, and installing a .zip into it (zipInstall.cjs).
-    const { getUserModsDirectory, pruneStagingDirectory, installModFromZip } = createZipInstall({
+    const { getUserModsDirectory, pruneStagingDirectory, installModFromZip, downloadMarketMod } = createZipInstall({
         app, isModSystemEnabled, loadAll, emitLog, serializeError,
     });
 
@@ -695,6 +695,7 @@ const createModSystem = ({ app, BrowserWindow, getMainWindow, getLocaleKey, isFe
         handle(IPC.ffmpegStatus, async () => ({ ffmpeg: await probeFfmpeg() }));
         handle(IPC.openDirectory, () => openModsDirectory());
         handle(IPC.installZip, (_event, zipPath) => installModFromZip(zipPath));
+        handle(IPC.marketDownload, (_event, payload) => downloadMarketMod(payload));
         handle(IPC.storageUsage, (_event, modId) => getModStorageUsage(modId));
         handle(IPC.clearCache, (_event, modId) => clearModCache(modId));
         // What the gate counted for each mod's Node entry, for the mod's row in Settings.

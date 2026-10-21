@@ -31,6 +31,13 @@ interface LyricSourceEntry {
      * fallback and nothing more, and takes no chorus data from a song of that platform.
      */
     linesOnly?: boolean;
+    /**
+     * True when the source has no catalogue of its own to search: it re-times the lines another
+     * source gave (Whisper aligns them against the song's audio). Such a source is neither a tab of
+     * the match windows nor a choice of the priority setting — the automatic pick gives it a step of
+     * its own, after every source that can hand it lines.
+     */
+    alignsOnly?: boolean;
 }
 
 // In the order the automatic pick asks them after the preferred one, which is also the order of
@@ -41,6 +48,8 @@ const ENTRIES = [
     { id: 'qq', labelKey: 'lyricProvider.qq', platform: true },
     { id: 'kugou', labelKey: 'lyricProvider.kugou', platform: true },
     { id: 'spotify', labelKey: 'lyricProvider.spotify', platform: true, needsAccount: true, linesOnly: true },
+    // Last: it aligns whatever lines the sources above found, so it is asked only once they have answered.
+    { id: 'whisper', labelKey: 'lyricProvider.whisper', platform: false, alignsOnly: true },
 ] as const satisfies readonly LyricSourceEntry[];
 
 export type LyricProviderSource = (typeof ENTRIES)[number]['id'];

@@ -1,10 +1,12 @@
 import React from 'react';
 import { ReplayGainMode, SongResult } from '../../types';
+import type { LyricData } from '../../types';
 import { Cloud } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getLyricProviderLabel } from '../../utils/lyrics/lyricSourceLabels';
 import { resolveNavidromePlaybackCarrier } from '../../utils/appPlaybackGuards';
 import SourceTab from './SourceTab';
+import WhisperAlignButton from '../shared/WhisperAlignButton';
 import { EmptyState } from './shell/EmptyState';
 
 // src/components/panelTab/NaviTab.tsx
@@ -69,6 +71,14 @@ const NaviTab: React.FC<NaviTabProps> = ({
             key={navidromeData.id}
             lyricSources={lyricSources}
             onMatchOnline={onMatchOnline}
+            lyricRowAction={
+                <WhisperAlignButton
+                    song={currentSong}
+                    lyrics={lyrics}
+                    onLyricsUpdated={onSetLyrics}
+                    isDaylight={isDaylight}
+                />
+            }
             gainValues={{
                 trackGain: navidromeData.replayGain?.trackGain,
                 albumGain: navidromeData.replayGain?.albumGain,

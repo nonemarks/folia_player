@@ -2,7 +2,7 @@ import React from 'react';
 import { AudioLines, Disc, SlidersHorizontal, ListMusic, FileAudio, FileText, Radio, Cloud, Puzzle } from 'lucide-react';
 import { locatePlayingSong } from './app/playing-song-locator/playingSongLocator';
 import { useTranslation } from 'react-i18next';
-import { Album, Artist, SongResult, Theme, PlayerState, ReplayGainMode, ThemeMode, VisualizerMode } from '../types';
+import { Album, Artist, SongResult, Theme, PlayerState, ReplayGainMode, ThemeMode, VisualizerMode, LyricData } from '../types';
 import type { LibraryAccountController } from '../library/core/account/account.contract';
 import ControlsTab from './panelTab/ControlsTab';
 import QueueTab from './panelTab/QueueTab';
@@ -476,6 +476,8 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                 <NaviTab
                     currentSong={currentSong}
                     hasLyrics={hasLyrics}
+                    lyrics={lyrics}
+                    onSetLyrics={onSetLyrics}
                     onMatchOnline={onMatchOnline}
                     lyricTimelineOffsetMs={lyricTimelineOffsetMs}
                     onLyricTimelineOffsetChange={onLyricTimelineOffsetChange}
@@ -498,6 +500,8 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                     replayGainMode={replayGainMode}
                     onChangeReplayGainMode={onChangeReplayGainMode}
                     isDaylight={isDaylight}
+                    lyrics={lyrics}
+                    onSetLyrics={onSetLyrics}
                 />
             )}
         </PanelShell>

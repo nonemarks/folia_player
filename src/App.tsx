@@ -103,6 +103,7 @@ import { usePersonalFmModeController } from './hooks/usePersonalFmModeController
 import { PERSONAL_FM_MODE_COMMAND_ID } from './components/command-palette/commands/fmModeCommand';
 import { usePlaybackUiEffects } from './components/app/playback/bridges/usePlaybackUiEffects';
 import { useLibraryPlaybackController } from './components/app/playback/start/useLibraryPlaybackController';
+import { useWhisperAutoAlign } from './hooks/useWhisperAutoAlign';
 import { useNavidromeScrobbleReporter } from './hooks/useNavidromeScrobbleReporter';
 import { usePlaybackReporter } from './components/app/playback/bridges/usePlaybackReporter';
 import { useRecentPlaysRecorder } from './components/app/home/explore/useRecentPlaysRecorder';
@@ -125,7 +126,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { clampMediaVolume, toSafeRemoteUrl } from './utils/appPlaybackHelpers';
 import { hasLoopedToStart } from './services/playedTrackCache';
 import { getOnlineProviderIdForSong, isLocalPlaybackSong, isNavidromePlaybackSong, isStagePlaybackSong } from './utils/appPlaybackGuards';
-import { writeLyricOffset } from './utils/lyrics/lyricOffsetMemory';
+import { readLyricOffset, writeLyricOffset } from './utils/lyrics/lyricOffsetMemory';
 import { FALLBACK_AI_DUAL_THEME } from './services/themeSanitizer';
 import { BASE_DUAL_THEME, DAYLIGHT_THEME, DEFAULT_THEME } from './services/baseThemes';
 import { initializeSyncCoordinator } from './services/sync/syncCoordinator';

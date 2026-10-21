@@ -7,12 +7,14 @@ import {
 // test/unit/lyrics/sourcePriority.test.ts
 
 describe('lyric source priority', () => {
+    // Whisper aligns the lines the sources before it found, so it is asked last, after every
+    // source that can hand it lines; a preferred source only moves itself to the front.
     it('defaults to QQ and retains every fallback exactly once', () => {
-        expect(buildLyricSourceOrder()).toEqual(['qq', 'netease', 'amll', 'kugou', 'spotify']);
-        expect(buildLyricSourceOrder('kugou')).toEqual(['kugou', 'netease', 'amll', 'qq', 'spotify']);
-        expect(buildLyricSourceOrder('netease')).toEqual(['netease', 'amll', 'qq', 'kugou', 'spotify']);
-        expect(buildLyricSourceOrder('amll')).toEqual(['amll', 'netease', 'qq', 'kugou', 'spotify']);
-        expect(buildLyricSourceOrder('spotify')).toEqual(['spotify', 'netease', 'amll', 'qq', 'kugou']);
+        expect(buildLyricSourceOrder()).toEqual(['qq', 'netease', 'amll', 'kugou', 'spotify', 'whisper']);
+        expect(buildLyricSourceOrder('kugou')).toEqual(['kugou', 'netease', 'amll', 'qq', 'spotify', 'whisper']);
+        expect(buildLyricSourceOrder('netease')).toEqual(['netease', 'amll', 'qq', 'kugou', 'spotify', 'whisper']);
+        expect(buildLyricSourceOrder('amll')).toEqual(['amll', 'netease', 'qq', 'kugou', 'spotify', 'whisper']);
+        expect(buildLyricSourceOrder('spotify')).toEqual(['spotify', 'netease', 'amll', 'qq', 'kugou', 'whisper']);
     });
 
     it('migrates missing, invalid, and legacy NetEase preferences to QQ', () => {

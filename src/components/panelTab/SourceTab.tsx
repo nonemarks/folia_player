@@ -31,6 +31,12 @@ type SourceTabProps<K extends string> = {
     onMatchOnline: () => void;
     /** Left out for a song that cannot take a lyric file; the lyric file window then only exports. */
     onImportLyrics?: (content: string, fileName: string) => void;
+    /**
+     * One more control for the lyric row, after the lyric file window. A kind of song that has an
+     * extra thing to do to its lyric puts its own button here rather than this layout growing a
+     * branch for it.
+     */
+    lyricRowAction?: React.ReactNode;
     /** The gains measured for the song. */
     gainValues?: ReplayGainValues;
     replayGainMode: ReplayGainMode;
@@ -49,6 +55,7 @@ export const SourceTab = <K extends string>({
     onClearLyrics,
     onMatchOnline,
     onImportLyrics,
+    lyricRowAction,
     gainValues,
     replayGainMode,
     onChangeReplayGainMode,
@@ -89,6 +96,7 @@ export const SourceTab = <K extends string>({
                     {t('localMusic.matchOnline')}
                 </PanelButton>
                 <LyricFileButton isDaylight={isDaylight} onImportLyrics={onImportLyrics} />
+                {lyricRowAction}
             </div>
 
             <GroupLine />

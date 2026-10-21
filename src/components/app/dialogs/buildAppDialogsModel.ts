@@ -81,16 +81,16 @@ export const buildAppDialogsModel = ({
     providerSwitchConfirmDialog = null,
 }: BuildAppDialogsModelParams): AppDialogsModel => {
     // Keep the modal mounted while local library refreshes temporarily empty the song list.
-    const foundSong = showLyricMatchModal && currentSong && isLocalPlaybackSong(currentSong)
+    const foundSong = isLyricMatchOpen && currentSong && isLocalPlaybackSong(currentSong)
         ? localSongs.find(song => song.id === currentSong.localRef.songId) ?? null
         : null;
     if (foundSong) {
         cachedLyricMatchSong = foundSong;
     }
-    if (!showLyricMatchModal) {
+    if (!isLyricMatchOpen) {
         cachedLyricMatchSong = null;
     }
-    const effectiveSong = foundSong ?? (showLyricMatchModal ? cachedLyricMatchSong : null);
+    const effectiveSong = foundSong ?? (isLyricMatchOpen ? cachedLyricMatchSong : null);
 
     return {
     statusToast: statusMsg
@@ -104,10 +104,10 @@ export const buildAppDialogsModel = ({
     lyricMatchDialog: !isLyricMatchOpen || !currentSong
         ? null
         : isLocalPlaybackSong(currentSong)
-            ? localSongs.some(song => song.id === currentSong.localRef.songId)
+            ? effectiveSong
                 ? {
                     kind: 'local',
-                    song: localSongs.find(song => song.id === currentSong.localRef.songId)!,
+                    song: effectiveSong,
                     onClose: closeLyricMatch,
                     onMatch: failureMessage => handleLyricMatchComplete(currentSong, failureMessage),
                     onPureMusicMarkChanged: handleLyricMatchPureMusicMarkChanged,

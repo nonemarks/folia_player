@@ -2,12 +2,14 @@
 // The user's own mods folder, and installing a mod from a .zip into it: the
 // size guards, reading the archive, finding the mod's root in it, and the
 // staged swap that keeps a working install until its replacement is known to
-// be good. Cut out of modSystem.cjs.
+// be good. Also the official market's download, which verifies an archive and
+// then hands it to the same staged install. Cut out of modSystem.cjs.
 
 'use strict';
 
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { unzipSync } = require('fflate');
 
@@ -16,6 +18,10 @@ const { validateManifest } = require('./manifest.cjs');
 // Staged installs and their rollback copies live under this directory inside
 // the user mods folder; discovery skips it (and every other dot-directory).
 const STAGING_DIRECTORY = '.staging';
+
+// The official mod market. Only paths under /downloads/ of this origin are
+// fetched, so a catalog entry cannot point the loader at an arbitrary host.
+const MOD_MARKET_ORIGIN = 'https://folium-compound.cielaniska.top';
 
 /*
  * Install guards. A .zip is untrusted input: it is size-checked before it is
@@ -274,7 +280,33 @@ const createZipInstall = ({ app, isModSystemEnabled, loadAll, emitLog, serialize
         }
     };
 
-    return { getUserModsDirectory, pruneStagingDirectory, installModFromZip };
+    /*
+     * Download only catalog-declared archives from the official market, verify their digest,
+     * then reuse the normal staged installer and trust flow.
+     */
+    const downloadMarketMod = async ({ url, sha256, fileName }) => {
+        if (!isModSystemEnabled()) return { ok: false, error: 'mod-system-disabled' };
+        if (typeof url !== 'string' || !url.startsWith('/downloads/')) return { ok: false, error: 'market-invalid-url' };
+        if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(sha256)) return { ok: false, error: 'market-invalid-digest' };
+        const safeName = typeof fileName === 'string' && /^[a-zA-Z0-9._-]+\.zip$/.test(fileName) ? fileName : path.basename(url);
+        if (!/^[a-zA-Z0-9._-]+\.zip$/.test(safeName)) return { ok: false, error: 'market-invalid-file-name' };
+
+        const response = await fetch(`${MOD_MARKET_ORIGIN}${url}`, { redirect: 'follow' });
+        if (!response.ok) return { ok: false, error: `market-download-http-${response.status}` };
+        const bytes = Buffer.from(await response.arrayBuffer());
+        const actualDigest = crypto.createHash('sha256').update(bytes).digest('hex');
+        if (actualDigest.toLowerCase() !== sha256.toLowerCase()) return { ok: false, error: 'market-digest-mismatch' };
+
+        const tempPath = path.join(os.tmpdir(), `folia-market-${Date.now()}-${safeName}`);
+        fs.writeFileSync(tempPath, bytes, { mode: 0o600 });
+        try {
+            return await installModFromZip(tempPath);
+        } finally {
+            try { fs.unlinkSync(tempPath); } catch {}
+        }
+    };
+
+    return { getUserModsDirectory, pruneStagingDirectory, installModFromZip, downloadMarketMod };
 };
 
 module.exports = { createZipInstall, INSTALL_LIMITS, STAGING_DIRECTORY };

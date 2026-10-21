@@ -162,6 +162,22 @@ async function getOnlineSongAudioBlob(song: { id: string | number; name?: string
 // ---------------------------------------------------------------------------
 
 /**
+ * One model the aligner knows about: its catalog entry (electron/whisperAlign.cjs
+ * SUPPORTED_MODELS) plus whether its weights are already on disk.
+ */
+export type WhisperAlignModel = {
+    /** Model id as the aligner names its weights file (`ggml-<name>.bin`). */
+    name: string;
+    /** Download size as shown to the user, e.g. `~466MB`. */
+    size: string;
+    multilingual: boolean;
+    recommended: boolean;
+    downloaded: boolean;
+    /** Absolute path of the weights, or null while not downloaded. */
+    path: string | null;
+};
+
+/**
  * Detailed availability status for the Whisper alignment system.
  */
 export type WhisperAvailabilityDetail = {

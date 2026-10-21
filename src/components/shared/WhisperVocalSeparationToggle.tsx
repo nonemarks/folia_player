@@ -2,7 +2,7 @@ import React, { useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle } from 'lucide-react';
 import { useWhisperSettingsStore } from '../../stores/useWhisperSettingsStore';
-import { modelsPresent, subscribeModelAvailability } from '../../services/automix/modelAvailability';
+import { modelsPresent, subscribeModelAvailability } from '../../services/analysis/modelAvailability';
 
 // src/components/shared/WhisperVocalSeparationToggle.tsx
 // 人声分离开关（主开关 + GPU 子开关 + 依赖未就绪提示），供 Whisper 独立设置页与歌词匹配

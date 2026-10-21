@@ -49,6 +49,7 @@
         "ffmpegStatus": "folia-mods:ffmpeg-status",
         "openDirectory": "folia-mods:open-directory",
         "installZip": "folia-mods:install-zip",
+        "marketDownload": "folia-mods:market-download",
         "storageUsage": "folia-mods:storage-usage",
         "clearCache": "folia-mods:clear-cache",
         "callStats": "folia-mods:call-stats",

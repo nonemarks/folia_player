@@ -1,4 +1,4 @@
-import { LyricData, LyricProviderSource, SongResult } from '../../types';
+import { LocalSong, LyricData, LyricProviderSource, SongResult } from '../../types';
 import { getOnlineMusicProvider } from '../../services/onlineMusic/providerRegistry';
 import type { OnlineProviderId, ProviderLyricsResult } from '../../types/onlineMusic';
 import { fetchAmllDbLyrics, getAmllDbMusicIds } from './providers/amllDbProvider';
@@ -47,6 +47,12 @@ export interface AutoMatchBestLyricOptions {
     providerCandidate?: AutoMatchProviderCandidate;
     /** Another name the artist may be listed under; asked for only when the given one finds nothing. */
     alternateArtist?: () => Promise<string | null>;
+    /** Song info for Whisper alignment (needs audio access). */
+    song?: LocalSong | SongResult | { id: string | number; title?: string; name?: string; filePath?: string };
+    /** Whether Whisper alignment is enabled in settings. */
+    whisperAlignEnabled?: boolean;
+    /** Which Whisper model to align with; the service falls back to 'base' if omitted. */
+    whisperAlignModel?: string;
     /** @deprecated Use providerCandidate so the baseline follows the song's provider. */
     neteaseCandidate?: {
         id: number | string;
@@ -404,14 +410,55 @@ async function matchUnderArtist(
         return null;
     };
 
+    // Whisper AI alignment: re-times the best line-level lyrics the sources above found into
+    // word-by-word timing, transcribing the song's own audio. It is the last step of the pick, so
+    // the fallback is what it has to work on; with no lines from any source there is nothing to align.
+    const tryWhisper = async (): Promise<AutoMatchBestLyricResult> => {
+        if (!options.whisperAlignEnabled || !options.song) {
+            console.log('[autoMatchBestLyric] Skipping Whisper alignment (disabled or no song info).');
+            return null;
+        }
+        if (!lineByLineFallback) {
+            console.log('[autoMatchBestLyric] Skipping Whisper alignment because no line-level lyrics were found by previous sources.');
+            return null;
+        }
+        // Imported here rather than at the top: the service reads the settings store, and a module
+        // under utils/ must not depend on one (dev/mcp/ts-code-map/codemap.mjs BOUNDARY_RULES).
+        const { alignLyricsWithWhisper, shouldAlignLyrics } = await import('../../services/whisperAlignService');
+        if (!shouldAlignLyrics(lineByLineFallback.lyrics)) {
+            console.log('[autoMatchBestLyric] Skipping Whisper alignment because lyrics already have word-level timing.');
+            return null;
+        }
+        try {
+            console.log(`[autoMatchBestLyric] Attempting Whisper alignment on ${lineByLineFallback.source} lyrics...`);
+            const alignedLyrics = await alignLyricsWithWhisper(options.song, lineByLineFallback.lyrics, { model: options.whisperAlignModel });
+            if (alignedLyrics?.isWordByWord) {
+                console.log('[autoMatchBestLyric] Whisper alignment succeeded! Returning word-by-word lyrics.');
+                // The lines keep the source they were found under: same song, same id, better timing.
+                return { ...lineByLineFallback, lyrics: alignedLyrics, source: 'whisper' };
+            }
+            console.log('[autoMatchBestLyric] Whisper alignment did not produce word-by-word lyrics. Continuing.');
+        } catch (error) {
+            console.error('[autoMatchBestLyric] Whisper alignment failed:', error);
+        }
+        return null;
+    };
+
+    // A source that is not a platform has no songs of its own to search, so it gets a step of its own.
+    const tryOwnStep = async (source: LyricProviderSource): Promise<AutoMatchBestLyricResult> => {
+        if (source === 'amll') return await tryAmllDb();
+        if (source === 'whisper') return await tryWhisper();
+        return null;
+    };
+
     for (const source of searchOrder) {
         try {
-            // AMLL DB is the one source that is not a platform: it has no songs of its own to search,
-            // and a step of its own here. Another source that is not a platform has none yet and is
-            // passed over.
+            // AMLL DB keeps its lyrics under the two platforms' song ids; Whisper aligns the lines
+            // the sources before it gave. A third source that is not a platform has no step yet and
+            // is passed over.
             const settled = getLyricSource(source).platform
                 ? await tryPlatformSource(source)
-                : source === 'amll' ? await tryAmllDb() : null;
+                : await tryOwnStep(source);
             if (settled) return settled;
         } catch (error) {
             console.error(`[autoMatchBestLyric] ${source} search/fetch failed:`, error);

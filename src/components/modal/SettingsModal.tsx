@@ -13,6 +13,8 @@ import ThemePark from './ThemePark';
 import LyricFilterSettingsModal from './LyricFilterSettingsModal';
 import type { LyricFilterDraft } from './LyricFilterSettingsModal';
 import GlobalLyricOffsetModal from './settings/GlobalLyricOffsetModal';
+import WhisperSettingsModal from './settings/WhisperSettingsModal';
+import WhisperLyricOverviewModal from './settings/WhisperLyricOverviewModal';
 import type { PlayerCapConnectionStatus } from '../../types/playerCap';
 import { PageHeader } from './settings/kit';
 import { SettingsKitThemeContext, settingsTokens } from './settings/kit/kitTheme';

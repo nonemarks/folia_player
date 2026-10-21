@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { OnlineLyricsState, ReplayGainMode, SongResult } from '../../types';
+import type { OnlineLyricsState, ReplayGainMode, SongResult, LyricData } from '../../types';
 import { getOnlineLyricSourceLabel } from '../../utils/lyrics/lyricSourceLabels';
 import { omni } from '../../services/onlineMusic/omni';
 import SourceTab from './SourceTab';
+import WhisperAlignButton from '../shared/WhisperAlignButton';
 
 // src/components/panelTab/OnlineLyricsTab.tsx
 // The song's tab for a song of an online platform: hands SourceTab what it shows for it.
@@ -69,6 +70,14 @@ const OnlineLyricsTab: React.FC<OnlineLyricsTabProps> = ({
             onClearLyrics={hasOverride ? onClearOnlineLyricsState : undefined}
             onMatchOnline={onMatchOnlineLyrics}
             onImportLyrics={onImportLyrics}
+            lyricRowAction={
+                <WhisperAlignButton
+                    song={song}
+                    lyrics={lyrics}
+                    onLyricsUpdated={onSetLyrics}
+                    isDaylight={isDaylight}
+                />
+            }
             gainValues={song.replayGain}
             replayGainMode={replayGainMode}
             onChangeReplayGainMode={onChangeReplayGainMode}

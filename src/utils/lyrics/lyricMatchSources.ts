@@ -148,6 +148,13 @@ const OWN_ACCESS: Partial<Record<LyricProviderSource, Partial<LyricSourceAccess>
     kugou: {
         songKey: song => String(song.kgHash ?? song.id).toUpperCase(),
     },
+    // Whisper has nothing to search and nothing to fetch: it re-times lines another source already
+    // gave, and the automatic pick does that in a step of its own (autoMatchBestLyric.ts).
+    whisper: {
+        search: async () => [],
+        fetch: async () => null,
+        songKey: song => String(song.id),
+    },
 };
 
 const accessBySource = new Map<LyricProviderSource, LyricSourceAccess>(

@@ -56,6 +56,7 @@ interface ModsStoreState {
     cancelActiveExport: () => Promise<void>;
     openModsDirectory: () => Promise<{ ok: boolean; directory?: string; error?: string }>;
     installModFromZip: (zipPath: string) => Promise<{ ok: boolean; id?: string; error?: string }>;
+    downloadMarketMod: (payload: { url: string; sha256: string; fileName: string }) => Promise<{ ok: boolean; id?: string; error?: string }>;
     getModStorageUsage: (modId: string) => Promise<ModStorageUsageResult>;
     clearModCache: (modId: string) => Promise<ModClearCacheResult>;
     bindEvents: () => void;
@@ -124,6 +125,12 @@ export const useModsStore = create<ModsStoreState>((set, get) => ({
         if (result.ok) {
             await get().refresh();
         }
+        return result;
+    },
+
+    downloadMarketMod: async (payload) => {
+        const result = await downloadMarketMod(payload);
+        if (result.ok) await get().refresh();
         return result;
     },
 

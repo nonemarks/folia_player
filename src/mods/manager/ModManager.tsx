@@ -9,6 +9,7 @@ import { FOLIUM_HOST_VERSION } from '../folium/shared';
 import { useDesktopSettingsStore } from '../../stores/useDesktopSettingsStore';
 import { openOutsideLink, opensThroughDesktopApp } from '../../utils/system/outsideLink';
 import { ModListItem, translateModError } from './ModListItem';
+import ModMarket from './ModMarket';
 import { useModCosts } from './modCost';
 import type { ModManagerClasses } from './modManagerClasses';
 

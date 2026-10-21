@@ -19,6 +19,7 @@ import { toPlayableAudioUrl } from '../utils/appPlaybackHelpers';
 import { getOnlineProviderIdForSong } from '../utils/appPlaybackGuards';
 import { getProviderSongMetadata } from './onlineMusic/songMetadata';
 import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
+import { useWhisperSettingsStore } from '../stores/useWhisperSettingsStore';
 import { useOnlineProviderAccountStore } from '../stores/useOnlineProviderAccountStore';
 import { saveLyricCacheSongMetadata } from './lyricExport/lyricCacheMetadata';
 import { errorFields } from '../utils/errorText';

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { UnifiedSong, ReplayGainMode } from '../../types';
+import { UnifiedSong, ReplayGainMode, LyricData } from '../../types';
 import { FileAudio, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getLyricProviderLabel } from '../../utils/lyrics/lyricSourceLabels';
 import { detectLyricFileIssues } from '../../utils/lyrics/lyricFileIssues';
+import WhisperAlignButton from '../shared/WhisperAlignButton';
 import { getLocalSongs } from '../../services/db';
 import type { LocalSong } from '../../types';
 import { isLocalPlaybackSong } from '../../utils/appPlaybackGuards';
@@ -145,6 +146,14 @@ const LocalTab: React.FC<LocalTabProps> = ({
                 onChangeLyricSource={onChangeLyricsSource}
                 onMatchOnline={onMatchOnline}
                 onImportLyrics={(content, fileName) => onUpdateLocalLyrics(content, false, fileName)}
+                lyricRowAction={
+                    <WhisperAlignButton
+                        song={localData}
+                        lyrics={lyrics}
+                        onLyricsUpdated={onSetLyrics}
+                        isDaylight={isDaylight}
+                    />
+                }
                 gainValues={{
                     trackGain: localData.replayGainTrackGain ?? localData.replayGain,
                     albumGain: localData.replayGainAlbumGain,

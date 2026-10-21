@@ -359,6 +359,7 @@ contextBridge.exposeInMainWorld('electron', {
         getFfmpegStatus: () => ipcRenderer.invoke('folia-mods:ffmpeg-status'),
         openModsDirectory: () => ipcRenderer.invoke('folia-mods:open-directory'),
         installModFromZip: (zipPath) => ipcRenderer.invoke('folia-mods:install-zip', zipPath),
+        downloadMarketMod: (payload) => ipcRenderer.invoke('folia-mods:market-download', payload),
         getModStorageUsage: (modId) => ipcRenderer.invoke('folia-mods:storage-usage', modId),
         clearModCache: (modId) => ipcRenderer.invoke('folia-mods:clear-cache', modId),
         getModCallStats: () => ipcRenderer.invoke('folia-mods:call-stats'),
